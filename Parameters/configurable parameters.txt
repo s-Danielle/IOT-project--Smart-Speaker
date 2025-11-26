@@ -1,8 +1,0 @@
-The parameters are at the top of the ESP32 code
-
-UnrefilledBoxWarningNumber : the number of notifications the user will get if he did not refill the pill box in th time he is supposed to fill.
-searchBoxTimeInMinutes : how much time in minutes the pill box will light and make noise for each time the patient presses search box.
-closePillMinutes : the number of minutes before the pill dose time to senda reminder notification to the patient through the application.
-modemSleepMins : time in minutes the esp will be in "modem sleep mode" when there are no pill doses nearby. after this time the esp will wakeup from that mode and check state and if there is nothing that needs a response in the near time the esp will sleep againg for the same amount of time and will continue like that 
-late1Time : the number of minutes after the pill does time , our system send the patien a warning that is he is late and should take his pill before it gets two late .
-late2Time : the number of minutes after the pill does time , our system will consider that the patient for the pill as if he missed the pill and will send notification/update table/log .... accordingly.
