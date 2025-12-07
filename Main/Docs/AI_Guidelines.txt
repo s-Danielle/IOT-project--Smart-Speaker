@@ -13,9 +13,9 @@ IOT-project--Smart-Speaker/Main
 │  ├─ state.py                      # Enums + dataclasses for device state
 │  └─ actions.py                    # Pure action handlers (play, stop, record…)
 │
-├─ io/                              # Hardware + system interfaces (no logic)
+├─ hardware/                        # Hardware + system interfaces (no logic)
 │  ├─ nfc_scanner.py                # PN532 NFC reader (non-blocking read_uid)
-│  ├─ chip_store.py                 # Load chips.json, UID lookup
+│  ├─ chip_store.py                 # Load tags.json, UID lookup
 │  ├─ buttons.py                    # PCF8574 or GPIO wrapper, returns raw states
 │  ├─ audio_player.py               # Mopidy wrapper: play_uri, pause, stop
 │  ├─ recorder.py                   # Start/stop/cancel recordings (arecord)
@@ -109,10 +109,17 @@ Use enums or simple class constants.
 Three buttons:
 
 Play/Pause
+- Short press: Toggle play/pause
+- Long press (2s): Play latest recording
 
-Record (long-press 3s to arm → release to start recording → short press to save)
+Record
+- Long press (3s): Countdown plays while holding → release to start recording
+- If released early (< 3s): Countdown sound stops, no recording starts
+- Short press (while recording): Save recording
 
-Stop (short press: stop; long press 5s: clear chip)
+Stop
+- Short press: Stop/cancel current action
+- Long press (3s): Clear chip
 
 Buttons are active-low.
 Button module should expose clean events:
@@ -148,17 +155,25 @@ Recording:
 
 Can only start when a chip is loaded.
 
-User must hold Record for 3 seconds → release → recording begins.
+User must hold Record for 3 seconds (countdown plays while holding) → release → recording begins.
+
+If Record is released early (< 3s), countdown sound stops and no recording starts.
 
 Music auto-pauses during recording.
 
-Short press Record stops + saves the recording.
+Short press Record (while recording) stops + saves the recording.
 
-Short press Stop cancels (no save).
+Short press Stop cancels recording (no save), returns to previous state (PLAYING or PAUSED).
 
-Long press Stop (5s) cancels + clears chip.
+Long press Stop (3s) cancels recording + clears chip.
 
-After saving, if music was previously playing, return to PAUSED.
+After saving, if music was previously playing or paused, return to PAUSED.
+
+Play Latest Recording:
+
+Long press Play/Pause (2s) to play the most recent recording file.
+
+Blocked in IDLE_NO_CHIP and RECORDING states.
 
 🟩 UI Feedback Requirements
 
@@ -214,9 +229,13 @@ calling appropriate I/O
 
 calling UI feedback
 
-Hardware is fully encapsulated in io/.
+Hardware is fully encapsulated in hardware/.
 
 UI is fully encapsulated in ui/.
+
+Sound playback:
+- Sounds automatically stop previous sound when new sound plays (prevents overlap)
+- 0.1s cooldown between sounds to prevent rapid-fire playback
 
 All constants (timings, I2C addresses, file paths) live in config/settings.py or config/paths.py.
 

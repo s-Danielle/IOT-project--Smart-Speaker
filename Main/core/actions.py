@@ -157,6 +157,17 @@ def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceStat
     log_action("Saving recording")
     saved_path = recorder.stop()
     
+    # Verify file was actually saved
+    if saved_path:
+        import os
+        if os.path.exists(saved_path):
+            size = os.path.getsize(saved_path)
+            log_action(f"Recording file verified: {saved_path} ({size} bytes)")
+        else:
+            log_error(f"Recording file not found after save: {saved_path}")
+    else:
+        log_error("Recorder returned None - recording may not have been saved")
+    
     # Return to appropriate state
     if device_state.was_playing_before_recording:
         device_state.state = State.PAUSED

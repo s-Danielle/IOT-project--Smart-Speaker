@@ -106,20 +106,39 @@ class Controller:
         """Play the most recent recording file"""
         from config.paths import RECORDINGS_DIR
         
+        log_event(f"[DEBUG] Looking for recordings in: {RECORDINGS_DIR}")
+        
         # Find all recording files
         if not os.path.exists(RECORDINGS_DIR):
+            log_event(f"[DEBUG] Recordings directory does not exist: {RECORDINGS_DIR}")
             log_event("No recordings directory found")
             self._ui.on_error()
             return
         
+        log_event(f"[DEBUG] Scanning directory: {RECORDINGS_DIR}")
+        all_files = os.listdir(RECORDINGS_DIR)
+        log_event(f"[DEBUG] Found {len(all_files)} files in directory")
+        
         recording_files = []
-        for filename in os.listdir(RECORDINGS_DIR):
+        for filename in all_files:
+            log_event(f"[DEBUG] Checking file: {filename}")
             if filename.endswith('.wav') and filename.startswith('recording_'):
                 filepath = os.path.join(RECORDINGS_DIR, filename)
-                recording_files.append((filepath, os.path.getmtime(filepath)))
+                if os.path.isfile(filepath):
+                    mtime = os.path.getmtime(filepath)
+                    size = os.path.getsize(filepath)
+                    recording_files.append((filepath, mtime))
+                    log_event(f"[DEBUG] Found recording: {filename} (size: {size} bytes, mtime: {mtime})")
+        
+        log_event(f"[DEBUG] Total recording files found: {len(recording_files)}")
         
         if not recording_files:
             log_event("No recordings found")
+            log_event("[DEBUG] To create a recording:")
+            log_event("[DEBUG]   1. Load a chip")
+            log_event("[DEBUG]   2. Hold Record button for 3 seconds")
+            log_event("[DEBUG]   3. Release to start recording")
+            log_event("[DEBUG]   4. Press Record again to save")
             self._ui.on_error()
             return
         
@@ -130,11 +149,59 @@ class Controller:
         # Get absolute path for Mopidy
         abs_path = os.path.abspath(latest_recording)
         
+        log_event(f"[DEBUG] Selected latest recording: {os.path.basename(latest_recording)}")
+        log_event(f"[DEBUG] Absolute path: {abs_path}")
         log_event(f"Playing latest recording: {os.path.basename(latest_recording)}")
         
-        # Convert to file:// URI for Mopidy (use absolute path)
-        file_uri = f"file://{abs_path}"
-        self._audio.play_uri(file_uri)
+        # Convert to URI for Mopidy
+        # Mopidy supports multiple URI formats:
+        # 1. file:// URIs (if file backend is enabled)
+        # 2. local:file: URIs (if local backend is configured)
+        # 3. We'll try file:// first, then fall back to local:file: if needed
+        
+        # Try file:// URI format first (works if file backend is enabled)
+        if os.name == 'nt':  # Windows
+            # Windows: file:///C:/path/to/file
+            file_uri = f"file:///{abs_path.replace(os.sep, '/')}"
+        else:
+            # Unix/Mac: file:///absolute/path (three slashes for absolute)
+            file_uri = f"file://{abs_path}"
+        
+        # Alternative: Use local:file: URI if Mopidy-Local is configured
+        # This requires the recordings directory to be in Mopidy's media_dir
+        # For now, we'll use file:// and let Mopidy handle it
+        
+        log_event(f"[DEBUG] File URI: {file_uri}")
+        log_event(f"[DEBUG] Note: Mopidy needs file backend enabled or local backend configured")
+        
+        # Verify file exists and is readable
+        if not os.path.exists(abs_path):
+            log_error(f"[DEBUG] File does not exist: {abs_path}")
+            self._ui.on_error()
+            return
+        
+        if not os.access(abs_path, os.R_OK):
+            log_error(f"[DEBUG] File is not readable: {abs_path}")
+            self._ui.on_error()
+            return
+        
+        log_event(f"[DEBUG] Calling audio.play_uri() with: {file_uri}")
+        
+        # Try to play the file
+        # Note: Mopidy needs one of these configured:
+        # 1. File backend enabled (supports file:// URIs directly)
+        # 2. Local backend with recordings directory in media_dir
+        # 3. Stream backend (for HTTP-served files)
+        try:
+            self._audio.play_uri(file_uri)
+            log_event(f"[DEBUG] Playback command sent to Mopidy")
+        except Exception as e:
+            log_error(f"[DEBUG] Failed to play recording: {e}")
+            log_error("[DEBUG] Mopidy may need file backend enabled or local backend configured")
+            self._ui.on_error()
+            return
+        
+        log_event(f"[DEBUG] Calling ui.on_play()")
         self._ui.on_play()
         
         # Track previous state so we can return to it on stop
