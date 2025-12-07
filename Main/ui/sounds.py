@@ -46,15 +46,27 @@ class Sounds:
         # Stop any currently playing sound
         if self._current_process is not None:
             try:
-                self._current_process.terminate()
-                self._current_process.wait(timeout=0.1)
-            except:
-                try:
-                    self._current_process.kill()
-                except:
-                    pass
-            self._current_process = None
-            log_sound(f"[STOPPED] Previous sound to play: {name}")
+                # Check if process is still running
+                if self._current_process.poll() is None:
+                    # Process is still running, terminate it
+                    self._current_process.terminate()
+                    try:
+                        self._current_process.wait(timeout=0.1)
+                    except subprocess.TimeoutExpired:
+                        # Force kill if terminate didn't work
+                        self._current_process.kill()
+                        self._current_process.wait()
+                else:
+                    # Process already finished, check for errors
+                    if self._current_process.stderr:
+                        stderr_output = self._current_process.stderr.read().decode()
+                        if stderr_output:
+                            log_error(f"Previous aplay had errors: {stderr_output}")
+            except Exception as e:
+                log_error(f"Error stopping previous sound: {e}")
+            finally:
+                self._current_process = None
+                log_sound(f"[STOPPED] Previous sound to play: {name}")
         
         log_sound(f"🔊 Playing: {name}")
         
@@ -64,17 +76,39 @@ class Sounds:
         
         try:
             # Use aplay for WAV playback (non-blocking)
+            # Capture stderr to detect errors, but use -q flag to minimize output
             self._current_process = subprocess.Popen(
                 ["aplay", "-q", filepath],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.PIPE
             )
             self._last_sound_time = current_time
+            
+            # Check if process started successfully (after brief delay)
+            time.sleep(0.05)  # Brief wait to check if process crashed immediately
+            if self._current_process.poll() is not None:
+                # Process exited immediately - likely an error
+                stderr_output = ""
+                if self._current_process.stderr:
+                    try:
+                        stderr_output = self._current_process.stderr.read().decode().strip()
+                    except:
+                        stderr_output = "Could not read stderr"
+                
+                if stderr_output:
+                    log_error(f"aplay failed: {stderr_output}")
+                else:
+                    log_error(f"aplay process exited immediately (exit code: {self._current_process.returncode})")
+                log_error(f"Sound file: {filepath}")
+                log_error("Check if audio device is available: aplay -l")
+                self._current_process = None
+                return  # Don't continue if playback failed
         except FileNotFoundError:
             log_sound(f"[SIMULATION] Would play: {name}")
             self._last_sound_time = current_time
         except Exception as e:
             log_error(f"Failed to play sound: {e}")
+            self._current_process = None
     
     def play(self, sound_name: str):
         """Play a sound by filename"""
@@ -129,12 +163,18 @@ class Sounds:
         """Stop any currently playing sound"""
         if self._current_process is not None:
             try:
-                self._current_process.terminate()
-                self._current_process.wait(timeout=0.1)
-            except:
-                try:
-                    self._current_process.kill()
-                except:
-                    pass
-            self._current_process = None
-            log_sound("[STOPPED] Current sound")
+                # Check if process is still running
+                if self._current_process.poll() is None:
+                    # Process is still running, terminate it
+                    self._current_process.terminate()
+                    try:
+                        self._current_process.wait(timeout=0.1)
+                    except subprocess.TimeoutExpired:
+                        # Force kill if terminate didn't work
+                        self._current_process.kill()
+                        self._current_process.wait()
+            except Exception as e:
+                log_error(f"Error stopping sound: {e}")
+            finally:
+                self._current_process = None
+                log_sound("[STOPPED] Current sound")
