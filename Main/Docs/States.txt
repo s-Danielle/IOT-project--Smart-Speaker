@@ -2,43 +2,51 @@
 STATE 1 — IDLE (NO CHIP)
 User Action	Result	Feedback
 Scan chip	Load chip → IDLE (Chip Loaded)	Chip-loaded beep
-Play/Pause	No effect	Error beep
+Play/Pause (short)	No effect	Error beep
+Play/Pause (long 2s)	No effect	Error beep
 Record (hold 3s)	No effect	Error beep
 Stop (short)	No effect	Error beep
-Stop (long 5s)	No effect	Error beep
+Stop (long 3s)	No effect	Error beep
 
 STATE 2 — IDLE (CHIP LOADED)
 User Action	Result	Feedback
 Scan same chip	No effect	Soft no-action click
 Scan different chip	Replace chip	Chip-loaded beep
-Play/Pause	Start playback → PLAYING	Play chime
-Record (hold 3s → release)	Start recording → RECORDING	Record-start beep
+Play/Pause (short)	Start playback → PLAYING	Play chime
+Play/Pause (long 2s)	Play latest recording → PLAYING	Play chime
+Record (hold 3s → release)	Start recording → RECORDING	Countdown plays while holding, then record-start
+Record (hold < 3s → release)	No effect	Countdown stops on release
 Stop (short)	Clear chip → IDLE (No Chip)	Stop tone
-Stop (long 5s)	Clear chip → IDLE (No Chip)	Reset tone (longer)
+Stop (long 3s)	Clear chip → IDLE (No Chip)	Reset tone (longer)
 
 STATE 3 — PLAYING
 User Action	Result	Feedback
-Play/Pause	Pause → PAUSED	Pause click
-Record (hold 3s → release)	Start recording → RECORDING (music pauses)	Record-start beep
+Play/Pause (short)	Pause → PAUSED	Pause click
+Play/Pause (long 2s)	Play latest recording → PLAYING	Play chime (replaces current playback)
+Record (hold 3s → release)	Start recording → RECORDING (music pauses)	Countdown plays while holding, then record-start
+Record (hold < 3s → release)	No effect	Countdown stops on release
 Stop (short)	Stop → IDLE (Chip Loaded)	Stop tone
-Stop (long 5s)	Stop + clear chip → IDLE (No Chip)	Reset tone
+Stop (long 3s)	Stop + clear chip → IDLE (No Chip)	Reset tone
 Scan same chip	No effect	Soft no-action click
 Scan different chip	Replace chip → IDLE (Chip Loaded)	Chip-loaded beep
 
 STATE 4 — PAUSED
 User Action	Result	Feedback
-Play/Pause	Resume → PLAYING	Play chime
-Record (hold 3s → release)	Start recording → RECORDING	Record-start beep
+Play/Pause (short)	Resume → PLAYING	Play chime
+Play/Pause (long 2s)	Play latest recording → PLAYING	Play chime (replaces paused playback)
+Record (hold 3s → release)	Start recording → RECORDING	Countdown plays while holding, then record-start
+Record (hold < 3s → release)	No effect	Countdown stops on release
 Stop (short)	Stop → IDLE (Chip Loaded)	Stop tone
-Stop (long 5s)	Clear chip → IDLE (No Chip)	Reset tone
+Stop (long 3s)	Clear chip → IDLE (No Chip)	Reset tone
 Scan same chip	No effect	Soft no-action click
 Scan different chip	Replace chip → IDLE (Chip Loaded)	Chip-loaded beep
 
 STATE 5 — RECORDING
 User Action	Result	Feedback
 Record (short press)	Save recording → return to PAUSED or IDLE (Chip Loaded)	Record-saved chime
-Stop (short)	Cancel (no save) → previous state	Cancel tone
-Stop (long 5s)	Cancel + clear chip → IDLE (No Chip)	Reset tone
+Stop (short)	Cancel (no save) → previous state (PLAYING or PAUSED)	Cancel tone
+Stop (long 3s)	Cancel + clear chip → IDLE (No Chip)	Reset tone
 Scan any chip	Ignored	Blocked beep
-Play/Pause	Ignored	Blocked beep
+Play/Pause (short)	Ignored	Blocked beep
+Play/Pause (long 2s)	Ignored	Blocked beep
 
