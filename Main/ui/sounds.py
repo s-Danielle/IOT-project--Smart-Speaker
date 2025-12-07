@@ -51,7 +51,7 @@ class Sounds:
                     # Process is still running, terminate it
                     self._current_process.terminate()
                     try:
-                        self._current_process.wait(timeout=0.1)
+                        self._current_process.wait(timeout=0.2)  # Longer timeout
                     except subprocess.TimeoutExpired:
                         # Force kill if terminate didn't work
                         self._current_process.kill()
@@ -59,14 +59,19 @@ class Sounds:
                 else:
                     # Process already finished, check for errors
                     if self._current_process.stderr:
-                        stderr_output = self._current_process.stderr.read().decode()
-                        if stderr_output:
-                            log_error(f"Previous aplay had errors: {stderr_output}")
+                        try:
+                            stderr_output = self._current_process.stderr.read().decode()
+                            if stderr_output:
+                                log_error(f"Previous aplay had errors: {stderr_output}")
+                        except:
+                            pass
             except Exception as e:
                 log_error(f"Error stopping previous sound: {e}")
             finally:
                 self._current_process = None
                 log_sound(f"[STOPPED] Previous sound to play: {name}")
+                # Small delay to let ALSA release the device
+                time.sleep(0.05)
         
         log_sound(f"🔊 Playing: {name}")
         
@@ -76,7 +81,7 @@ class Sounds:
         
         try:
             # Use aplay for WAV playback (non-blocking)
-            # Capture stderr to detect errors, but use -q flag to minimize output
+            # Use -D default to avoid device conflicts, and capture stderr
             self._current_process = subprocess.Popen(
                 ["aplay", "-q", filepath],
                 stdout=subprocess.DEVNULL,
@@ -85,7 +90,7 @@ class Sounds:
             self._last_sound_time = current_time
             
             # Check if process started successfully (after brief delay)
-            time.sleep(0.05)  # Brief wait to check if process crashed immediately
+            time.sleep(0.1)  # Longer wait to check if process crashed
             if self._current_process.poll() is not None:
                 # Process exited immediately - likely an error
                 stderr_output = ""
@@ -97,10 +102,14 @@ class Sounds:
                 
                 if stderr_output:
                     log_error(f"aplay failed: {stderr_output}")
+                    # If it's a permission/device lock error, suggest solutions
+                    if "Permission denied" in stderr_output or "unable to create IPC" in stderr_output:
+                        log_error("Audio device may be locked by another process (arecord/Mopidy)")
+                        log_error("Try: sudo usermod -a -G audio $USER (then logout/login)")
+                        log_error("Or check: lsof | grep snd")
                 else:
                     log_error(f"aplay process exited immediately (exit code: {self._current_process.returncode})")
                 log_error(f"Sound file: {filepath}")
-                log_error("Check if audio device is available: aplay -l")
                 self._current_process = None
                 return  # Don't continue if playback failed
         except FileNotFoundError:
