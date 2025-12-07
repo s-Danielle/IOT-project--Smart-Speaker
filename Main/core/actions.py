@@ -13,8 +13,8 @@ from utils.logger import log_action, log_state
 
 def action_load_chip(device_state: DeviceState, chip_data: dict, audio_player, ui) -> DeviceState:
     """Load a chip and transition to IDLE_CHIP_LOADED"""
-    # Stop any current playback
-    if device_state.state == State.PLAYING:
+    # Stop any current playback (whether playing or paused)
+    if device_state.state in (State.PLAYING, State.PAUSED):
         audio_player.stop()
     
     # Create chip data
@@ -104,8 +104,9 @@ def action_start_recording(device_state: DeviceState, audio_player, recorder, ui
         ui.on_blocked_action()
         return device_state
     
-    # Remember if we were playing
-    device_state.was_playing_before_recording = (device_state.state == State.PLAYING)
+    # Remember if we had active music context (PLAYING or PAUSED)
+    # After recording, we return to PAUSED if music was active, else IDLE_CHIP_LOADED
+    device_state.was_playing_before_recording = (device_state.state in (State.PLAYING, State.PAUSED))
     device_state.previous_state = device_state.state
     
     # Pause music if playing

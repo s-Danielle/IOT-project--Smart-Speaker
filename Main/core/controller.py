@@ -47,6 +47,9 @@ class Controller:
         # Track record button arming (need to hold 3s then release)
         self._record_armed = False
         
+        # Track stop button long-press to prevent repeated execution
+        self._stop_long_press_triggered = False
+        
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
         log("READY - Waiting for input...")
@@ -250,7 +253,9 @@ class Controller:
         if self._buttons.is_pressed(ButtonID.STOP):
             hold_time = self._buttons.hold_duration(ButtonID.STOP)
             
-            if hold_time >= CLEAR_CHIP_HOLD_DURATION:
+            # Only trigger once per long press (prevent repeated execution)
+            if hold_time >= CLEAR_CHIP_HOLD_DURATION and not self._stop_long_press_triggered:
+                self._stop_long_press_triggered = True
                 log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
                 
                 if state == State.RECORDING:
@@ -263,13 +268,16 @@ class Controller:
                     )
                 return
         
-        # Short press on release
+        # Reset long-press flag when button is released
         if self._buttons.just_released(ButtonID.STOP):
-            hold_time = self._buttons.get_release_duration(ButtonID.STOP)
+            was_long_press = self._stop_long_press_triggered
+            self._stop_long_press_triggered = False
             
             # If it was a long press, we already handled it above
-            if hold_time >= CLEAR_CHIP_HOLD_DURATION:
+            if was_long_press:
                 return
+            
+            hold_time = self._buttons.get_release_duration(ButtonID.STOP)
             
             log_button(f"Stop short press ({hold_time:.2f}s)")
             
