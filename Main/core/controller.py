@@ -264,7 +264,7 @@ class Controller:
                     )
                 else:
                     self.device_state = actions.action_clear_chip(
-                        self.device_state, self._audio, self._ui
+                        self.device_state, self._audio, self._ui, long_press=True
                     )
                 return
         
@@ -281,10 +281,10 @@ class Controller:
             
             log_button(f"Stop short press ({hold_time:.2f}s)")
             
-            # RECORDING: Cancel recording (no save)
+            # RECORDING: Cancel recording (no save) - returns to previous state
             if state == State.RECORDING:
                 self.device_state = actions.action_cancel_recording(
-                    self.device_state, self._recorder, self._ui
+                    self.device_state, self._recorder, self._audio, self._ui
                 )
                 return
             

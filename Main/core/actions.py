@@ -84,15 +84,23 @@ def action_stop(device_state: DeviceState, audio_player, ui) -> DeviceState:
     return device_state
 
 
-def action_clear_chip(device_state: DeviceState, audio_player, ui) -> DeviceState:
-    """Clear loaded chip, return to IDLE_NO_CHIP"""
-    log_action("Clearing chip")
+def action_clear_chip(device_state: DeviceState, audio_player, ui, long_press: bool = False) -> DeviceState:
+    """Clear loaded chip, return to IDLE_NO_CHIP
+    
+    Args:
+        long_press: If True, play reset tone. If False (short press), play stop tone.
+    """
+    log_action("Clearing chip" + (" (long press)" if long_press else " (short press)"))
     audio_player.stop()
     device_state.loaded_chip = None
     device_state.state = State.IDLE_NO_CHIP
     device_state.was_playing_before_recording = False
     
-    ui.on_clear_chip()
+    # Short press = stop tone, long press = reset tone
+    if long_press:
+        ui.on_clear_chip()  # Reset tone
+    else:
+        ui.on_stop()  # Stop tone
     log_state(f"→ {device_state.state}")
     return device_state
 
@@ -106,18 +114,31 @@ def action_start_recording(device_state: DeviceState, audio_player, recorder, ui
     
     # Remember if we had active music context (PLAYING or PAUSED)
     # After recording, we return to PAUSED if music was active, else IDLE_CHIP_LOADED
+    was_playing = (device_state.state == State.PLAYING)
     device_state.was_playing_before_recording = (device_state.state in (State.PLAYING, State.PAUSED))
     device_state.previous_state = device_state.state
     
     # Pause music if playing
-    if device_state.state == State.PLAYING:
+    if was_playing:
         log_action("Pausing music for recording")
         audio_player.pause()
     
     log_action(f"Starting recording for chip: {device_state.loaded_chip.name}")
-    recorder.start(device_state.loaded_chip.name)
-    device_state.state = State.RECORDING
+    success = recorder.start(device_state.loaded_chip.name)
     
+    if not success:
+        # Recording failed - revert state changes
+        log_action("Recording failed to start")
+        device_state.was_playing_before_recording = False
+        device_state.previous_state = None
+        # Resume music if we paused it
+        if was_playing:
+            log_action("Resuming music after failed recording start")
+            audio_player.resume()
+        ui.on_error()
+        return device_state
+    
+    device_state.state = State.RECORDING
     ui.on_record_start()
     log_state(f"→ {device_state.state}")
     return device_state
@@ -141,18 +162,25 @@ def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceStat
     return device_state
 
 
-def action_cancel_recording(device_state: DeviceState, recorder, ui) -> DeviceState:
-    """Cancel recording without saving"""
+def action_cancel_recording(device_state: DeviceState, recorder, audio_player, ui) -> DeviceState:
+    """Cancel recording without saving - returns to exact previous state"""
     log_action("Canceling recording")
     recorder.cancel()
     
-    # Return to appropriate state  
-    if device_state.was_playing_before_recording:
+    # Return to exact previous state (not just PAUSED like save does)
+    previous = device_state.previous_state
+    if previous == State.PLAYING:
+        # Resume playback since we paused it when recording started
+        log_action("Resuming playback after cancel")
+        audio_player.resume()
+        device_state.state = State.PLAYING
+    elif previous == State.PAUSED:
         device_state.state = State.PAUSED
     else:
         device_state.state = State.IDLE_CHIP_LOADED
     
     device_state.was_playing_before_recording = False
+    device_state.previous_state = None
     
     ui.on_record_canceled()
     log_state(f"→ {device_state.state}")

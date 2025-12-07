@@ -28,11 +28,11 @@ class Recorder:
         os.makedirs(RECORDINGS_DIR, exist_ok=True)
         log_recording(f"Recorder initialized (output dir: {RECORDINGS_DIR})")
     
-    def start(self, chip_name: str = "unknown"):
-        """Start recording to file"""
+    def start(self, chip_name: str = "unknown") -> bool:
+        """Start recording to file. Returns True if recording started successfully."""
         if self._recording:
             log_error("Already recording!")
-            return
+            return False
         
         # Generate filename with timestamp and chip name
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -54,13 +54,17 @@ class Recorder:
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._recording = True
             log_success(f"Recording started: {self._current_file}")
+            return True
         except FileNotFoundError:
             log_error("arecord not found - running in simulation mode")
             self._recording = True  # Simulate recording
             log_recording("[SIMULATION] Recording started")
+            return True
         except Exception as e:
             log_error(f"Failed to start recording: {e}")
             self._current_file = None
+            self._recording = False
+            return False
     
     def stop(self) -> Optional[str]:
         """Stop recording and return file path"""
