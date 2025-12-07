@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.controller import Controller
 from hardware.health import HealthChecker
 from utils.logger import log, log_success, log_error
+from utils.setup_check import check_and_install_dependencies, check_mopidy_connection
 
 
 def print_banner():
@@ -66,6 +67,15 @@ def run_health_check():
 def main():
     """Initialize and run the main controller loop."""
     print_banner()
+    
+    # Check and install dependencies on startup
+    if "--skip-setup" not in sys.argv:
+        log("Checking dependencies...")
+        deps_ok = check_and_install_dependencies()
+        if not deps_ok:
+            log_event("⚠️  Some dependencies are missing - some features may not work")
+        check_mopidy_connection()
+        print()
     
     # Optional: Run health check
     if "--health-check" in sys.argv or "-h" in sys.argv:

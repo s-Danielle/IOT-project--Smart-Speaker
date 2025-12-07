@@ -1,0 +1,14 @@
+# Python dependencies for Smart Speaker
+# Install with: pip3 install -r requirements.txt
+
+# HTTP client for Mopidy JSON-RPC
+requests>=2.25.0
+
+# Hardware libraries (optional - will run in simulation mode if not available)
+# Install these on Raspberry Pi:
+# adafruit-circuitpython-pn532>=2.4.0  # For PN532 NFC reader
+# smbus2>=0.4.0                         # For PCF8574 button expander
+
+# Note: Hardware libraries are optional - the system will run in simulation mode
+# if they're not installed, which is useful for development on non-Pi systems.
+

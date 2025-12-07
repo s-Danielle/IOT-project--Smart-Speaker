@@ -46,9 +46,14 @@ class Controller:
         
         # Track record button arming (need to hold 3s then release)
         self._record_armed = False
+        self._countdown_played = False  # Track if countdown sound was played
         
         # Track stop button long-press to prevent repeated execution
         self._stop_long_press_triggered = False
+        
+        # Track double-click on Record button (for playing latest recording)
+        self._record_last_press_time = 0.0
+        self._record_double_click_window = 0.5  # 500ms window for double-click
         
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
@@ -91,6 +96,49 @@ class Controller:
     def stop(self):
         """Stop the main loop"""
         self._running = False
+    
+    def _play_latest_recording(self):
+        """Play the most recent recording file"""
+        from config.paths import RECORDINGS_DIR
+        
+        # Find all recording files
+        if not os.path.exists(RECORDINGS_DIR):
+            log_event("No recordings directory found")
+            self._ui.on_error()
+            return
+        
+        recording_files = []
+        for filename in os.listdir(RECORDINGS_DIR):
+            if filename.endswith('.wav') and filename.startswith('recording_'):
+                filepath = os.path.join(RECORDINGS_DIR, filename)
+                recording_files.append((filepath, os.path.getmtime(filepath)))
+        
+        if not recording_files:
+            log_event("No recordings found")
+            self._ui.on_error()
+            return
+        
+        # Sort by modification time (newest first)
+        recording_files.sort(key=lambda x: x[1], reverse=True)
+        latest_recording = recording_files[0][0]
+        
+        # Get absolute path for Mopidy
+        abs_path = os.path.abspath(latest_recording)
+        
+        log_event(f"Playing latest recording: {os.path.basename(latest_recording)}")
+        
+        # Convert to file:// URI for Mopidy (use absolute path)
+        file_uri = f"file://{abs_path}"
+        self._audio.play_uri(file_uri)
+        self._ui.on_play()
+        
+        # Track previous state so we can return to it on stop
+        # If no chip loaded, we'll return to IDLE_NO_CHIP, otherwise IDLE_CHIP_LOADED
+        self.device_state.previous_state = self.device_state.state
+        
+        # Update state to PLAYING
+        self.device_state.state = State.PLAYING
+        log_state(f"→ {self.device_state.state}")
     
     # =========================================================================
     # NFC HANDLING
@@ -191,10 +239,25 @@ class Controller:
     def _handle_record_button(self, state: State):
         """
         Handle Record button logic
-        - Hold 3s to arm recording
-        - Release after armed to start recording
-        - Short press while recording to save
+        - Double-click: Play latest recording
+        - Hold 3s (countdown plays): Release after countdown to start recording
+        - Short press while recording: Save recording
         """
+        # Check for double-click first (only when not recording)
+        if state != State.RECORDING:
+            if self._buttons.just_pressed(ButtonID.RECORD):
+                current_time = time.time()
+                time_since_last = current_time - self._record_last_press_time
+                
+                if 0.1 < time_since_last < self._record_double_click_window:
+                    # Double-click detected!
+                    log_button("Record double-click detected - playing latest recording")
+                    self._play_latest_recording()
+                    self._record_last_press_time = 0.0  # Reset to prevent triple-click
+                    return
+                else:
+                    self._record_last_press_time = current_time
+        
         # IDLE_NO_CHIP: No effect
         if state == State.IDLE_NO_CHIP:
             if self._buttons.just_released(ButtonID.RECORD):
@@ -215,6 +278,12 @@ class Controller:
         if self._buttons.is_pressed(ButtonID.RECORD):
             hold_time = self._buttons.hold_duration(ButtonID.RECORD)
             
+            # Play countdown sound when button is first pressed and held
+            if hold_time > 0.1 and not self._countdown_played:
+                log_button("🎙️ Playing countdown - hold for 3 seconds")
+                self._ui._sounds.play_record_start()  # Play countdown.wav
+                self._countdown_played = True
+            
             # Check if we just hit the 3s threshold
             if hold_time >= RECORD_HOLD_DURATION and not self._record_armed:
                 self._record_armed = True
@@ -222,6 +291,8 @@ class Controller:
         
         # On release: start recording if armed
         if self._buttons.just_released(ButtonID.RECORD):
+            self._countdown_played = False  # Reset countdown flag
+            
             if self._record_armed:
                 self._record_armed = False
                 log_button("Record button released - starting recording")
@@ -230,11 +301,13 @@ class Controller:
                 )
             else:
                 hold_time = self._buttons.get_release_duration(ButtonID.RECORD)
-                log_button(f"Record released too early ({hold_time:.1f}s < {RECORD_HOLD_DURATION}s)")
+                if hold_time < RECORD_HOLD_DURATION:
+                    log_button(f"Record released too early ({hold_time:.1f}s < {RECORD_HOLD_DURATION}s)")
         
         # Reset armed state if button released without triggering
         if not self._buttons.is_pressed(ButtonID.RECORD):
             self._record_armed = False
+            self._countdown_played = False
     
     def _handle_stop_button(self, state: State):
         """

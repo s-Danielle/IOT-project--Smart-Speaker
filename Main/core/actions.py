@@ -74,10 +74,16 @@ def action_pause(device_state: DeviceState, audio_player, ui) -> DeviceState:
 
 
 def action_stop(device_state: DeviceState, audio_player, ui) -> DeviceState:
-    """Stop playback, return to IDLE_CHIP_LOADED"""
+    """Stop playback, return to appropriate state based on chip status"""
     log_action("Stopping playback")
     audio_player.stop()
-    device_state.state = State.IDLE_CHIP_LOADED
+    
+    # Return to appropriate state: IDLE_CHIP_LOADED if chip exists, otherwise IDLE_NO_CHIP
+    # This handles the case where we're playing a recording (no chip) and stop
+    if device_state.loaded_chip is not None:
+        device_state.state = State.IDLE_CHIP_LOADED
+    else:
+        device_state.state = State.IDLE_NO_CHIP
     
     ui.on_stop()
     log_state(f"→ {device_state.state}")
@@ -139,7 +145,9 @@ def action_start_recording(device_state: DeviceState, audio_player, recorder, ui
         return device_state
     
     device_state.state = State.RECORDING
-    ui.on_record_start()
+    # Don't play countdown again - it already played during the hold
+    # Just log the start
+    log_action("Recording started")
     log_state(f"→ {device_state.state}")
     return device_state
 
