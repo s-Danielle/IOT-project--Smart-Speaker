@@ -124,3 +124,17 @@ class Sounds:
     def play_swipe(self):
         """Play soft no-action click (same chip scanned)"""
         self._play_file(paths.SOUND_SWIPE, "SWIPE (no action)")
+    
+    def stop(self):
+        """Stop any currently playing sound"""
+        if self._current_process is not None:
+            try:
+                self._current_process.terminate()
+                self._current_process.wait(timeout=0.1)
+            except:
+                try:
+                    self._current_process.kill()
+                except:
+                    pass
+            self._current_process = None
+            log_sound("[STOPPED] Current sound")

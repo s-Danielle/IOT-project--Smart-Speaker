@@ -5,7 +5,8 @@ Constants: timings, I2C addresses, etc.
 # Timing constants (in seconds)
 LOOP_INTERVAL = 0.05  # 50ms main loop interval
 RECORD_HOLD_DURATION = 3.0  # Hold duration to arm recording
-CLEAR_CHIP_HOLD_DURATION = 5.0  # Hold duration to clear chip
+CLEAR_CHIP_HOLD_DURATION = 3.0  # Hold duration to clear chip
+PLAY_LATEST_HOLD_DURATION = 2.0  # Hold duration on Play/Pause to play latest recording
 
 # I2C addresses
 PCF8574_ADDRESS = 0x27  # Button expander address
