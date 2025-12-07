@@ -1,0 +1,12 @@
+{
+  "bytearray(b'\\xe4\\x1c\\x9d\\xbb')": {
+    "name": "MyFirstChip",
+    "uri": "spotify:track:5hnyJvgoWiQUYZttV4wXy6",
+    "added_at": "2025-12-07T02:18:11"
+  },
+  "bytearray(b'\\x99\\x03\\xee\\xb9')": {
+    "name": "MySecondChip",
+    "uri": "spotify:track:0ntQJM78wzOLVeCUAW7Y45",
+    "added_at": "2025-12-07T02:27:22"
+  }
+}
