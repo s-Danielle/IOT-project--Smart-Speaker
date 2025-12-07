@@ -30,4 +30,7 @@ MOPIDY_PORT = 6680
 NFC_TIMEOUT = 0.1  # Short timeout for non-blocking reads
 
 # Recording settings
-RECORDING_DEVICE = "plughw:0,0"  # ALSA device for recording
+# Leave empty to use default ALSA device (recommended)
+# Or specify device like "plughw:0,0" or "hw:0,0"
+# List available devices with: arecord -l
+RECORDING_DEVICE = ""  # Empty = use default device (matches RecordShortAudio.sh)

@@ -66,16 +66,24 @@ class Recorder:
                 return False
         
         try:
-            # Start arecord process
-            log_recording(f"Starting arecord with device: {RECORDING_DEVICE}")
-            self._process = subprocess.Popen([
-                "arecord",
-                "-D", RECORDING_DEVICE,
-                "-f", AUDIO_FORMAT,
-                "-r", str(SAMPLE_RATE),
-                "-c", str(CHANNELS),
-                self._current_file
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            # Build arecord command - match working RecordShortAudio.sh format
+            # The working script uses: arecord -f cd -d DURATION FILENAME
+            # We'll use similar format but without -d (we'll stop manually)
+            arecord_cmd = ["arecord", "-f", "cd", self._current_file]
+            
+            # Only add -D device if specified and not empty
+            if RECORDING_DEVICE and RECORDING_DEVICE.strip():
+                arecord_cmd.insert(1, "-D")
+                arecord_cmd.insert(2, RECORDING_DEVICE)
+                log_recording(f"Starting arecord with device: {RECORDING_DEVICE}")
+            else:
+                log_recording("Starting arecord with default device")
+            
+            self._process = subprocess.Popen(
+                arecord_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE
+            )
             
             # Check if process started successfully
             time.sleep(0.1)  # Brief wait to check if process crashed immediately
