@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.state import DeviceState, State, ChipData
-from utils.logger import log_action, log_state
+from utils.logger import log_action, log_state, log_error
 
 
 def action_load_chip(device_state: DeviceState, chip_data: dict, audio_player, ui) -> DeviceState:

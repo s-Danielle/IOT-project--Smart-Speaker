@@ -370,16 +370,17 @@ class Controller:
                 self._ui.on_blocked_action()
             return
         
-        # RECORDING: Short press saves recording
+        # RECORDING: Press (not release) saves recording
+        # Detect button press (transition from not pressed to pressed)
         if state == State.RECORDING:
-            if self._buttons.just_released(ButtonID.RECORD):
+            if self._buttons.just_pressed(ButtonID.RECORD):
                 log_button("Record button pressed - saving recording")
                 self.device_state = actions.action_save_recording(
                     self.device_state, self._recorder, self._ui
                 )
             return
         
-        # Other states: Track hold duration for arming
+        # Other states: Track hold duration - recording starts at 3s automatically
         if self._buttons.is_pressed(ButtonID.RECORD):
             hold_time = self._buttons.hold_duration(ButtonID.RECORD)
             
@@ -389,33 +390,34 @@ class Controller:
                 self._ui._sounds.play_record_start()  # Play countdown.wav
                 self._countdown_played = True
             
-            # Check if we just hit the 3s threshold
+            # Start recording when 3s threshold is reached (whether button is still held or not)
             if hold_time >= RECORD_HOLD_DURATION and not self._record_armed:
                 self._record_armed = True
-                log_button(f"🎙️ Record ARMED (held {hold_time:.1f}s) - release to start recording")
-        
-        # On release: start recording if armed, or stop countdown if released early
-        if self._buttons.just_released(ButtonID.RECORD):
-            # Stop countdown sound if it's playing
-            if self._countdown_played:
-                log_button("Stopping countdown sound (button released)")
+                log_button(f"🎙️ Record ARMED (held {hold_time:.1f}s) - starting recording now")
+                # Stop countdown sound
                 self._ui._sounds.stop()
-            
-            self._countdown_played = False  # Reset countdown flag
-            
-            if self._record_armed:
-                self._record_armed = False
-                log_button("Record button released - starting recording")
+                self._countdown_played = False
+                # Start recording immediately (no need to wait for release)
                 self.device_state = actions.action_start_recording(
                     self.device_state, self._audio, self._recorder, self._ui
                 )
-            else:
+        
+        # On release: only stop countdown if recording hasn't started yet
+        if self._buttons.just_released(ButtonID.RECORD):
+            if not self._record_armed:
+                # Recording didn't start - stop countdown
+                if self._countdown_played:
+                    log_button("Stopping countdown sound (released before 3s)")
+                    self._ui._sounds.stop()
                 hold_time = self._buttons.get_release_duration(ButtonID.RECORD)
                 if hold_time < RECORD_HOLD_DURATION:
                     log_button(f"Record released too early ({hold_time:.1f}s < {RECORD_HOLD_DURATION}s)")
+            
+            # Reset flags (but _record_armed is already True if recording started)
+            self._countdown_played = False
         
-        # Reset armed state if button released without triggering
-        if not self._buttons.is_pressed(ButtonID.RECORD):
+        # Reset armed state if button released and we're not recording
+        if not self._buttons.is_pressed(ButtonID.RECORD) and state != State.RECORDING:
             self._record_armed = False
             self._countdown_played = False
     
