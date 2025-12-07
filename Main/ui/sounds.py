@@ -4,6 +4,7 @@ Play WAVs (chip-loaded beep, error beep…)
 
 import os
 import sys
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import paths
@@ -20,14 +21,42 @@ except:
 class Sounds:
     """WAV sound playback for UI feedback"""
     
-    def __init__(self, sounds_dir: str = None):
-        """Initialize sound player"""
+    def __init__(self, sounds_dir: str = None, cooldown: float = 0.1):
+        """Initialize sound player
+        
+        Args:
+            sounds_dir: Directory containing sound files
+            cooldown: Minimum time between sounds (seconds)
+        """
         self._sounds_dir = sounds_dir or paths.SOUNDS_DIR
-        log_sound(f"Sounds initialized (dir: {self._sounds_dir})")
+        self._cooldown = cooldown
+        self._last_sound_time = 0.0
+        self._current_process = None  # Track current aplay process
+        log_sound(f"Sounds initialized (dir: {self._sounds_dir}, cooldown: {cooldown}s)")
     
     def _play_file(self, filepath: str, name: str):
-        """Play a WAV file"""
-        log_sound(name)
+        """Play a WAV file (stops any currently playing sound)"""
+        current_time = time.time()
+        
+        # Check cooldown
+        if current_time - self._last_sound_time < self._cooldown:
+            log_sound(f"[SKIPPED] {name} (cooldown)")
+            return
+        
+        # Stop any currently playing sound
+        if self._current_process is not None:
+            try:
+                self._current_process.terminate()
+                self._current_process.wait(timeout=0.1)
+            except:
+                try:
+                    self._current_process.kill()
+                except:
+                    pass
+            self._current_process = None
+            log_sound(f"[STOPPED] Previous sound to play: {name}")
+        
+        log_sound(f"🔊 Playing: {name}")
         
         if not os.path.exists(filepath):
             log_error(f"Sound file not found: {filepath}")
@@ -35,13 +64,15 @@ class Sounds:
         
         try:
             # Use aplay for WAV playback (non-blocking)
-            subprocess.Popen(
+            self._current_process = subprocess.Popen(
                 ["aplay", "-q", filepath],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
+            self._last_sound_time = current_time
         except FileNotFoundError:
             log_sound(f"[SIMULATION] Would play: {name}")
+            self._last_sound_time = current_time
         except Exception as e:
             log_error(f"Failed to play sound: {e}")
     

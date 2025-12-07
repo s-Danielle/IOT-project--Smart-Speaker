@@ -22,6 +22,7 @@ from config.settings import (
     CLEAR_CHIP_HOLD_DURATION
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
+from typing import Optional
 
 
 class Controller:
@@ -54,6 +55,10 @@ class Controller:
         # Track double-click on Record button (for playing latest recording)
         self._record_last_press_time = 0.0
         self._record_double_click_window = 0.5  # 500ms window for double-click
+        
+        # Track NFC chip presence for edge detection
+        self._last_nfc_uid: Optional[str] = None
+        self._nfc_chip_present = False
         
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
@@ -101,17 +106,29 @@ class Controller:
         """Play the most recent recording file"""
         from config.paths import RECORDINGS_DIR
         
+        log_event("[DEBUG] _play_latest_recording() called")
+        
         # Find all recording files
         if not os.path.exists(RECORDINGS_DIR):
+            log_event(f"[DEBUG] Recordings directory does not exist: {RECORDINGS_DIR}")
             log_event("No recordings directory found")
             self._ui.on_error()
             return
         
+        log_event(f"[DEBUG] Scanning recordings directory: {RECORDINGS_DIR}")
         recording_files = []
-        for filename in os.listdir(RECORDINGS_DIR):
+        all_files = os.listdir(RECORDINGS_DIR)
+        log_event(f"[DEBUG] Found {len(all_files)} files in directory")
+        
+        for filename in all_files:
+            log_event(f"[DEBUG] Checking file: {filename}")
             if filename.endswith('.wav') and filename.startswith('recording_'):
                 filepath = os.path.join(RECORDINGS_DIR, filename)
-                recording_files.append((filepath, os.path.getmtime(filepath)))
+                mtime = os.path.getmtime(filepath)
+                recording_files.append((filepath, mtime))
+                log_event(f"[DEBUG] Found recording: {filename} (mtime: {mtime})")
+        
+        log_event(f"[DEBUG] Total recording files found: {len(recording_files)}")
         
         if not recording_files:
             log_event("No recordings found")
@@ -125,20 +142,27 @@ class Controller:
         # Get absolute path for Mopidy
         abs_path = os.path.abspath(latest_recording)
         
+        log_event(f"[DEBUG] Latest recording: {os.path.basename(latest_recording)}")
+        log_event(f"[DEBUG] Absolute path: {abs_path}")
         log_event(f"Playing latest recording: {os.path.basename(latest_recording)}")
         
         # Convert to file:// URI for Mopidy (use absolute path)
         file_uri = f"file://{abs_path}"
+        log_event(f"[DEBUG] File URI: {file_uri}")
+        log_event(f"[DEBUG] Calling audio.play_uri()...")
         self._audio.play_uri(file_uri)
+        log_event(f"[DEBUG] Calling ui.on_play()...")
         self._ui.on_play()
         
         # Track previous state so we can return to it on stop
         # If no chip loaded, we'll return to IDLE_NO_CHIP, otherwise IDLE_CHIP_LOADED
         self.device_state.previous_state = self.device_state.state
+        log_event(f"[DEBUG] Previous state saved: {self.device_state.previous_state}")
         
         # Update state to PLAYING
         self.device_state.state = State.PLAYING
         log_state(f"→ {self.device_state.state}")
+        log_event(f"[DEBUG] State updated to: {self.device_state.state}")
     
     # =========================================================================
     # NFC HANDLING
@@ -148,15 +172,28 @@ class Controller:
         """Handle NFC chip scans based on current state"""
         uid = self._nfc.read_uid()
         
-        if uid is None:
+        # Detect chip arrival/departure (edge detection)
+        chip_now_present = (uid is not None)
+        chip_just_arrived = chip_now_present and not self._nfc_chip_present
+        chip_just_removed = not chip_now_present and self._nfc_chip_present
+        
+        self._nfc_chip_present = chip_now_present
+        
+        # Only process on chip arrival (edge detection)
+        if not chip_just_arrived:
+            if chip_just_removed:
+                # Chip removed - reset tracking
+                self._last_nfc_uid = None
             return
         
+        # Chip just arrived - process it
         state = self.device_state.state
         
         # RECORDING: Ignore all NFC scans
         if state == State.RECORDING:
             log_event(f"NFC scan ignored (recording in progress)")
             self._ui.on_blocked_action()
+            self._last_nfc_uid = uid  # Track it so we don't process again
             return
         
         # Look up chip data
@@ -165,12 +202,14 @@ class Controller:
         if chip_data is None:
             log_event(f"Unknown chip scanned: {uid}")
             self._ui.on_error()
+            self._last_nfc_uid = uid
             return
         
         # Check if same chip is already loaded
         if self.device_state.loaded_chip and self.device_state.loaded_chip.uid == uid:
             log_event("Same chip scanned - no action")
             self._ui.on_same_chip_scanned()
+            self._last_nfc_uid = uid
             return
         
         # Different chip or no chip loaded - load the new chip
@@ -178,6 +217,7 @@ class Controller:
         self.device_state = actions.action_load_chip(
             self.device_state, chip_data, self._audio, self._ui
         )
+        self._last_nfc_uid = uid
     
     # =========================================================================
     # BUTTON HANDLING
@@ -249,14 +289,22 @@ class Controller:
                 current_time = time.time()
                 time_since_last = current_time - self._record_last_press_time
                 
+                log_button(f"[DEBUG] Record pressed - time since last: {time_since_last:.3f}s (window: {self._record_double_click_window}s)")
+                log_button(f"[DEBUG] Last press time: {self._record_last_press_time:.3f}, Current time: {current_time:.3f}")
+                
                 if 0.1 < time_since_last < self._record_double_click_window:
                     # Double-click detected!
-                    log_button("Record double-click detected - playing latest recording")
+                    log_button(f"✅ Record double-click detected! (gap: {time_since_last:.3f}s) - playing latest recording")
                     self._play_latest_recording()
                     self._record_last_press_time = 0.0  # Reset to prevent triple-click
                     return
                 else:
+                    if time_since_last < 0.1:
+                        log_button(f"[DEBUG] Too fast ({time_since_last:.3f}s < 0.1s) - ignoring")
+                    elif time_since_last >= self._record_double_click_window:
+                        log_button(f"[DEBUG] Too slow ({time_since_last:.3f}s >= {self._record_double_click_window}s) - not double-click")
                     self._record_last_press_time = current_time
+                    log_button(f"[DEBUG] Updated last press time to: {self._record_last_press_time:.3f}")
         
         # IDLE_NO_CHIP: No effect
         if state == State.IDLE_NO_CHIP:
