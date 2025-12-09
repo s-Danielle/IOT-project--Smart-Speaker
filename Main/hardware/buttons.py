@@ -20,12 +20,7 @@ from config.settings import (
 from utils.logger import log_button, log_error
 
 # Hardware imports
-try:
-    from smbus2 import SMBus
-    HAS_HARDWARE = True
-except ImportError:
-    HAS_HARDWARE = False
-    log_error("SMBus library not available - buttons in simulation mode")
+from smbus2 import SMBus
 
 
 class ButtonID(Enum):
@@ -60,15 +55,12 @@ class Buttons:
             btn: ButtonState() for btn in ButtonID
         }
         
-        if HAS_HARDWARE:
-            try:
-                self._bus = SMBus(1)
-                log_button("PCF8574 buttons initialized")
-            except Exception as e:
-                log_error(f"Failed to initialize buttons: {e}")
-                self._bus = None
-        else:
-            log_button("Buttons running in simulation mode")
+        try:
+            self._bus = SMBus(1)
+            log_button("PCF8574 buttons initialized")
+        except Exception as e:
+            log_error(f"Failed to initialize buttons: {e}")
+            self._bus = None
     
     def _read_raw(self) -> int:
         """Read raw byte from PCF8574"""

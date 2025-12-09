@@ -10,12 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import paths
 from utils.logger import log_sound, log_error
 
-# Try to import audio playback library
-try:
-    import subprocess
-    HAS_APLAY = True
-except:
-    HAS_APLAY = False
+import subprocess
 
 
 class Sounds:
@@ -113,8 +108,8 @@ class Sounds:
                 self._current_process = None
                 return  # Don't continue if playback failed
         except FileNotFoundError:
-            log_sound(f"[SIMULATION] Would play: {name}")
-            self._last_sound_time = current_time
+            log_error(f"aplay executable not found - cannot play sound: {name}")
+            log_error("On Raspberry Pi, install with: sudo apt-get install alsa-utils")
         except Exception as e:
             log_error(f"Failed to play sound: {e}")
             self._current_process = None
