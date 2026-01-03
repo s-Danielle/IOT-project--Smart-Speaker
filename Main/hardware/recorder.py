@@ -7,9 +7,6 @@ import os
 import time
 from typing import Optional
 from datetime import datetime
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from config.paths import RECORDINGS_DIR
 from config.settings import SAMPLE_RATE, CHANNELS, AUDIO_FORMAT, RECORDING_DEVICE
 from utils.logger import log_recording, log_error, log_success
