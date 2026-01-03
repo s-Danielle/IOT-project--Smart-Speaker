@@ -20,6 +20,8 @@ States:
 
 import sys
 import os
+import traceback
+
 
 # Add Main directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -90,7 +92,6 @@ def main():
         controller.run()
     except Exception as e:
         log_error(f"Fatal error: {e}")
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
