@@ -9,7 +9,6 @@ from enum import Enum, auto
 from typing import Optional, Dict
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import (
     PCF8574_ADDRESS, 
