@@ -158,14 +158,9 @@ class Controller:
         # 1. file:// URIs (if file backend is enabled)
         # 2. local:file: URIs (if local backend is configured)
         # 3. We'll try file:// first, then fall back to local:file: if needed
-        
         # Try file:// URI format first (works if file backend is enabled)
-        if os.name == 'nt':  # Windows
-            # Windows: file:///C:/path/to/file
-            file_uri = f"file:///{abs_path.replace(os.sep, '/')}"
-        else:
-            # Unix/Mac: file:///absolute/path (three slashes for absolute)
-            file_uri = f"file://{abs_path}"
+        # Unix/Mac: file:///absolute/path (three slashes for absolute)
+        file_uri = f"file://{abs_path}"
         
         # Alternative: Use local:file: URI if Mopidy-Local is configured
         # This requires the recordings directory to be in Mopidy's media_dir
