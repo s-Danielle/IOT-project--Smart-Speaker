@@ -38,3 +38,4 @@ Main/assets/.DS_Store
 .DS_Store
 Main/config/__pycache__/__init__.cpython-313.pyc
 Main/utils/__pycache__/logger.cpython-313.pyc
+**/build/
