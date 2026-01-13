@@ -14,8 +14,8 @@ TAGS_JSON = os.path.join(BASE_DIR, "config", "tags.json")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 SOUNDS_DIR = os.path.join(ASSETS_DIR, "sounds")
 
-# Recordings output
-RECORDINGS_DIR = os.path.join(BASE_DIR, "recordings")
+# Recordings output - unified with uploads under local_files
+RECORDINGS_DIR = os.path.join(BASE_DIR, "local_files", "recordings")
 
 # Sound file paths (mapped to actual wav files)
 SOUND_CHIP_LOADED = os.path.join(SOUNDS_DIR, "loaded_success.wav")

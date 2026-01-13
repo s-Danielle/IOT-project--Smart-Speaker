@@ -163,6 +163,22 @@ def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceStat
         if os.path.exists(saved_path):
             size = os.path.getsize(saved_path)
             log_action(f"Recording file verified: {saved_path} ({size} bytes)")
+            
+            # Add recording to library automatically
+            try:
+                from server import add_recording_to_library
+                # Use chip name in display name if available
+                chip_name = device_state.loaded_chip.name if device_state.loaded_chip else None
+                if chip_name:
+                    display_name = f"[RECORDING] {chip_name}"
+                else:
+                    display_name = None  # Will auto-generate from filename
+                add_recording_to_library(saved_path, display_name)
+                log_action(f"Recording added to library: {saved_path}")
+            except ImportError:
+                log_error("Could not import server module - recording not added to library")
+            except Exception as e:
+                log_error(f"Failed to add recording to library: {e}")
         else:
             log_error(f"Recording file not found after save: {saved_path}")
     else:
