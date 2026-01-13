@@ -1,8 +1,6 @@
-# iot w2022-2023 Pill Tracker app.
+# iot2
 
 A new Flutter project.
-
-### apk: https://drive.google.com/drive/folders/1zP6HoqXFI8vqbpb2QijArMUQaCCRXLvl
 
 ## Getting Started
 

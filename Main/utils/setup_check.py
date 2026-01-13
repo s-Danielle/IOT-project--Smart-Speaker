@@ -19,20 +19,22 @@ def check_and_install_dependencies():
         missing.append("requests")
         log_error("❌ requests library not found (required for Mopidy)")
     
-    # Check hardware libraries (optional)
+    # Check hardware libraries
     try:
         import board
         import busio
         from adafruit_pn532.i2c import PN532_I2C
         log_success("✅ NFC hardware libraries available")
     except ImportError:
-        log_event("⚠️  NFC hardware libraries not available (simulation mode)")
+        missing.append("adafruit-circuitpython-pn532")
+        log_error("❌ NFC hardware libraries not found")
     
     try:
         from smbus2 import SMBus
         log_success("✅ Button hardware libraries available")
     except ImportError:
-        log_event("⚠️  Button hardware libraries not available (simulation mode)")
+        missing.append("smbus2")
+        log_error("❌ Button hardware libraries not found")
     
     # If critical dependencies missing, offer to install
     if missing:
@@ -83,9 +85,9 @@ def check_mopidy_connection():
         log_success(f"✅ Mopidy connected (version: {version})")
         return True
     except ImportError:
-        log_event("⚠️  Cannot check Mopidy (requests not installed)")
+        log_error("❌ Cannot check Mopidy (requests not installed)")
         return False
     except Exception:
-        log_event("⚠️  Mopidy not accessible at localhost:6680 (simulation mode)")
+        log_error("❌ Mopidy not accessible at localhost:6680")
         return False
 

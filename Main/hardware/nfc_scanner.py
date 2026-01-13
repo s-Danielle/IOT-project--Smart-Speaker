@@ -11,15 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import PN532_I2C_ADDRESS, NFC_TIMEOUT
 from utils.logger import log_nfc, log_error
 
-# Hardware imports - will fail gracefully on non-Pi systems
-try:
-    import board
-    import busio
-    from adafruit_pn532.i2c import PN532_I2C
-    HAS_HARDWARE = True
-except ImportError:
-    HAS_HARDWARE = False
-    log_error("NFC hardware libraries not available - running in simulation mode")
+# Hardware imports
+import board
+import busio
+from adafruit_pn532.i2c import PN532_I2C
 
 
 class NFCScanner:
@@ -32,18 +27,15 @@ class NFCScanner:
         self._last_error_log_time = 0.0
         self._error_log_interval = 5.0  # Only log errors every 5 seconds
         
-        if HAS_HARDWARE:
-            try:
-                i2c = busio.I2C(board.SCL, board.SDA)
-                self._pn532 = PN532_I2C(i2c, address=PN532_I2C_ADDRESS, debug=False)
-                self._pn532.SAM_configuration()
-                fw = self._pn532.firmware_version
-                log_nfc(f"PN532 initialized, firmware: {fw}")
-            except Exception as e:
-                log_error(f"Failed to initialize NFC reader: {e}")
-                self._pn532 = None
-        else:
-            log_nfc("NFC Scanner running in simulation mode")
+        try:
+            i2c = busio.I2C(board.SCL, board.SDA)
+            self._pn532 = PN532_I2C(i2c, address=PN532_I2C_ADDRESS, debug=False)
+            self._pn532.SAM_configuration()
+            fw = self._pn532.firmware_version
+            log_nfc(f"PN532 initialized, firmware: {fw}")
+        except Exception as e:
+            log_error(f"Failed to initialize NFC reader: {e}")
+            self._pn532 = None
     
     def read_uid(self) -> Optional[str]:
         """

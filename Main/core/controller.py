@@ -158,18 +158,13 @@ class Controller:
         # 1. file:// URIs (if file backend is enabled)
         # 2. local:file: URIs (if local backend is configured)
         # 3. We'll try file:// first, then fall back to local:file: if needed
-        
-        # Try file:// URI format first (works if file backend is enabled)
-        if os.name == 'nt':  # Windows
-            # Windows: file:///C:/path/to/file
-            file_uri = f"file:///{abs_path.replace(os.sep, '/')}"
-        else:
-            # Unix/Mac: file:///absolute/path (three slashes for absolute)
-            file_uri = f"file://{abs_path}"
-        
         # Alternative: Use local:file: URI if Mopidy-Local is configured
         # This requires the recordings directory to be in Mopidy's media_dir
         # For now, we'll use file:// and let Mopidy handle it
+        
+        # Unix/Linux: file:///absolute/path (three slashes for absolute)
+        file_uri = f"file://{abs_path}"
+        
         
         log_event(f"[DEBUG] File URI: {file_uri}")
         log_event(f"[DEBUG] Note: Mopidy needs file backend enabled or local backend configured")
@@ -289,23 +284,25 @@ class Controller:
         - Long press (2s): Play latest recording
         - Short press: Toggle play/pause
         """
+        # IDLE_NO_CHIP: Play error immediately on press, don't track hold
+        if state == State.IDLE_NO_CHIP:
+            if self._buttons.just_pressed(ButtonID.PLAY_PAUSE):
+                log_event("Play/Pause blocked - no chip loaded")
+                self._ui.on_blocked_action()
+            return
+        
+        # RECORDING: Play error immediately on press, don't track hold
+        if state == State.RECORDING:
+            if self._buttons.just_pressed(ButtonID.PLAY_PAUSE):
+                log_event("Play/Pause blocked - recording in progress")
+                self._ui.on_blocked_action()
+            return
+        
         # Check for long press first (play latest recording)
         if self._buttons.is_pressed(ButtonID.PLAY_PAUSE):
             hold_time = self._buttons.hold_duration(ButtonID.PLAY_PAUSE)
             if hold_time >= PLAY_LATEST_HOLD_DURATION and not self._play_pause_long_press_triggered:
                 self._play_pause_long_press_triggered = True
-                
-                # Validate state before playing recording
-                if state == State.IDLE_NO_CHIP:
-                    log_event("Play latest recording blocked - no chip loaded")
-                    self._ui.on_blocked_action()
-                    return
-                
-                if state == State.RECORDING:
-                    log_event("Play latest recording blocked - recording in progress")
-                    self._ui.on_blocked_action()
-                    return
-                
                 log_button(f"▶️ Play/Pause held {hold_time:.1f}s - PLAYING LATEST RECORDING")
                 self._play_latest_recording()
                 return
@@ -323,18 +320,6 @@ class Controller:
             return
         
         log_button("Play/Pause button action")
-        
-        # IDLE_NO_CHIP: No effect
-        if state == State.IDLE_NO_CHIP:
-            log_event("Play/Pause blocked - no chip loaded")
-            self._ui.on_blocked_action()
-            return
-        
-        # RECORDING: Ignored
-        if state == State.RECORDING:
-            log_event("Play/Pause blocked - recording in progress")
-            self._ui.on_blocked_action()
-            return
         
         # IDLE_CHIP_LOADED: Start playback
         if state == State.IDLE_CHIP_LOADED:
@@ -363,9 +348,9 @@ class Controller:
         - Hold 3s (countdown plays): Release after countdown to start recording
         - Short press while recording: Save recording
         """
-        # IDLE_NO_CHIP: No effect
+        # IDLE_NO_CHIP: Play error immediately on press, don't track hold
         if state == State.IDLE_NO_CHIP:
-            if self._buttons.just_released(ButtonID.RECORD):
+            if self._buttons.just_pressed(ButtonID.RECORD):
                 log_event("Record blocked - no chip loaded")
                 self._ui.on_blocked_action()
             return
@@ -427,9 +412,9 @@ class Controller:
         - Short press: Stop playback OR cancel recording
         - Long press (5s): Clear chip
         """
-        # IDLE_NO_CHIP: No effect
+        # IDLE_NO_CHIP: Play error immediately on press, don't track hold
         if state == State.IDLE_NO_CHIP:
-            if self._buttons.just_released(ButtonID.STOP):
+            if self._buttons.just_pressed(ButtonID.STOP):
                 log_event("Stop blocked - no chip loaded")
                 self._ui.on_blocked_action()
             return
