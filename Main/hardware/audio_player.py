@@ -12,9 +12,8 @@ from utils.logger import log_audio, log_error, log_success
 # Mopidy RPC client
 try:
     import requests
-    HAS_REQUESTS = True
 except ImportError:
-    HAS_REQUESTS = False
+    raise ImportError("requests library is required. Install with: pip install requests")
 
 
 class AudioPlayer:
@@ -26,17 +25,10 @@ class AudioPlayer:
         self._playing = False
         self._current_uri = None
         self._request_id = 0
-        
-        if not HAS_REQUESTS:
-            log_error("requests library not available - audio in simulation mode")
-        else:
-            log_audio(f"Audio player initialized (Mopidy at {self._url})")
+        log_audio(f"Audio player initialized (Mopidy at {self._url})")
     
     def _rpc(self, method: str, params: dict = None) -> dict:
         """Send JSON-RPC request to Mopidy"""
-        if not HAS_REQUESTS:
-            log_audio(f"[SIMULATION] RPC: {method}")
-            return {}
         
         self._request_id += 1
         payload = {

@@ -26,43 +26,42 @@ else
 fi
 echo ""
 
-# Check for hardware libraries (optional)
+# Check for hardware libraries (required for full functionality)
 echo "Checking hardware libraries..."
 if python3 -c "import board, busio, adafruit_pn532" 2>/dev/null; then
     echo "✅ NFC hardware libraries available"
 else
-    echo "⚠️  NFC hardware libraries not found (will run in simulation mode)"
+    echo "❌ NFC hardware libraries not found (required for NFC scanning)"
+    echo "   Install with: pip3 install adafruit-circuitpython-pn532"
 fi
 
 if python3 -c "from smbus2 import SMBus" 2>/dev/null; then
     echo "✅ Button hardware libraries available"
 else
-    echo "⚠️  Button hardware libraries not found (will run in simulation mode)"
+    echo "❌ Button hardware libraries not found (required for button input)"
+    echo "   Install with: pip3 install smbus2"
 fi
 echo ""
 
 # Check for system tools
 echo "Checking system tools..."
-if command -v aplay &> /dev/null; then
-    echo "✅ aplay found (for sound playback)"
-else
-    echo "⚠️  aplay not found (sound playback may not work)"
-fi
-
 if command -v arecord &> /dev/null; then
     echo "✅ arecord found (for recording)"
 else
-    echo "⚠️  arecord not found (recording will run in simulation mode)"
+    echo "❌ arecord not found (required for recording)"
+    echo "   Install with: sudo apt-get install alsa-utils"
 fi
 echo ""
 
-# Check Mopidy connection
-echo "Checking Mopidy connection..."
+# Check Mopidy connection (REQUIRED)
+echo "Checking Mopidy connection (REQUIRED)..."
 if python3 -c "import requests; requests.post('http://localhost:6680/mopidy/rpc', json={'jsonrpc':'2.0','id':1,'method':'core.get_version'}, timeout=2)" 2>/dev/null; then
     echo "✅ Mopidy is running and accessible"
 else
-    echo "⚠️  Mopidy not accessible at localhost:6680"
+    echo "❌ Mopidy not accessible at localhost:6680"
+    echo "   Mopidy is REQUIRED for all audio playback"
     echo "   Make sure Mopidy is running: sudo systemctl start mopidy"
+    echo "   Or install Mopidy: sudo apt-get install mopidy"
 fi
 echo ""
 

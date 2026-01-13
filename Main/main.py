@@ -26,8 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.controller import Controller
 from hardware.health import HealthChecker
-from utils.logger import log, log_success, log_error
+from utils.logger import log, log_success, log_error, log_event
 from utils.setup_check import check_and_install_dependencies, check_mopidy_connection
+from server import start_server
 
 
 def print_banner():
@@ -83,6 +84,13 @@ def main():
         if not all_healthy and "--strict" in sys.argv:
             log_error("Strict mode: exiting due to health check failures")
             sys.exit(1)
+    
+    # Start HTTP server in background thread
+    log("Starting HTTP server...")
+    server_thread = start_server(port=8080)
+    # Give server a moment to start
+    import time
+    time.sleep(0.5)
     
     # Create and run controller
     try:
