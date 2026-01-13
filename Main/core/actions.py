@@ -42,6 +42,12 @@ def action_play(device_state: DeviceState, audio_player, ui) -> DeviceState:
         ui.on_blocked_action()
         return device_state
     
+    # Check if chip has a song assigned
+    if not device_state.loaded_chip.uri:
+        log_action(f"Cannot play: chip '{device_state.loaded_chip.name}' has no song assigned")
+        ui.on_blocked_action()
+        return device_state
+    
     log_action(f"Starting playback: {device_state.loaded_chip.name}")
     audio_player.play_uri(device_state.loaded_chip.uri)
     device_state.state = State.PLAYING

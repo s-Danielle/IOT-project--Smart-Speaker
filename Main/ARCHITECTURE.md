@@ -371,21 +371,15 @@ def start(self, chip_name: str):
 ---
 
 #### `hardware/chip_store.py`
-Manages NFC chip database from `config/tags.json`.
+Provides NFC chip lookup using `server_data.json` (unified with HTTP server).
 
-```json
-// tags.json format:
-{
-  "bytearray(b'\\xe4\\x1c\\x9d\\xbb')": {
-    "name": "MyFirstChip",
-    "uri": "spotify:track:5hnyJvgoWiQUYZttV4wXy6"
-  }
-}
-```
+**Features:**
+- Uses same data source as the mobile app
+- Auto-registers unknown chips when scanned (so they appear in app)
+- Resolves song URIs from library by song_id
 
 **Methods:**
-- `lookup(uid)` - Find chip data by UID
-- `reload()` - Reload tags from disk
+- `lookup(uid)` - Find chip data by UID (auto-registers if new)
 - `get_all_uids()` - List all known UIDs
 
 ---
@@ -480,24 +474,32 @@ RECORDINGS_DIR = BASE_DIR + "local_files/recordings/"
 ### HTTP Server (REST API)
 
 #### `server.py`
-A lightweight HTTP server for the **Flutter mobile app** to manage chips and library.
+HTTP server for the **Flutter mobile app** and **unified data management**.
+
+This is the **single source of truth** for all chip and library data. Both the mobile app and NFC scanner read from the same `server_data.json` file.
+
+**Key Features:**
+- Unified data store shared with NFC scanner
+- Auto-migration from old `tags.json` format
+- Thread-safe data access
+- Auto-registers new chips when scanned
 
 **Endpoints:**
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/status` | Connection status |
-| GET | `/chips` | List all chips |
+| GET | `/chips` | List all chips (with uid, name, song_id) |
 | GET | `/library` | List all songs in library |
-| PUT | `/chips/{id}` | Update chip assignment |
+| PUT | `/chips/{id}` | Update chip name or song assignment |
 | PUT | `/library/{id}` | Update song metadata |
 | POST | `/library` | Add new song to library |
 | POST | `/files` | Upload audio file |
-| DELETE | `/chips/{id}/assignment` | Clear chip assignment |
+| DELETE | `/chips/{id}/assignment` | Clear chip's song assignment |
 | DELETE | `/library/{id}` | Delete song from library |
 
 **Data Storage:**
-- `server_data.json` - Persistent storage for chips/library
+- `server_data.json` - Unified storage for chips & library (shared with NFC scanner)
 - `local_files/uploads/` - Uploaded audio files
 - `local_files/recordings/` - Audio recordings
 
@@ -643,23 +645,41 @@ Connect via:
 
 ## 📝 Configuration Files
 
-### `config/tags.json`
-Map NFC chip UIDs to songs:
+### `server_data.json` (Unified Data Store)
+
+This is the **single source of truth** for both the NFC scanner and the mobile app.
 
 ```json
 {
-  "bytearray(b'\\xe4\\x1c\\x9d\\xbb')": {
-    "name": "Kids Songs",
-    "uri": "spotify:track:5hnyJvgoWiQUYZttV4wXy6"
-  }
+  "chips": [
+    {
+      "id": "chip001",
+      "uid": "bytearray(b'\\xe4\\x1c\\x9d\\xbb')",
+      "name": "Kids Songs",
+      "song_id": "song001",
+      "song_name": "Morning Jazz"
+    }
+  ],
+  "library": [
+    {
+      "id": "song001", 
+      "name": "Morning Jazz",
+      "uri": "spotify:track:5hnyJvgoWiQUYZttV4wXy6"
+    }
+  ]
 }
 ```
 
 ### Adding a New Chip
 
-1. Scan the chip to get its UID (check logs)
-2. Add entry to `tags.json` with URI
-3. Restart or call `ChipStore.reload()`
+1. **Scan the chip** - it will be auto-registered and appear in the app
+2. **Open the mobile app** - find the new chip in the list
+3. **Assign a song** - select a song from the library
+4. **Scan again** - music will play!
+
+### Migration from `tags.json`
+
+If you have existing chips in `config/tags.json`, they will be automatically migrated to `server_data.json` on first startup.
 
 ---
 

@@ -244,11 +244,12 @@ class Controller:
             self._last_nfc_uid = uid  # Track it so we don't process again
             return
         
-        # Look up chip data
+        # Look up chip data (auto-registers unknown chips)
         chip_data = self._chip_store.lookup(uid)
         
         if chip_data is None:
-            log_event(f"Unknown chip scanned: {uid}")
+            # This shouldn't happen with auto-registration, but handle it
+            log_event(f"Failed to look up chip: {uid}")
             self._ui.on_error()
             self._last_nfc_uid = uid
             return
@@ -257,6 +258,21 @@ class Controller:
         if self.device_state.loaded_chip and self.device_state.loaded_chip.uid == uid:
             log_event("Same chip scanned - no action")
             self._ui.on_same_chip_scanned()
+            self._last_nfc_uid = uid
+            return
+        
+        # Check if chip has a song assigned
+        if not chip_data.get('uri'):
+            # Chip recognized but no song assigned
+            if chip_data.get('is_new'):
+                log_event(f"New chip registered: '{chip_data.get('name')}' - assign a song in the app!")
+            else:
+                log_event(f"Chip '{chip_data.get('name')}' has no song assigned - use the app to assign one")
+            
+            # Still load the chip so user can record on it
+            self.device_state = actions.action_load_chip(
+                self.device_state, chip_data, self._audio, self._ui
+            )
             self._last_nfc_uid = uid
             return
         
