@@ -1,0 +1,14 @@
+i[Unit]
+Description=My Custom Service
+#After=network.target
+
+[Service]
+Type=simple
+User=iot-proj
+WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
+# Path to the executable or script. MUST use absolute paths.
+ExecStart=/usr/bin/python3 /home/iot-proj/IOT-project--Smart-Speaker/Main/main.py
+Restart=on-failure
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
