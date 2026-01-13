@@ -35,8 +35,8 @@ DEFAULT_DATA = {
         # song_id links to library, uri is resolved from library
     ],
     "library": [
-        {"id": "song001", "name": "Morning Jazz", "uri": "spotify:track:abc123"},
-        {"id": "song002", "name": "Lullaby", "uri": "file:///music/lullaby.mp3"},
+        {"id": "song001", "name": "Surprise", "uri": "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"},
+        {"id": "song002", "name": "Lights", "uri": "file:///home/iot-proj/lights.mp3"},
     ]
 }
 

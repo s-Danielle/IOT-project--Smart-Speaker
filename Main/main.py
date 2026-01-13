@@ -19,10 +19,8 @@ States:
 """
 
 import sys
-import os
+import time
 
-# Add Main directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.controller import Controller
 from hardware.health import HealthChecker
@@ -70,6 +68,7 @@ def main():
     print_banner()
     
     # Check and install dependencies on startup
+    #TODO: do we need this?
     if "--skip-setup" not in sys.argv:
         log("Checking dependencies...")
         deps_ok = check_and_install_dependencies()
@@ -89,7 +88,6 @@ def main():
     log("Starting HTTP server...")
     server_thread = start_server(port=8080)
     # Give server a moment to start
-    import time
     time.sleep(0.5)
     
     # Create and run controller

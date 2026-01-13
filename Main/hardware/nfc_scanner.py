@@ -3,10 +3,8 @@ PN532 NFC reader (non-blocking read_uid)
 """
 
 from typing import Optional
-import sys
-import os
 import time
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 from config.settings import PN532_I2C_ADDRESS, NFC_TIMEOUT
 from utils.logger import log_nfc, log_error

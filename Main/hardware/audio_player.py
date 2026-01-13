@@ -2,10 +2,6 @@
 Mopidy wrapper: play_uri, pause, stop
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from config.settings import MOPIDY_HOST, MOPIDY_PORT
 from utils.logger import log_audio, log_error, log_success
 

@@ -3,10 +3,6 @@ Pure action handlers (play, stop, record…)
 These update state and call I/O, but contain no hardware code directly.
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from core.state import DeviceState, State, ChipData
 from utils.logger import log_action, log_state, log_error
 
