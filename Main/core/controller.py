@@ -434,20 +434,24 @@ class Controller:
                 self._ui.on_blocked_action()
             return
         
-        # Check for long press (5s) to clear chip
+        # Check for long press (3s) to clear chip
+        # Exception: During RECORDING, long press just cancels (keeps chip loaded)
         if self._buttons.is_pressed(ButtonID.STOP):
             hold_time = self._buttons.hold_duration(ButtonID.STOP)
             
             # Only trigger once per long press (prevent repeated execution)
             if hold_time >= CLEAR_CHIP_HOLD_DURATION and not self._stop_long_press_triggered:
                 self._stop_long_press_triggered = True
-                log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
                 
                 if state == State.RECORDING:
-                    self.device_state = actions.action_cancel_recording_and_clear(
+                    # During recording: long press just cancels (keeps chip loaded)
+                    log_button(f"🔄 Stop held {hold_time:.1f}s - CANCELING RECORDING (keeping chip)")
+                    self.device_state = actions.action_cancel_recording(
                         self.device_state, self._recorder, self._audio, self._ui
                     )
                 else:
+                    # All other states: long press clears chip
+                    log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
                     self.device_state = actions.action_clear_chip(
                         self.device_state, self._audio, self._ui, long_press=True
                     )
