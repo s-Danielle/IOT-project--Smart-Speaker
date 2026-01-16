@@ -68,6 +68,10 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        log("Shutting down HTTP server...")
+        server_thread.join()
+        log("HTTP server shut down")
 
 
 if __name__ == "__main__":
