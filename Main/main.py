@@ -69,8 +69,10 @@ def main():
         traceback.print_exc()
         sys.exit(1)
     finally:
+        # the thread is running as a daemon, but it won't hurt to join it
         log("Shutting down HTTP server...")
-        server_thread.join()
+        server_thread.stop()  # Gracefully stop the server
+        server_thread.join()  # Wait for thread to finish
         log("HTTP server shut down")
 
 
