@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python
 """
 Entry point: create controller + run loop
 
@@ -25,26 +25,8 @@ import time
 from core.controller import Controller
 from hardware.health import HealthChecker
 from utils.logger import log, log_success, log_error, log_event
-from utils.setup_check import check_and_install_dependencies, check_mopidy_connection
 from server import start_server
 
-
-def print_banner():
-    """Print startup banner"""
-    print()
-    print("╔════════════════════════════════════════════════════════════╗")
-    print("║                                                            ║")
-    print("║   🔊 SMART SPEAKER - Raspberry Pi IoT Project 🔊          ║")
-    print("║                                                            ║")
-    print("╠════════════════════════════════════════════════════════════╣")
-    print("║  Controls:                                                 ║")
-    print("║    • Play/Pause: Toggle playback                          ║")
-    print("║    • Record: Hold 3s → release → short press to save      ║")
-    print("║    • Stop: Short = stop, Long (5s) = clear chip           ║")
-    print("║                                                            ║")
-    print("║  Scan NFC chip to load music!                             ║")
-    print("╚════════════════════════════════════════════════════════════╝")
-    print()
 
 
 def run_health_check():
@@ -64,19 +46,6 @@ def run_health_check():
 
 
 def main():
-    """Initialize and run the main controller loop."""
-    print_banner()
-    
-    # Check and install dependencies on startup
-    #TODO: do we need this?
-    if "--skip-setup" not in sys.argv:
-        log("Checking dependencies...")
-        deps_ok = check_and_install_dependencies()
-        if not deps_ok:
-            log_event("⚠️  Some dependencies are missing - some features may not work")
-        check_mopidy_connection()
-        print()
-    
     # Optional: Run health check
     if "--health-check" in sys.argv or "-h" in sys.argv:
         all_healthy = run_health_check()
