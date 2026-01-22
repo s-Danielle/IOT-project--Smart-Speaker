@@ -16,6 +16,12 @@ PN532_I2C_ADDRESS = 0x24  # NFC reader address
 BUTTON_PLAY_PAUSE_BIT = 0  # P0
 BUTTON_RECORD_BIT = 1       # P1
 BUTTON_STOP_BIT = 2         # P2
+BUTTON_VOLUME_UP_BIT = 3    # P3 (Button 4)
+BUTTON_VOLUME_DOWN_BIT = 4  # P4 (Button 5)
+
+# Volume settings
+VOLUME_STEP = 10  # Volume change per button press (0-100 scale)
+VOLUME_DEFAULT = 50  # Default volume level
 
 # Audio settings
 SAMPLE_RATE = 44100

@@ -31,5 +31,9 @@ class Lights:
     def show_success(self):
         pass
     
+    def show_volume(self, volume: int):
+        """Show volume level feedback (0-100)"""
+        pass
+    
     def off(self):
         pass

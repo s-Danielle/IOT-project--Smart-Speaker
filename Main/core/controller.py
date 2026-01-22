@@ -283,6 +283,9 @@ class Controller:
         
         # Handle Stop button
         self._handle_stop_button(state)
+        
+        # Handle Volume buttons (work in all states except recording)
+        self._handle_volume_buttons(state)
     
     def _handle_play_pause_button(self, state: State):
         """Handle Play/Pause button logic
@@ -486,3 +489,30 @@ class Controller:
                     self.device_state, self._audio, self._ui
                 )
                 return
+    
+    def _handle_volume_buttons(self, state: State):
+        """
+        Handle Volume Up/Down buttons
+        - Volume can be adjusted in any state except RECORDING
+        - Works while playing, paused, or idle (via Mopidy's mixer API)
+        """
+        # RECORDING: Volume buttons are blocked
+        if state == State.RECORDING:
+            if self._buttons.just_pressed(ButtonID.VOLUME_UP) or self._buttons.just_pressed(ButtonID.VOLUME_DOWN):
+                log_event("Volume adjustment blocked - recording in progress")
+                self._ui.on_blocked_action()
+            return
+        
+        # Volume Up - trigger on button press (not release) for responsive feel
+        if self._buttons.just_pressed(ButtonID.VOLUME_UP):
+            new_vol = self._audio.volume_up()
+            log_button(f"🔊 Volume UP → {new_vol}")
+            self._ui.on_volume_change(new_vol)
+            return
+        
+        # Volume Down - trigger on button press (not release) for responsive feel
+        if self._buttons.just_pressed(ButtonID.VOLUME_DOWN):
+            new_vol = self._audio.volume_down()
+            log_button(f"🔉 Volume DOWN → {new_vol}")
+            self._ui.on_volume_change(new_vol)
+            return

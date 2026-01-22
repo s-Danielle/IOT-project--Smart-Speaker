@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import MOPIDY_HOST, MOPIDY_PORT
+from config.settings import MOPIDY_HOST, MOPIDY_PORT, VOLUME_STEP, VOLUME_DEFAULT
 from utils.logger import log_audio, log_error, log_success
 
 # Mopidy RPC client
@@ -101,6 +101,46 @@ class AudioPlayer:
     def get_current_uri(self) -> str:
         """Get currently loaded URI"""
         return self._current_uri
+    
+    # =========================================================================
+    # VOLUME CONTROL (works while playing, paused, or stopped)
+    # Uses Mopidy's mixer API: core.mixer.get_volume / core.mixer.set_volume
+    # =========================================================================
+    
+    def get_volume(self) -> int:
+        """Get current volume level (0-100)"""
+        result = self._rpc("core.mixer.get_volume")
+        if result is None:
+            log_error("Failed to get volume, returning default")
+            return VOLUME_DEFAULT
+        return result
+    
+    def set_volume(self, volume: int) -> bool:
+        """Set volume level (0-100). Returns True if successful."""
+        # Clamp volume to valid range
+        volume = max(0, min(100, volume))
+        log_audio(f"🔊 Setting volume to {volume}")
+        result = self._rpc("core.mixer.set_volume", {"volume": volume})
+        # set_volume returns True on success
+        if result:
+            log_success(f"Volume set to {volume}")
+        return result is True
+    
+    def volume_up(self) -> int:
+        """Increase volume by VOLUME_STEP. Returns new volume level."""
+        current = self.get_volume()
+        new_volume = min(100, current + VOLUME_STEP)
+        self.set_volume(new_volume)
+        log_audio(f"🔊 Volume UP: {current} → {new_volume}")
+        return new_volume
+    
+    def volume_down(self) -> int:
+        """Decrease volume by VOLUME_STEP. Returns new volume level."""
+        current = self.get_volume()
+        new_volume = max(0, current - VOLUME_STEP)
+        self.set_volume(new_volume)
+        log_audio(f"🔉 Volume DOWN: {current} → {new_volume}")
+        return new_volume
     
     def close(self):
         """Clean up audio player resources"""
