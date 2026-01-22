@@ -4,9 +4,7 @@ Wrap health_check: run startup diagnostics
 
 from dataclasses import dataclass
 from typing import List
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 from utils.logger import log, log_success, log_error
 

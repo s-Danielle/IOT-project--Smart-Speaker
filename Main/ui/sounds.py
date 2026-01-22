@@ -1,41 +1,34 @@
 """
-Play WAVs (chip-loaded beep, error beep…)
+Play WAVs (chip-loaded beep, error beep…) through Mopidy
 """
 
 import os
-import sys
 import time
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import paths
 from utils.logger import log_sound, log_error
-
-# Try to import audio playback library
-try:
-    import subprocess
-    HAS_APLAY = True
-except:
-    HAS_APLAY = False
+from hardware.audio_player import AudioPlayer
 
 
 class Sounds:
-    """WAV sound playback for UI feedback"""
+    """WAV sound playback for UI feedback using Mopidy"""
     
-    def __init__(self, sounds_dir: str = None, cooldown: float = 0.1):
+    def __init__(self, sounds_dir: str = None, cooldown: float = 0.1, audio_player: AudioPlayer = None):
         """Initialize sound player
         
         Args:
             sounds_dir: Directory containing sound files
             cooldown: Minimum time between sounds (seconds)
+            audio_player: AudioPlayer instance (creates new one if not provided)
         """
         self._sounds_dir = sounds_dir or paths.SOUNDS_DIR
         self._cooldown = cooldown
         self._last_sound_time = 0.0
-        self._current_process = None  # Track current aplay process
+        self._audio_player = audio_player or AudioPlayer()
         log_sound(f"Sounds initialized (dir: {self._sounds_dir}, cooldown: {cooldown}s)")
     
     def _play_file(self, filepath: str, name: str):
-        """Play a WAV file (stops any currently playing sound)"""
+        """Play a WAV file through Mopidy"""
         current_time = time.time()
         
         # Check cooldown
@@ -43,81 +36,22 @@ class Sounds:
             log_sound(f"[SKIPPED] {name} (cooldown)")
             return
         
-        # Stop any currently playing sound
-        if self._current_process is not None:
-            try:
-                # Check if process is still running
-                if self._current_process.poll() is None:
-                    # Process is still running, terminate it
-                    self._current_process.terminate()
-                    try:
-                        self._current_process.wait(timeout=0.2)  # Longer timeout
-                    except subprocess.TimeoutExpired:
-                        # Force kill if terminate didn't work
-                        self._current_process.kill()
-                        self._current_process.wait()
-                else:
-                    # Process already finished, check for errors
-                    if self._current_process.stderr:
-                        try:
-                            stderr_output = self._current_process.stderr.read().decode()
-                            if stderr_output:
-                                log_error(f"Previous aplay had errors: {stderr_output}")
-                        except:
-                            pass
-            except Exception as e:
-                log_error(f"Error stopping previous sound: {e}")
-            finally:
-                self._current_process = None
-                log_sound(f"[STOPPED] Previous sound to play: {name}")
-                # Small delay to let ALSA release the device
-                time.sleep(0.05)
-        
-        log_sound(f"🔊 Playing: {name}")
-        
         if not os.path.exists(filepath):
             log_error(f"Sound file not found: {filepath}")
             return
         
+        log_sound(f"🔊 Playing: {name}")
+        
         try:
-            # Use aplay for WAV playback (non-blocking)
-            # Use -D default to avoid device conflicts, and capture stderr
-            self._current_process = subprocess.Popen(
-                ["aplay", "-q", filepath],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE
-            )
-            self._last_sound_time = current_time
+            # Convert filepath to file:// URI for Mopidy
+            abs_path = os.path.abspath(filepath)
+            uri = f"file://{abs_path}"
             
-            # Check if process started successfully (after brief delay)
-            time.sleep(0.1)  # Longer wait to check if process crashed
-            if self._current_process.poll() is not None:
-                # Process exited immediately - likely an error
-                stderr_output = ""
-                if self._current_process.stderr:
-                    try:
-                        stderr_output = self._current_process.stderr.read().decode().strip()
-                    except:
-                        stderr_output = "Could not read stderr"
-                
-                if stderr_output:
-                    log_error(f"aplay failed: {stderr_output}")
-                    # If it's a permission/device lock error, suggest solutions
-                    if "Permission denied" in stderr_output or "unable to create IPC" in stderr_output:
-                        log_error("Audio device may be locked by another process (arecord/Mopidy)")
-                        log_error("Try: sudo usermod -a -G audio $USER (then logout/login)")
-                        log_error("Or check: lsof | grep snd")
-                else:
-                    log_error(f"aplay process exited immediately (exit code: {self._current_process.returncode})")
-                log_error(f"Sound file: {filepath}")
-                self._current_process = None
-                return  # Don't continue if playback failed
-        except FileNotFoundError:
-            log_sound(f"[SIMULATION] Would play: {name}")
+            # Play through Mopidy
+            self._audio_player.play_uri(uri)
             self._last_sound_time = current_time
         except Exception as e:
-            log_error(f"Failed to play sound: {e}")
-            self._current_process = None
+            log_error(f"Failed to play sound through Mopidy: {e}")
     
     def play(self, sound_name: str):
         """Play a sound by filename"""
@@ -170,20 +104,8 @@ class Sounds:
     
     def stop(self):
         """Stop any currently playing sound"""
-        if self._current_process is not None:
-            try:
-                # Check if process is still running
-                if self._current_process.poll() is None:
-                    # Process is still running, terminate it
-                    self._current_process.terminate()
-                    try:
-                        self._current_process.wait(timeout=0.1)
-                    except subprocess.TimeoutExpired:
-                        # Force kill if terminate didn't work
-                        self._current_process.kill()
-                        self._current_process.wait()
-            except Exception as e:
-                log_error(f"Error stopping sound: {e}")
-            finally:
-                self._current_process = None
-                log_sound("[STOPPED] Current sound")
+        try:
+            self._audio_player.stop()
+            log_sound("[STOPPED] Current sound")
+        except Exception as e:
+            log_error(f"Error stopping sound: {e}")

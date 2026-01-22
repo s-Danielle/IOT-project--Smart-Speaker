@@ -3,10 +3,8 @@ PN532 NFC reader (non-blocking read_uid)
 """
 
 from typing import Optional
-import sys
-import os
 import time
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 from config.settings import PN532_I2C_ADDRESS, NFC_TIMEOUT
 from utils.logger import log_nfc, log_error
@@ -19,7 +17,7 @@ try:
     HAS_HARDWARE = True
 except ImportError:
     HAS_HARDWARE = False
-    log_error("NFC hardware libraries not available - running in simulation mode")
+    log_error("NFC hardware libraries not available - NFC scanning will not work")
 
 
 class NFCScanner:
@@ -43,7 +41,7 @@ class NFCScanner:
                 log_error(f"Failed to initialize NFC reader: {e}")
                 self._pn532 = None
         else:
-            log_nfc("NFC Scanner running in simulation mode")
+            log_error("NFC Scanner not available - hardware libraries missing")
     
     def read_uid(self) -> Optional[str]:
         """

@@ -4,9 +4,8 @@ Implements the full state machine from States.txt
 """
 
 import time
-import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 from core.state import DeviceState, State
 from core import actions
@@ -244,11 +243,12 @@ class Controller:
             self._last_nfc_uid = uid  # Track it so we don't process again
             return
         
-        # Look up chip data
+        # Look up chip data (auto-registers unknown chips)
         chip_data = self._chip_store.lookup(uid)
         
         if chip_data is None:
-            log_event(f"Unknown chip scanned: {uid}")
+            # This shouldn't happen with auto-registration, but handle it
+            log_event(f"Failed to look up chip: {uid}")
             self._ui.on_error()
             self._last_nfc_uid = uid
             return
@@ -257,6 +257,21 @@ class Controller:
         if self.device_state.loaded_chip and self.device_state.loaded_chip.uid == uid:
             log_event("Same chip scanned - no action")
             self._ui.on_same_chip_scanned()
+            self._last_nfc_uid = uid
+            return
+        
+        # Check if chip has a song assigned
+        if not chip_data.get('uri'):
+            # Chip recognized but no song assigned
+            if chip_data.get('is_new'):
+                log_event(f"New chip registered: '{chip_data.get('name')}' - assign a song in the app!")
+            else:
+                log_event(f"Chip '{chip_data.get('name')}' has no song assigned - use the app to assign one")
+            
+            # Still load the chip so user can record on it
+            self.device_state = actions.action_load_chip(
+                self.device_state, chip_data, self._audio, self._ui
+            )
             self._last_nfc_uid = uid
             return
         
@@ -437,20 +452,24 @@ class Controller:
                 self._ui.on_blocked_action()
             return
         
-        # Check for long press (5s) to clear chip
+        # Check for long press (3s) to clear chip
+        # Exception: During RECORDING, long press just cancels (keeps chip loaded)
         if self._buttons.is_pressed(ButtonID.STOP):
             hold_time = self._buttons.hold_duration(ButtonID.STOP)
             
             # Only trigger once per long press (prevent repeated execution)
             if hold_time >= CLEAR_CHIP_HOLD_DURATION and not self._stop_long_press_triggered:
                 self._stop_long_press_triggered = True
-                log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
                 
                 if state == State.RECORDING:
-                    self.device_state = actions.action_cancel_recording_and_clear(
+                    # During recording: long press just cancels (keeps chip loaded)
+                    log_button(f"🔄 Stop held {hold_time:.1f}s - CANCELING RECORDING (keeping chip)")
+                    self.device_state = actions.action_cancel_recording(
                         self.device_state, self._recorder, self._audio, self._ui
                     )
                 else:
+                    # All other states: long press clears chip
+                    log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
                     self.device_state = actions.action_clear_chip(
                         self.device_state, self._audio, self._ui, long_press=True
                     )
