@@ -39,7 +39,7 @@ MPD_PORT = 6600  # MPD protocol port (used by python-mpd2)
 STATUS_POLL_INTERVAL = 0.5  # Minimum seconds between Mopidy status polls (caching optimization)
 
 # NFC settings
-NFC_TIMEOUT = 0.1  # Short timeout for non-blocking reads
+NFC_TIMEOUT = 0.05# Short timeout for non-blocking reads
 
 # Recording settings
 # Leave empty to use default ALSA device (recommended)
