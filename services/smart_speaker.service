@@ -1,14 +1,22 @@
-i[Unit]
-Description=My Custom Service
-#After=network.target
+[Unit]
+Description=Smart Speaker IoT Service
+After=network-online.target mopidy.service
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=iot-proj
 WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
-# Path to the executable or script. MUST use absolute paths.
 ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/Main/main.py
 Restart=on-failure
 RestartSec=10
+
+# Logging - view with: journalctl -u smart_speaker -f
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
 [Install]
 WantedBy=multi-user.target
