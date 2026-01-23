@@ -19,7 +19,9 @@ from config.settings import (
     LOOP_INTERVAL, 
     RECORD_HOLD_DURATION, 
     CLEAR_CHIP_HOLD_DURATION,
-    PLAY_LATEST_HOLD_DURATION
+    PLAY_LATEST_HOLD_DURATION,
+    MAX_WAIT_FOR_PLAYBACK,
+    MIN_PLAYBACK_DURATION
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
@@ -61,6 +63,11 @@ class Controller:
         
         # Track when play was initiated to allow grace period for Mopidy startup
         self._play_initiated_time: Optional[float] = None
+        
+        # Track when Mopidy actually confirmed playback (reported "play" state)
+        # This handles variable Spotify loading times (can take up to 10s)
+        self._playback_confirmed = False
+        self._playback_confirmed_time: Optional[float] = None
         
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
@@ -198,8 +205,10 @@ class Controller:
         # 2. Local backend with recordings directory in media_dir
         # 3. Stream backend (for HTTP-served files)
         try:
-            # Track play initiation time for grace period
+            # Track play initiation time and reset tracking state
             self._play_initiated_time = time.time()
+            self._playback_confirmed = False
+            self._playback_confirmed_time = None
             self._audio.play_uri(file_uri)
             log_event(f"[DEBUG] Playback command sent to Mopidy")
         except Exception as e:
@@ -224,26 +233,63 @@ class Controller:
     # =========================================================================
     
     def _check_playback_finished(self):
-        """Check if playback has finished naturally and update state accordingly"""
+        """Check if playback has finished naturally and update state accordingly.
+        
+        Uses "playback confirmed" tracking to handle variable Spotify loading times:
+        1. Wait for Mopidy to actually report "play" state (can take up to 10s for Spotify)
+        2. Once confirmed, require minimum playback duration before considering "finished"
+        3. This prevents false "finished" triggers during loading/buffering
+        """
         # Only check when we think we're playing
         if self.device_state.state != State.PLAYING:
             return
         
-        # Grace period: Don't check playback status for the first 3 seconds after
-        # initiating play. This gives Mopidy time to buffer and start the track,
-        # especially for Spotify URIs which may take time to load.
-        PLAYBACK_GRACE_PERIOD = 3.0  # seconds
-        if self._play_initiated_time is not None:
-            elapsed = time.time() - self._play_initiated_time
-            if elapsed < PLAYBACK_GRACE_PERIOD:
-                return  # Still in grace period, skip check
+        now = time.time()
+        is_playing = self._audio.is_playing()
         
-        # Check if Mopidy is still playing
-        if not self._audio.is_playing():
-            # Playback finished - transition back to idle state
-            log_event("Playback finished - returning to idle state")
+        # Phase 1: Wait for playback to be confirmed
+        if not self._playback_confirmed:
+            if is_playing:
+                # Mopidy now reports "play" - playback is confirmed!
+                self._playback_confirmed = True
+                self._playback_confirmed_time = now
+                log_event("Playback confirmed by Mopidy")
+                return
+            else:
+                # Still waiting for Mopidy to start playing
+                if self._play_initiated_time is not None:
+                    elapsed = now - self._play_initiated_time
+                    if elapsed > MAX_WAIT_FOR_PLAYBACK:
+                        # Timeout - playback never started, something went wrong
+                        log_event(f"Playback timeout after {elapsed:.1f}s - Mopidy never started playing")
+                        self._reset_playback_tracking()
+                        
+                        if self.device_state.loaded_chip is not None:
+                            self.device_state.state = State.IDLE_CHIP_LOADED
+                        else:
+                            self.device_state.state = State.IDLE_NO_CHIP
+                        
+                        self._ui.on_error()
+                        log_state(f"→ {self.device_state.state} (playback failed)")
+                return
+        
+        # Phase 2: Playback was confirmed, now monitor for natural end
+        if not is_playing:
+            # Mopidy stopped - but only consider it "finished" if minimum duration passed
+            if self._playback_confirmed_time is not None:
+                playback_duration = now - self._playback_confirmed_time
+                if playback_duration < MIN_PLAYBACK_DURATION:
+                    # Too short - likely a transient state, ignore
+                    log_event(f"Ignoring brief stop after {playback_duration:.1f}s (min: {MIN_PLAYBACK_DURATION}s)")
+                    # Reset confirmed state to re-wait for playback
+                    self._playback_confirmed = False
+                    self._playback_confirmed_time = None
+                    return
             
-            # Return to appropriate state based on whether a chip is loaded
+            # Playback genuinely finished
+            log_event("Playback finished - returning to idle state")
+            self._reset_playback_tracking()
+            
             if self.device_state.loaded_chip is not None:
                 self.device_state.state = State.IDLE_CHIP_LOADED
             else:
@@ -251,6 +297,12 @@ class Controller:
             
             self._ui.on_stop()
             log_state(f"→ {self.device_state.state} (track ended)")
+    
+    def _reset_playback_tracking(self):
+        """Reset playback tracking state"""
+        self._play_initiated_time = None
+        self._playback_confirmed = False
+        self._playback_confirmed_time = None
     
     # =========================================================================
     # NFC HANDLING
@@ -310,6 +362,7 @@ class Controller:
                 log_event(f"Chip '{chip_data.get('name')}' has no song assigned - use the app to assign one")
             
             # Still load the chip so user can record on it
+            self._reset_playback_tracking()  # Reset tracking when loading new chip
             self.device_state = actions.action_load_chip(
                 self.device_state, chip_data, self._audio, self._ui
             )
@@ -318,6 +371,7 @@ class Controller:
         
         # Different chip or no chip loaded - load the new chip
         # If playing, this stops playback and loads new chip
+        self._reset_playback_tracking()  # Reset tracking when loading new chip
         self.device_state = actions.action_load_chip(
             self.device_state, chip_data, self._audio, self._ui
         )
@@ -397,8 +451,10 @@ class Controller:
         
         # IDLE_CHIP_LOADED: Start playback
         if state == State.IDLE_CHIP_LOADED:
-            # Track play initiation time for grace period
+            # Track play initiation time and reset tracking state
             self._play_initiated_time = time.time()
+            self._playback_confirmed = False
+            self._playback_confirmed_time = None
             self.device_state = actions.action_play(
                 self.device_state, self._audio, self._ui
             )
@@ -406,6 +462,7 @@ class Controller:
         
         # PLAYING: Pause
         if state == State.PLAYING:
+            self._reset_playback_tracking()  # Reset tracking on user pause
             self.device_state = actions.action_pause(
                 self.device_state, self._audio, self._ui
             )
@@ -413,8 +470,10 @@ class Controller:
         
         # PAUSED: Resume
         if state == State.PAUSED:
-            # Track resume time for grace period (resuming may also need buffering)
+            # Track resume time - resuming may also need buffering for Spotify
             self._play_initiated_time = time.time()
+            self._playback_confirmed = False
+            self._playback_confirmed_time = None
             self.device_state = actions.action_resume(
                 self.device_state, self._audio, self._ui
             )
@@ -515,6 +574,7 @@ class Controller:
                 else:
                     # All other states: long press clears chip
                     log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
+                    self._reset_playback_tracking()  # Reset tracking on clear chip
                     self.device_state = actions.action_clear_chip(
                         self.device_state, self._audio, self._ui, long_press=True
                     )
@@ -549,6 +609,7 @@ class Controller:
             
             # PLAYING or PAUSED: Stop playback, keep chip
             if state in (State.PLAYING, State.PAUSED):
+                self._reset_playback_tracking()  # Reset tracking on user stop
                 self.device_state = actions.action_stop(
                     self.device_state, self._audio, self._ui
                 )
