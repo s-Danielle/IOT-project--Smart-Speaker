@@ -77,6 +77,9 @@ class Controller:
                 self._handle_nfc()
                 self._handle_buttons()
                 
+                # Check if playback finished naturally
+                self._check_playback_finished()
+                
                 # Sleep for loop interval
                 time.sleep(LOOP_INTERVAL)
                 
@@ -210,6 +213,30 @@ class Controller:
         # Update state to PLAYING
         self.device_state.state = State.PLAYING
         log_state(f"→ {self.device_state.state}")
+    
+    # =========================================================================
+    # PLAYBACK STATUS MONITORING
+    # =========================================================================
+    
+    def _check_playback_finished(self):
+        """Check if playback has finished naturally and update state accordingly"""
+        # Only check when we think we're playing
+        if self.device_state.state != State.PLAYING:
+            return
+        
+        # Check if Mopidy is still playing
+        if not self._audio.is_playing():
+            # Playback finished - transition back to idle state
+            log_event("Playback finished - returning to idle state")
+            
+            # Return to appropriate state based on whether a chip is loaded
+            if self.device_state.loaded_chip is not None:
+                self.device_state.state = State.IDLE_CHIP_LOADED
+            else:
+                self.device_state.state = State.IDLE_NO_CHIP
+            
+            self._ui.on_stop()
+            log_state(f"→ {self.device_state.state} (track ended)")
     
     # =========================================================================
     # NFC HANDLING
