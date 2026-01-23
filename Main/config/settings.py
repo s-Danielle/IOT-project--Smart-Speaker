@@ -30,7 +30,8 @@ AUDIO_FORMAT = "S16_LE"
 
 # Mopidy settings
 MOPIDY_HOST = "localhost"
-MOPIDY_PORT = 6680
+MOPIDY_PORT = 6680  # HTTP JSON-RPC port (deprecated, kept for backward compatibility)
+MPD_PORT = 6600  # MPD protocol port (used by python-mpd2)
 
 # NFC settings
 NFC_TIMEOUT = 0.1  # Short timeout for non-blocking reads

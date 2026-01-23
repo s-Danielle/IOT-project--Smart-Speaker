@@ -64,20 +64,20 @@ class HealthChecker:
             return HealthCheckResult("Audio", False, str(e))
     
     def check_mopidy(self) -> HealthCheckResult:
-        """Check Mopidy connection"""
+        """Check Mopidy connection via MPD protocol"""
         try:
-            import requests
-            from config.settings import MOPIDY_HOST, MOPIDY_PORT
+            from mpd import MPDClient
+            from mpd.base import ConnectionError as MPDConnectionError
+            from config.settings import MOPIDY_HOST, MPD_PORT
             
-            url = f"http://{MOPIDY_HOST}:{MOPIDY_PORT}/mopidy/rpc"
-            response = requests.post(url, json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "core.get_version"
-            }, timeout=2)
-            data = response.json()
-            version = data.get("result", "unknown")
-            return HealthCheckResult("Mopidy", True, f"Version: {version}")
+            client = MPDClient()
+            client.timeout = 2
+            client.connect(MOPIDY_HOST, MPD_PORT)
+            version = client.mpd_version
+            client.disconnect()
+            return HealthCheckResult("Mopidy", True, f"MPD version: {version}")
+        except MPDConnectionError as e:
+            return HealthCheckResult("Mopidy", False, f"Connection failed: {e}")
         except Exception as e:
             return HealthCheckResult("Mopidy", False, str(e))
     

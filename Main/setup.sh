@@ -55,13 +55,14 @@ echo ""
 
 # Check Mopidy connection (REQUIRED)
 echo "Checking Mopidy connection (REQUIRED)..."
-if python3 -c "import requests; requests.post('http://localhost:6680/mopidy/rpc', json={'jsonrpc':'2.0','id':1,'method':'core.get_version'}, timeout=2)" 2>/dev/null; then
-    echo "✅ Mopidy is running and accessible"
+if python3 -c "from mpd import MPDClient; c=MPDClient(); c.timeout=2; c.connect('localhost', 6600); c.disconnect()" 2>/dev/null; then
+    echo "✅ Mopidy is running and accessible via MPD (port 6600)"
 else
-    echo "❌ Mopidy not accessible at localhost:6680"
+    echo "❌ Mopidy not accessible at localhost:6600 (MPD protocol)"
     echo "   Mopidy is REQUIRED for all audio playback"
     echo "   Make sure Mopidy is running: sudo systemctl start mopidy"
     echo "   Or install Mopidy: sudo apt-get install mopidy"
+    echo "   Note: Make sure Mopidy's MPD server is enabled (default port 6600)"
 fi
 echo ""
 
