@@ -59,6 +59,9 @@ class Controller:
         self._last_nfc_uid: Optional[str] = None
         self._nfc_chip_present = False
         
+        # Track when play was initiated to allow grace period for Mopidy startup
+        self._play_initiated_time: Optional[float] = None
+        
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
         log("READY - Waiting for input...")
@@ -195,6 +198,8 @@ class Controller:
         # 2. Local backend with recordings directory in media_dir
         # 3. Stream backend (for HTTP-served files)
         try:
+            # Track play initiation time for grace period
+            self._play_initiated_time = time.time()
             self._audio.play_uri(file_uri)
             log_event(f"[DEBUG] Playback command sent to Mopidy")
         except Exception as e:
@@ -223,6 +228,15 @@ class Controller:
         # Only check when we think we're playing
         if self.device_state.state != State.PLAYING:
             return
+        
+        # Grace period: Don't check playback status for the first 3 seconds after
+        # initiating play. This gives Mopidy time to buffer and start the track,
+        # especially for Spotify URIs which may take time to load.
+        PLAYBACK_GRACE_PERIOD = 3.0  # seconds
+        if self._play_initiated_time is not None:
+            elapsed = time.time() - self._play_initiated_time
+            if elapsed < PLAYBACK_GRACE_PERIOD:
+                return  # Still in grace period, skip check
         
         # Check if Mopidy is still playing
         if not self._audio.is_playing():
@@ -383,6 +397,8 @@ class Controller:
         
         # IDLE_CHIP_LOADED: Start playback
         if state == State.IDLE_CHIP_LOADED:
+            # Track play initiation time for grace period
+            self._play_initiated_time = time.time()
             self.device_state = actions.action_play(
                 self.device_state, self._audio, self._ui
             )
@@ -397,6 +413,8 @@ class Controller:
         
         # PAUSED: Resume
         if state == State.PAUSED:
+            # Track resume time for grace period (resuming may also need buffering)
+            self._play_initiated_time = time.time()
             self.device_state = actions.action_resume(
                 self.device_state, self._audio, self._ui
             )
