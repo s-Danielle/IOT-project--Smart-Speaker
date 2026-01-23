@@ -34,6 +34,11 @@ class AudioPlayer:
         """Ensure MPD connection is established"""
         if not self._connected:
             try:
+                # Ensure clean state before connecting
+                try:
+                    self._client.disconnect()
+                except:
+                    pass
                 self._client.connect(self._host, self._port)
                 self._connected = True
             except MPDConnectionError as e:
@@ -51,8 +56,9 @@ class AudioPlayer:
         
         try:
             return func(*args, **kwargs)
-        except MPDConnectionError:
-            # Try to reconnect once
+        except (MPDConnectionError, OSError, IOError) as e:
+            # Connection-related errors - try to reconnect once
+            log_error(f"MPD connection lost: {e}")
             self._connected = False
             self._ensure_connected()
             if self._connected:
@@ -60,12 +66,15 @@ class AudioPlayer:
                     return func(*args, **kwargs)
                 except Exception as e:
                     log_error(f"MPD command error after reconnect: {e}")
+                    self._connected = False  # Reset for next attempt
                     return None
             else:
                 log_error("Failed to reconnect to Mopidy MPD")
                 return None
         except Exception as e:
+            # Other errors (e.g., timeout) - also reset connection state
             log_error(f"MPD command error: {e}")
+            self._connected = False  # Reset so next call attempts reconnection
             return None
     
     def play_uri(self, uri: str):
