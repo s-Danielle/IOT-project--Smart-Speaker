@@ -14,7 +14,12 @@ MIN_PLAYBACK_DURATION = 2.0   # Min seconds of confirmed playback before conside
 
 # I2C addresses
 PCF8574_ADDRESS = 0x20  # Button expander address
+PCF8574_RGB_ADDRESS = 0x21  # RGB LED expander address
 PN532_I2C_ADDRESS = 0x24  # NFC reader address
+
+# RGB LED pin mappings on PCF8574 (at 0x21)
+RGB_LIGHT1_PINS = (0, 1, 2)  # P0=R, P1=G, P2=B
+RGB_LIGHT2_PINS = (3, 4, 5)  # P3=R, P4=G, P5=B
 
 # Button bit positions on PCF8574 (active-low)
 BUTTON_PLAY_PAUSE_BIT = 0  # P0
