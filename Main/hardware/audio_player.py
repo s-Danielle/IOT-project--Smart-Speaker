@@ -6,6 +6,7 @@ Uses python-mpd2 library for MPD protocol communication
 import time
 from config.settings import MOPIDY_HOST, MPD_PORT, VOLUME_STEP, VOLUME_DEFAULT, STATUS_POLL_INTERVAL
 from utils.logger import log_audio, log_error, log_success
+from utils.hardware_health import HardwareHealthManager
 
 # MPD client library
 try:
@@ -32,6 +33,14 @@ class AudioPlayer:
         self._cached_volume = VOLUME_DEFAULT
         self._last_status_check = 0.0    # Timestamp of last status poll
         
+        # Register with health manager for connection error tracking
+        self._health = HardwareHealthManager.get_instance().register(
+            "audio",
+            expected_errors=[],  # Log all audio errors (not as frequent as button polling)
+            log_interval=10.0,   # Rate-limit to every 10 seconds
+            failure_threshold=5  # Mark failed after 5 consecutive connection failures
+        )
+        
         # Connect to Mopidy MPD server
         self._ensure_connected()
         log_audio(f"Audio player initialized (Mopidy MPD at {self._host}:{self._port})")
@@ -47,11 +56,14 @@ class AudioPlayer:
                     pass
                 self._client.connect(self._host, self._port)
                 self._connected = True
+                self._health.report_success()
             except MPDConnectionError as e:
-                log_error(f"Cannot connect to Mopidy MPD at {self._host}:{self._port}: {e}")
+                if self._health.report_error(e):
+                    log_error(f"Cannot connect to Mopidy MPD at {self._host}:{self._port}: {e}")
                 self._connected = False
             except Exception as e:
-                log_error(f"MPD connection error: {e}")
+                if self._health.report_error(e):
+                    log_error(f"MPD connection error: {e}")
                 self._connected = False
     
     def _execute(self, func, *args, **kwargs):
@@ -61,25 +73,32 @@ class AudioPlayer:
             return None
         
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+            self._health.report_success()
+            return result
         except (MPDConnectionError, OSError, IOError) as e:
             # Connection-related errors - try to reconnect once
-            log_error(f"MPD connection lost: {e}")
+            if self._health.report_error(e):
+                log_error(f"MPD connection lost: {e}")
             self._connected = False
             self._ensure_connected()
             if self._connected:
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    self._health.report_success()
+                    return result
                 except Exception as e:
-                    log_error(f"MPD command error after reconnect: {e}")
+                    if self._health.report_error(e):
+                        log_error(f"MPD command error after reconnect: {e}")
                     self._connected = False  # Reset for next attempt
                     return None
             else:
-                log_error("Failed to reconnect to Mopidy MPD")
+                # Connection failed error already logged in _ensure_connected
                 return None
         except Exception as e:
             # Other errors (e.g., timeout) - also reset connection state
-            log_error(f"MPD command error: {e}")
+            if self._health.report_error(e):
+                log_error(f"MPD command error: {e}")
             self._connected = False  # Reset so next call attempts reconnection
             return None
     

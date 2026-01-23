@@ -18,6 +18,7 @@ from config.settings import (
     BUTTON_VOLUME_DOWN_BIT
 )
 from utils.logger import log_button, log_error
+from utils.hardware_health import HardwareHealthManager
 
 # Hardware imports
 try:
@@ -64,6 +65,14 @@ class Buttons:
             btn: ButtonState() for btn in ButtonID
         }
         
+        # Register with health manager for error throttling
+        self._health = HardwareHealthManager.get_instance().register(
+            "buttons",
+            expected_errors=["Input/output error", "Remote I/O error"],
+            log_interval=3.0,
+            failure_threshold=20
+        )
+        
         if HAS_HARDWARE:
             try:
                 self._bus = SMBus(1)
@@ -79,9 +88,20 @@ class Buttons:
         if self._bus is None:
             return 0xFF  # All buttons released (active-low)
         try:
-            return self._bus.read_byte(PCF8574_ADDRESS)
+            result = self._bus.read_byte(PCF8574_ADDRESS)
+            self._health.report_success()
+            return result
         except Exception as e:
-            log_error(f"Button read error: {e}")
+            # Use health manager for rate-limited, filtered error logging
+            if self._health.report_error(e):
+                log_error(f"Button read error: {e}")
+            
+            # Disable hardware after too many consecutive failures
+            if self._health.is_failed():
+                self._health.log_failure_once("Buttons disabled due to repeated hardware errors")
+                self._bus.close()
+                self._bus = None
+            
             return 0xFF
     
     def update(self):

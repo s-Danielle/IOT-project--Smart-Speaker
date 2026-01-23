@@ -311,6 +311,19 @@ class SpeakerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/status':
             self._send_json({"connected": True})
+        elif self.path == '/health':
+            # Return hardware health status for all components
+            from utils.hardware_health import HardwareHealthManager
+            manager = HardwareHealthManager.get_instance()
+            health_data = {
+                name: {
+                    "status": h.status.value,
+                    "last_error": h.last_error,
+                    "error_count": h.error_count
+                }
+                for name, h in manager.get_all_status().items()
+            }
+            self._send_json(health_data)
         elif self.path == '/chips':
             data = load_data()
             self._send_json(data.get('chips', []))
