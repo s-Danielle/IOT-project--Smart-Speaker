@@ -136,12 +136,18 @@ class AudioPlayer:
         self._cached_state = "stop"  # Update cache
         log_success("Playback stopped")
     
-    def is_playing(self) -> bool:
-        """Check if audio is currently playing (with caching to reduce requests)"""
+    def is_playing(self, force_refresh: bool = False) -> bool:
+        """Check if audio is currently playing.
+        
+        Args:
+            force_refresh: If True, bypass cache and query Mopidy directly.
+                          Use this when you need guaranteed fresh data, e.g.,
+                          when confirming playback has actually started.
+        """
         now = time.time()
         
-        # Use cache if recent enough
-        if now - self._last_status_check < STATUS_POLL_INTERVAL:
+        # Use cache if recent enough (unless force_refresh requested)
+        if not force_refresh and now - self._last_status_check < STATUS_POLL_INTERVAL:
             return self._cached_state == "play"
         
         # Poll Mopidy and update cache

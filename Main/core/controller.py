@@ -245,11 +245,13 @@ class Controller:
             return
         
         now = time.time()
-        is_playing = self._audio.is_playing()
         
         # Phase 1: Wait for playback to be confirmed
         if not self._playback_confirmed:
-            if is_playing:
+            # Force fresh check - don't rely on cached state since play() 
+            # optimistically sets cache to "play" before Mopidy actually starts
+            is_actually_playing = self._audio.is_playing(force_refresh=True)
+            if is_actually_playing:
                 # Mopidy now reports "play" - playback is confirmed!
                 self._playback_confirmed = True
                 self._playback_confirmed_time = now
@@ -274,7 +276,8 @@ class Controller:
                 return
         
         # Phase 2: Playback was confirmed, now monitor for natural end
-        if not is_playing:
+        # Cached state is fine here - we're just detecting when playback stops
+        if not self._audio.is_playing():
             # Mopidy stopped - but only consider it "finished" if minimum duration passed
             if self._playback_confirmed_time is not None:
                 playback_duration = now - self._playback_confirmed_time
