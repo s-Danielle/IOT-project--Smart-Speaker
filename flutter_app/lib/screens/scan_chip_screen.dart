@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager/nfc_manager_android.dart';
-import 'package:nfc_manager/nfc_manager_ios.dart';
 import '../services/api_service.dart';
 import '../services/settings_service.dart';
 import '../models/chip.dart';
@@ -59,25 +58,6 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
         final androidTag = NfcTagAndroid.from(tag);
         if (androidTag != null) {
           return androidTag.id
-              .map((b) => b.toRadixString(16).padLeft(2, '0'))
-              .join('')
-              .toUpperCase();
-        }
-      }
-      
-      // iOS: try MiFare tag
-      if (Platform.isIOS) {
-        final mifareTag = MiFareIos.from(tag);
-        if (mifareTag != null) {
-          return mifareTag.identifier
-              .map((b) => b.toRadixString(16).padLeft(2, '0'))
-              .join('')
-              .toUpperCase();
-        }
-        
-        final iso15693Tag = Iso15693Ios.from(tag);
-        if (iso15693Tag != null) {
-          return iso15693Tag.identifier
               .map((b) => b.toRadixString(16).padLeft(2, '0'))
               .join('')
               .toUpperCase();

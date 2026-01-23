@@ -28,10 +28,6 @@ flutter_app/.pub-cache/
 flutter_app/.pub/
 flutter_app/android/.gradle/
 flutter_app/android/local.properties
-flutter_app/ios/Pods/
-flutter_app/ios/.symlinks/
-flutter_app/ios/Flutter/Flutter.framework
-flutter_app/ios/Flutter/Flutter.podspec
 flutter_app/*.iml
 flutter_app/.idea/
 *.lock

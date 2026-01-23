@@ -637,7 +637,6 @@ The Flutter app (`flutter_app/`) connects to the HTTP server to:
 - Rename chips and songs
 
 Connect via:
-- iOS Simulator: `http://localhost:8080`
 - Android Emulator: `http://10.0.2.2:8080`
 - Physical device: `http://<raspberry-pi-ip>:8080`
 

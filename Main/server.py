@@ -535,7 +535,6 @@ class ServerThread(threading.Thread):
             log(f"  - Local files directory: {LOCAL_FILES_DIR}")
             log(f"  - Uploads: {UPLOADS_DIR}")
             log(f"  - Recordings: {RECORDINGS_DIR}")
-            log(f"  - iOS Simulator: http://localhost:{self.port}")
             log(f"  - Android Emulator: http://10.0.2.2:{self.port}")
             log(f"  - Physical device (same WiFi): http://<your-ip>:{self.port}")
             self.server.serve_forever()
