@@ -13,7 +13,9 @@ from config.settings import (
     PCF8574_ADDRESS, 
     BUTTON_PLAY_PAUSE_BIT, 
     BUTTON_RECORD_BIT, 
-    BUTTON_STOP_BIT
+    BUTTON_STOP_BIT,
+    BUTTON_VOLUME_UP_BIT,
+    BUTTON_VOLUME_DOWN_BIT
 )
 from utils.logger import log_button, log_error
 
@@ -31,6 +33,8 @@ class ButtonID(Enum):
     PLAY_PAUSE = auto()
     RECORD = auto()
     STOP = auto()
+    VOLUME_UP = auto()
+    VOLUME_DOWN = auto()
 
 
 @dataclass
@@ -49,6 +53,8 @@ class Buttons:
         ButtonID.PLAY_PAUSE: BUTTON_PLAY_PAUSE_BIT,
         ButtonID.RECORD: BUTTON_RECORD_BIT,
         ButtonID.STOP: BUTTON_STOP_BIT,
+        ButtonID.VOLUME_UP: BUTTON_VOLUME_UP_BIT,
+        ButtonID.VOLUME_DOWN: BUTTON_VOLUME_DOWN_BIT,
     }
     
     def __init__(self):

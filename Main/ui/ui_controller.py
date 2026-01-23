@@ -84,3 +84,12 @@ class UIController:
         log_event("❌ ERROR")
         self._sounds.play_error()
         self._lights.show_error()
+    
+    def on_volume_change(self, volume: int):
+        """Feedback when volume changes
+        
+        Note: We don't play a sound here because that would interrupt music playback.
+        Volume control works while music is playing via Mopidy's mixer API.
+        """
+        log_event(f"🔊 VOLUME: {volume}")
+        self._lights.show_volume(volume)
