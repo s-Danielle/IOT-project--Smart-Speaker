@@ -36,6 +36,7 @@ SERVER_PORT = 8080
 MOPIDY_HOST = "localhost"
 MOPIDY_PORT = 6680  # HTTP JSON-RPC port (deprecated, kept for backward compatibility)
 MPD_PORT = 6600  # MPD protocol port (used by python-mpd2)
+STATUS_POLL_INTERVAL = 0.5  # Minimum seconds between Mopidy status polls (caching optimization)
 
 # NFC settings
 NFC_TIMEOUT = 0.1  # Short timeout for non-blocking reads
