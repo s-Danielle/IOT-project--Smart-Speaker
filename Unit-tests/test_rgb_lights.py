@@ -5,7 +5,7 @@ Address: 0x21
 Light 1: P0 (R), P1 (G), P2 (B)
 Light 2: P3 (R), P4 (G), P5 (B)
 
-PCF8574 is active-low: write 0 to turn LED ON, write 1 to turn LED OFF
+LEDs are common-cathode (connected to GND): write 1 to turn LED ON, write 0 to turn LED OFF
 """
 
 from smbus2 import SMBus
@@ -36,8 +36,8 @@ class RGBLightController:
     def __init__(self, bus_num=I2C_BUS, address=RGB_ADDRESS):
         self.address = address
         self.bus = SMBus(bus_num)
-        # Start with all LEDs OFF (all bits HIGH for active-low)
-        self._state = 0xFF
+        # Start with all LEDs OFF (all bits LOW for active-high)
+        self._state = 0x00
         self._write_state()
     
     def _write_state(self):
@@ -59,12 +59,12 @@ class RGBLightController:
         else:
             raise ValueError("light_num must be 1 or 2")
         
-        # PCF8574 is active-low: clear bit to turn ON, set bit to turn OFF
+        # LEDs are active-high: set bit to turn ON, clear bit to turn OFF
         for pin, is_on in zip(pins, (r, g, b)):
             if is_on:
-                self._state &= ~(1 << pin)  # Clear bit (LED ON)
+                self._state |= (1 << pin)   # Set bit (LED ON)
             else:
-                self._state |= (1 << pin)   # Set bit (LED OFF)
+                self._state &= ~(1 << pin)  # Clear bit (LED OFF)
         
         self._write_state()
     
@@ -82,7 +82,7 @@ class RGBLightController:
     
     def turn_off_all(self):
         """Turn off all lights"""
-        self._state = 0xFF
+        self._state = 0x00
         self._write_state()
     
     def close(self):
