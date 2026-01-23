@@ -114,13 +114,14 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
     });
   }
 
-  Future<void> _syncChip(String chipId) async {
+  Future<void> _syncChip(String chipUid) async {
     try {
       final baseUrl = await SettingsService.getBaseUrl();
       final api = ApiService(baseUrl);
       final chips = await api.getChips();
 
-      final match = chips.where((c) => c.id == chipId).firstOrNull;
+      // Match by UID (the NFC chip's unique identifier), not by internal id
+      final match = chips.where((c) => c.uid == chipUid).firstOrNull;
 
       setState(() {
         _matchedChip = match;
@@ -128,7 +129,7 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
 
       if (match == null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('New chip detected: $chipId')),
+          SnackBar(content: Text('New chip detected: $chipUid')),
         );
       }
     } catch (e) {
@@ -141,11 +142,12 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
   Future<void> _renameChip() async {
     if (_matchedChip == null && _scannedId == null) return;
 
+    final isNewChip = _matchedChip == null;
     final controller = TextEditingController(text: _matchedChip?.name ?? '');
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename Chip'),
+        title: Text(isNewChip ? 'Setup New Chip' : 'Rename Chip'),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(labelText: 'Name'),
@@ -168,12 +170,27 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
       try {
         final baseUrl = await SettingsService.getBaseUrl();
         final api = ApiService(baseUrl);
-        await api.updateChip(_matchedChip?.id ?? _scannedId!, name: result);
-        _syncChip(_matchedChip?.id ?? _scannedId!);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Chip renamed')),
-          );
+        
+        if (isNewChip) {
+          // NEW chip - call POST /chips to register it first
+          final newChip = await api.createChip(_scannedId!, name: result);
+          setState(() {
+            _matchedChip = newChip;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Chip registered successfully')),
+            );
+          }
+        } else {
+          // EXISTING chip - call PUT /chips/{id} to update it
+          await api.updateChip(_matchedChip!.id, name: result);
+          _syncChip(_scannedId!);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Chip renamed')),
+            );
+          }
         }
       } catch (e) {
         if (mounted) {
@@ -186,7 +203,8 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
   }
 
   Future<void> _assignSong() async {
-    if (_matchedChip == null && _scannedId == null) return;
+    // Only allow assigning songs to registered chips
+    if (_matchedChip == null || _scannedId == null) return;
 
     final result = await showDialog<Song>(
       context: context,
@@ -222,8 +240,10 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
       try {
         final baseUrl = await SettingsService.getBaseUrl();
         final api = ApiService(baseUrl);
-        await api.updateChip(_matchedChip?.id ?? _scannedId!, songId: result.id);
-        _syncChip(_matchedChip?.id ?? _scannedId!);
+        // Use internal chip id for API call
+        await api.updateChip(_matchedChip!.id, songId: result.id);
+        // Use UID for syncing (to match by uid)
+        _syncChip(_scannedId!);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Assigned "${result.name}"')),
@@ -240,7 +260,7 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
   }
 
   Future<void> _resetAssignment() async {
-    if (_matchedChip == null) return;
+    if (_matchedChip == null || _scannedId == null) return;
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -264,8 +284,10 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
       try {
         final baseUrl = await SettingsService.getBaseUrl();
         final api = ApiService(baseUrl);
+        // Use internal chip id for API call
         await api.resetChipAssignment(_matchedChip!.id);
-        _syncChip(_matchedChip!.id);
+        // Use UID for syncing (to match by uid)
+        _syncChip(_scannedId!);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Assignment reset')),

@@ -29,6 +29,19 @@ class ApiService {
     throw Exception('Failed to get chips: ${response.statusCode}');
   }
 
+  // POST /chips - Register a new chip
+  Future<SpeakerChip> createChip(String uid, {String? name}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/chips'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'uid': uid, 'name': name ?? ''}),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return SpeakerChip.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to create chip: ${response.statusCode}');
+  }
+
   // PUT /chips/{chip_id}
   Future<void> updateChip(String chipId, {String? name, String? songId}) async {
     final body = <String, dynamic>{};

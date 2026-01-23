@@ -66,8 +66,8 @@ class NFCScanner:
         try:
             uid = self._pn532.read_passive_target(timeout=NFC_TIMEOUT)
             if uid is not None:
-                # Convert to string representation matching tags.json format
-                uid_str = str(bytearray(uid))
+                # Convert to uppercase hex string (e.g., "9903EEB9")
+                uid_str = ''.join(f'{b:02X}' for b in uid)
                 self._health.report_success()
                 return uid_str
             return None
