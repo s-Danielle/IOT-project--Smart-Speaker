@@ -6,10 +6,8 @@ Buttons are active-low.
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional, Dict
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from typing import Dict
+
 
 from config.settings import (
     PCF8574_ADDRESS, 
@@ -25,7 +23,7 @@ try:
     HAS_HARDWARE = True
 except ImportError:
     HAS_HARDWARE = False
-    log_error("SMBus library not available - buttons in simulation mode")
+    log_error("SMBus library not available - button input will not work")
 
 
 class ButtonID(Enum):
@@ -68,7 +66,7 @@ class Buttons:
                 log_error(f"Failed to initialize buttons: {e}")
                 self._bus = None
         else:
-            log_button("Buttons running in simulation mode")
+            log_error("Buttons not available - hardware libraries missing")
     
     def _read_raw(self) -> int:
         """Read raw byte from PCF8574"""

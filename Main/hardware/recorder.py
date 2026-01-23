@@ -7,9 +7,6 @@ import os
 import time
 from typing import Optional
 from datetime import datetime
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from config.paths import RECORDINGS_DIR
 from config.settings import SAMPLE_RATE, CHANNELS, AUDIO_FORMAT, RECORDING_DEVICE
 from utils.logger import log_recording, log_error, log_success
@@ -48,22 +45,7 @@ class Recorder:
         except (FileNotFoundError, subprocess.CalledProcessError):
             log_error("arecord command not found in PATH")
             log_error("On Raspberry Pi, install with: sudo apt-get install alsa-utils")
-            # Create placeholder file for simulation
-            try:
-                wav_header = b'RIFF' + (0).to_bytes(4, 'little') + b'WAVE' + b'fmt ' + (16).to_bytes(4, 'little') + \
-                            (1).to_bytes(2, 'little') + (CHANNELS).to_bytes(2, 'little') + \
-                            (SAMPLE_RATE).to_bytes(4, 'little') + \
-                            (SAMPLE_RATE * CHANNELS * 2).to_bytes(4, 'little') + \
-                            (CHANNELS * 2).to_bytes(2, 'little') + (16).to_bytes(2, 'little') + \
-                            b'data' + (0).to_bytes(4, 'little')
-                with open(self._current_file, 'wb') as f:
-                    f.write(wav_header)
-                log_recording(f"[SIMULATION] Created placeholder file: {self._current_file}")
-                self._recording = True
-                return True
-            except Exception as e:
-                log_error(f"[SIMULATION] Failed to create placeholder file: {e}")
-                return False
+            return False
         
         try:
             # Build arecord command - match working RecordShortAudio.sh format

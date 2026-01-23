@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python
 """
 Entry point: create controller + run loop
 
@@ -19,33 +19,14 @@ States:
 """
 
 import sys
-import os
+import time
 
-# Add Main directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.controller import Controller
 from hardware.health import HealthChecker
-from utils.logger import log, log_success, log_error
-from utils.setup_check import check_and_install_dependencies, check_mopidy_connection
+from utils.logger import log, log_success, log_error, log_event
+from server import start_server
 
-
-def print_banner():
-    """Print startup banner"""
-    print()
-    print("╔════════════════════════════════════════════════════════════╗")
-    print("║                                                            ║")
-    print("║   🔊 SMART SPEAKER - Raspberry Pi IoT Project 🔊          ║")
-    print("║                                                            ║")
-    print("╠════════════════════════════════════════════════════════════╣")
-    print("║  Controls:                                                 ║")
-    print("║    • Play/Pause: Toggle playback                          ║")
-    print("║    • Record: Hold 3s → release → short press to save      ║")
-    print("║    • Stop: Short = stop, Long (5s) = clear chip           ║")
-    print("║                                                            ║")
-    print("║  Scan NFC chip to load music!                             ║")
-    print("╚════════════════════════════════════════════════════════════╝")
-    print()
 
 
 def run_health_check():
@@ -65,24 +46,18 @@ def run_health_check():
 
 
 def main():
-    """Initialize and run the main controller loop."""
-    print_banner()
-    
-    # Check and install dependencies on startup
-    if "--skip-setup" not in sys.argv:
-        log("Checking dependencies...")
-        deps_ok = check_and_install_dependencies()
-        if not deps_ok:
-            log_event("⚠️  Some dependencies are missing - some features may not work")
-        check_mopidy_connection()
-        print()
-    
     # Optional: Run health check
     if "--health-check" in sys.argv or "-h" in sys.argv:
         all_healthy = run_health_check()
         if not all_healthy and "--strict" in sys.argv:
             log_error("Strict mode: exiting due to health check failures")
             sys.exit(1)
+    
+    # Start HTTP server in background thread
+    log("Starting HTTP server...")
+    server_thread = start_server(port=8080)
+    # Give server a moment to start
+    time.sleep(0.5)
     
     # Create and run controller
     try:
@@ -93,6 +68,12 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        # the thread is running as a daemon, but it won't hurt to join it
+        log("Shutting down HTTP server...")
+        server_thread.stop()  # Gracefully stop the server
+        server_thread.join()  # Wait for thread to finish
+        log("HTTP server shut down")
 
 
 if __name__ == "__main__":

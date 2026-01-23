@@ -44,8 +44,8 @@ Scan different chip	Replace chip → IDLE (Chip Loaded)	Chip-loaded beep
 STATE 5 — RECORDING
 User Action	Result	Feedback
 Record (short press)	Save recording → return to PAUSED or IDLE (Chip Loaded)	Record-saved chime
-Stop (short)	Cancel (no save) → previous state (PLAYING or PAUSED)	Cancel tone
-Stop (long 3s)	Cancel + clear chip → IDLE (No Chip)	Reset tone
+Stop (short)	Cancel (no save) → previous state (PLAYING resumes, or PAUSED, or IDLE Chip Loaded)	Cancel tone
+Stop (long 3s)	Cancel (no save) → IDLE (Chip Loaded) - chip stays loaded!	Cancel tone
 Scan any chip	Ignored	Blocked beep
 Play/Pause (short)	Ignored	Blocked beep
 Play/Pause (long 2s)	Ignored	Blocked beep

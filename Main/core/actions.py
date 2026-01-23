@@ -3,10 +3,6 @@ Pure action handlers (play, stop, record…)
 These update state and call I/O, but contain no hardware code directly.
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from core.state import DeviceState, State, ChipData
 from utils.logger import log_action, log_state, log_error
 
@@ -39,6 +35,12 @@ def action_play(device_state: DeviceState, audio_player, ui) -> DeviceState:
     """Start playback from loaded chip"""
     if device_state.loaded_chip is None:
         log_action("Cannot play: no chip loaded")
+        ui.on_blocked_action()
+        return device_state
+    
+    # Check if chip has a song assigned
+    if not device_state.loaded_chip.uri:
+        log_action(f"Cannot play: chip '{device_state.loaded_chip.name}' has no song assigned")
         ui.on_blocked_action()
         return device_state
     
@@ -163,6 +165,22 @@ def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceStat
         if os.path.exists(saved_path):
             size = os.path.getsize(saved_path)
             log_action(f"Recording file verified: {saved_path} ({size} bytes)")
+            
+            # Add recording to library automatically
+            try:
+                from server import add_recording_to_library
+                # Use chip name in display name if available
+                chip_name = device_state.loaded_chip.name if device_state.loaded_chip else None
+                if chip_name:
+                    display_name = f"[RECORDING] {chip_name}"
+                else:
+                    display_name = None  # Will auto-generate from filename
+                add_recording_to_library(saved_path, display_name)
+                log_action(f"Recording added to library: {saved_path}")
+            except ImportError:
+                log_error("Could not import server module - recording not added to library")
+            except Exception as e:
+                log_error(f"Failed to add recording to library: {e}")
         else:
             log_error(f"Recording file not found after save: {saved_path}")
     else:

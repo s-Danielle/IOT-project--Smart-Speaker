@@ -1,39 +1,120 @@
-**This repo is an EXAMPLE ONLY.  create your own empty repo or use an empty template https://github.com/ICST-Technion/IOT_REPO_TEMPLATE**
+# Smart Speaker - Raspberry Pi IoT Project
 
+A smart speaker system that uses NFC chips to trigger music playback. Scan an NFC tag to instantly play your favorite songs from Spotify or local files, record voice memos, and control everything through physical buttons or a companion mobile app.
 
-## Pilltrack Project by : Malak Marrid, Mahmoud Massarwi & Zaina Darawsha.
-In this project we have built a smart pill box that makes it easy for patients to track their pill doses over a week (7 days), pill doses times, and to get 
-notified by a smartphone app when the pill times come and when they are late for pills. In addition, a helper of the patient can use the app to see the patient LOG and get notified when the patient is late for pills.
-The smart pill box is responsive, and gives sound and visual notifications to help the patient. 
+## Features
 
-## Our Project in details :
-First, the patient and his helper both signup to the app (each on his phone).
-The patient enters the pill times and chooses a "refill day": when the box needs refill after 1 week of use.
-1. Settings: Inside the app, the patient can update the pill times: 2 times per day in which the patient will take his pill doses (2 cells in the box per day) .
-2. Search Box: If the patient forgot where the pill box is, he can press on "search box" botton in the app the that will cause the pill box to light in different colors 
-and make loud continuous sounds to help the patient find the box location.
-3. Reminders: 5 minutes before each pill does time, the patient will get a reminder notification to take his pills. and the suitable cell in the pill box will light in blue to help the patient take the right dose.
-4. Pills taken in time: If the patient took his pills from the right cell, it will light in purple to confirm him that he's done okay, and he will get a "good job notification". There is a virtual pill box in the app that shows the status of each pill dose through the week and it will be updated in the suitable cell with a v mark.
+- **NFC-Triggered Playback**: Scan NFC tags to instantly play associated music
+- **Multiple Audio Sources**: Supports Spotify tracks and local audio files via Mopidy
+- **Voice Recording**: Record audio clips and save them to chips
+- **Physical Controls**: Three buttons for Play/Pause, Record, and Stop
+- **Mobile App**: Flutter companion app for managing chips and music library
+- **Audio Feedback**: Sound effects for all interactions
 
-## Folder description :
-* ESP32: source code for the esp side (firmware).
-* Documentation: wiring diagram + basic operating instructions
-* Unit Tests: tests for individual hardware components (input / output devices)
-* flutter_app : dart code for our Flutter app.
-* Parameters: contains description of configurable parameters 
-* Assets: 3D printed parts, Audio files used in this project, 
-* link to app additional material: https://drive.google.com/drive/folders/1LCiqWJl7VVG6eHTiEd6VVtLLuSFPIfDv
+## Hardware Components
 
-## Arduino/ESP32 libraries used in this project:
-* ArduinoMqttClient - version 0.1.6
-* RTCZero - version 1.6.0
-* Adafruit BusIO - version 1.14.1
-* Adafruit PCF8574 - version 1.1.0
-* FastLED - version 3.5.0
-* Firebase Arduino Client Library for ESP8266 and ESP32 - version 4.2.7
+| Component | Purpose |
+|-----------|---------|
+| Raspberry Pi | Main controller |
+| PN532 NFC Reader | Read NFC chip UIDs (I2C) |
+| PCF8574 GPIO Expander | Button input handling (I2C) |
+| 3 Physical Buttons | Play/Pause, Record, Stop |
+| Speaker/Audio Output | Music playback & feedback sounds |
+| Microphone | Audio recording |
 
-## Project Poster:
-![pilltrack_poster_page-0001](https://user-images.githubusercontent.com/116976579/219964681-bfead2e6-48d1-4b6d-91fa-6e38bef64aa1.jpg)
+## Controls
 
-This project is part of ICST - The Interdisciplinary Center for Smart Technologies, Taub Faculty of Computer Science, Technion
+| Button | Short Press | Long Press (3s) |
+|--------|-------------|-----------------|
+| **Play/Pause** | Toggle playback | Play latest recording (2s) |
+| **Record** | Save recording | Start recording |
+| **Stop** | Stop / Cancel | Clear chip |
+
+## Project Structure
+
+```
+├── Main/                    # Python application
+│   ├── main.py              # Entry point
+│   ├── server.py            # REST API for mobile app
+│   ├── core/                # State machine & actions
+│   ├── hardware/            # Hardware abstraction (NFC, buttons, audio)
+│   ├── ui/                  # Sound & light feedback
+│   ├── config/              # Settings & NFC tag mappings
+│   └── ARCHITECTURE.md      # Detailed documentation
+│
+├── flutter_app/             # Mobile companion app
+├── Unit-tests/              # Hardware component tests
+└── include/                 # WiFi module headers
+```
+
+## Quick Start
+
+### Prerequisites
+
+1. **Raspberry Pi** with I2C enabled
+2. **Mopidy** music server installed and running
+3. **Python 3.7+**
+
+### Installation
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd IOT-project--Smart-Speaker/Main
+
+# Install dependencies
+pip3 install -r requirements.txt
+
+# Start Mopidy (if not running)
+sudo systemctl start mopidy
+
+# Run the application
+python3 main.py
+```
+
+### Configuration
+
+1. **Add NFC Tags**: Edit `Main/config/tags.json` to map chip UIDs to songs:
+   ```json
+   {
+     "bytearray(b'\\xe4\\x1c\\x9d\\xbb')": {
+       "name": "My Favorite Song",
+       "uri": "spotify:track:XXXXX"
+     }
+   }
+   ```
+
+2. **I2C Addresses** (in `Main/config/settings.py`):
+   - PN532 NFC: `0x24`
+   - PCF8574 Buttons: `0x27`
+
+## Mobile App
+
+The Flutter app connects to the speaker's REST API (port 8080) to:
+- View and rename NFC chips
+- Assign songs to chips
+- Manage the music library
+- Upload audio files
+
+## Documentation
+
+- [`Main/ARCHITECTURE.md`](Main/ARCHITECTURE.md) - Complete architecture documentation
+- [`Main/Docs/States.txt`](Main/Docs/States.txt) - State machine reference
+- [`Main/Docs/MOPIDY_SETUP.md`](Main/Docs/MOPIDY_SETUP.md) - Mopidy installation guide
+
+## Dependencies
+
+### Python Libraries
+- `requests` - Mopidy JSON-RPC communication
+- `adafruit-circuitpython-pn532` - NFC reader driver
+- `smbus2` - I2C communication for buttons
+
+### System Requirements
+- Mopidy music server
+- ALSA utils (`arecord` for recording)
+- I2C enabled on Raspberry Pi
+
+---
+
+This project is part of ICST - The Interdisciplinary Center for Smart Technologies, Taub Faculty of Computer Science, Technion  
 https://icst.cs.technion.ac.il/

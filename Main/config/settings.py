@@ -9,7 +9,7 @@ CLEAR_CHIP_HOLD_DURATION = 3.0  # Hold duration to clear chip
 PLAY_LATEST_HOLD_DURATION = 2.0  # Hold duration on Play/Pause to play latest recording
 
 # I2C addresses
-PCF8574_ADDRESS = 0x27  # Button expander address
+PCF8574_ADDRESS = 0x20  # Button expander address
 PN532_I2C_ADDRESS = 0x24  # NFC reader address
 
 # Button bit positions on PCF8574 (active-low)
