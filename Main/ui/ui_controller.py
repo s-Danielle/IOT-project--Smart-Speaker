@@ -34,13 +34,11 @@ class UIController:
     def on_play(self):
         """Feedback when playback starts/resumes"""
         log_event("▶️  PLAY")
-        self._sounds.play_play()
         self._lights.show_playing()
     
     def on_pause(self):
         """Feedback when playback pauses"""
         log_event("⏸️  PAUSE")
-        self._sounds.play_pause()
         self._lights.show_paused()
     
     def on_stop(self):
