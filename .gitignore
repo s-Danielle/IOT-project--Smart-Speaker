@@ -28,8 +28,10 @@ flutter_app/.pub-cache/
 flutter_app/.pub/
 flutter_app/android/.gradle/
 flutter_app/android/local.properties
+flutter_app/android/gradle/wrapper/gradle-wrapper.jar
 flutter_app/*.iml
 flutter_app/.idea/
+flutter_app/devtools_options.yaml
 *.lock
 !pubspec.lock
 
