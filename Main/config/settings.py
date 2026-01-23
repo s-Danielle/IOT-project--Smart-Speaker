@@ -4,7 +4,7 @@ Constants: timings, I2C addresses, etc.
 
 # Timing constants (in seconds)
 LOOP_INTERVAL = 0.05  # 50ms main loop interval
-RECORD_HOLD_DURATION = 3.0  # Hold duration to arm recording
+RECORD_HOLD_DURATION = 3.8  # Hold duration to arm recording (matches countdown.wav length)
 CLEAR_CHIP_HOLD_DURATION = 3.0  # Hold duration to clear chip
 PLAY_LATEST_HOLD_DURATION = 2.0  # Hold duration on Play/Pause to play latest recording
 

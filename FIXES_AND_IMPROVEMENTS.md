@@ -4,7 +4,7 @@
 
 | # | Fix/Improvement | Status |
 |---|-----------------|--------|
-| 1 | Recording Countdown Sync | TODO |
+| 1 | Recording Countdown Sync | DONE |
 | 2 | Recording Time Limit | TODO |
 | 3 | Debug Service | TODO |
 | 4 | WiFi Config on Boot | TODO |
@@ -19,7 +19,7 @@
 
 **File:** `Main/config/settings.py`
 ```python
-RECORD_HOLD_DURATION = 4.0  # Was 3.0, now matches countdown.wav length
+RECORD_HOLD_DURATION = 3.8  # Was 3.0, now matches countdown.wav length exactly
 ```
 
 ---

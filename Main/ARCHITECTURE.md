@@ -444,7 +444,7 @@ All hardware addresses and timing constants:
 ```python
 # Timing
 LOOP_INTERVAL = 0.05          # 50ms main loop
-RECORD_HOLD_DURATION = 3.0    # Hold to start recording
+RECORD_HOLD_DURATION = 3.8    # Hold to start recording (matches countdown.wav)
 CLEAR_CHIP_HOLD_DURATION = 3.0# Hold to clear chip
 PLAY_LATEST_HOLD_DURATION = 2.0# Hold to play recording
 
