@@ -154,6 +154,32 @@ def action_start_recording(device_state: DeviceState, audio_player, recorder, ui
     return device_state
 
 
+def _add_recording_to_library_via_http(filepath: str, display_name: str) -> bool:
+    """Add a recording to the library via HTTP POST to local server"""
+    import json
+    import urllib.request
+    from config.settings import SERVER_HOST, SERVER_PORT
+    
+    try:
+        url = f'http://{SERVER_HOST}:{SERVER_PORT}/library'
+        data = {
+            'name': display_name,
+            'uri': f'file://{filepath}'
+        }
+        json_data = json.dumps(data).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=json_data,
+            method='POST',
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status == 201
+    except Exception as e:
+        log_error(f"HTTP POST to /library failed: {e}")
+        return False
+
+
 def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceState:
     """Save current recording"""
     log_action("Saving recording")
@@ -166,19 +192,24 @@ def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceStat
             size = os.path.getsize(saved_path)
             log_action(f"Recording file verified: {saved_path} ({size} bytes)")
             
-            # Add recording to library automatically
+            # Add recording to library automatically via HTTP
             try:
-                from server import add_recording_to_library
                 # Use chip name in display name if available
                 chip_name = device_state.loaded_chip.name if device_state.loaded_chip else None
                 if chip_name:
                     display_name = f"[RECORDING] {chip_name}"
                 else:
-                    display_name = None  # Will auto-generate from filename
-                add_recording_to_library(saved_path, display_name)
-                log_action(f"Recording added to library: {saved_path}")
-            except ImportError:
-                log_error("Could not import server module - recording not added to library")
+                    # Auto-generate from filename
+                    basename = os.path.basename(saved_path)
+                    name_without_ext = os.path.splitext(basename)[0]
+                    if name_without_ext.startswith("recording_"):
+                        name_without_ext = name_without_ext[10:]  # Remove "recording_" prefix
+                    display_name = f"[RECORDING] {name_without_ext}"
+                
+                if _add_recording_to_library_via_http(saved_path, display_name):
+                    log_action(f"Recording added to library: {saved_path}")
+                else:
+                    log_error("Failed to add recording to library via HTTP")
             except Exception as e:
                 log_error(f"Failed to add recording to library: {e}")
         else:

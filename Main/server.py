@@ -424,7 +424,20 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path == '/library':
+        if self.path == '/chips':
+            # Register a new chip: POST /chips {uid: "...", name: "..."}
+            body = self._read_body()
+            uid = body.get('uid')
+            name = body.get('name')
+            
+            if not uid:
+                self._send_json({"error": "uid is required"}, 400)
+                return
+            
+            new_chip = register_new_chip(uid, name)
+            self._send_json(new_chip, 201)
+            
+        elif self.path == '/library':
             body = self._read_body()
             new_song = {
                 "id": f"song{uuid.uuid4().hex[:6]}",

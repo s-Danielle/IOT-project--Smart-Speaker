@@ -28,6 +28,10 @@ SAMPLE_RATE = 44100
 CHANNELS = 1
 AUDIO_FORMAT = "S16_LE"
 
+# HTTP Server settings (local API server)
+SERVER_HOST = "localhost"
+SERVER_PORT = 8080
+
 # Mopidy settings
 MOPIDY_HOST = "localhost"
 MOPIDY_PORT = 6680  # HTTP JSON-RPC port (deprecated, kept for backward compatibility)

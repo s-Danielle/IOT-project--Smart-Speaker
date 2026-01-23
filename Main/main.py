@@ -24,6 +24,7 @@ import time
 
 from core.controller import Controller
 from hardware.health import HealthChecker
+from config.settings import SERVER_PORT
 from utils.logger import log, log_success, log_error, log_event
 from server import start_server
 
@@ -55,7 +56,7 @@ def main():
     
     # Start HTTP server in background thread
     log("Starting HTTP server...")
-    server_thread = start_server(port=8080)
+    server_thread = start_server(port=SERVER_PORT)
     # Give server a moment to start
     time.sleep(0.5)
     
