@@ -10,6 +10,7 @@
 | 4 | WiFi Config on Boot | TODO |
 | 5 | Advanced App Settings | DONE |
 | 6 | Stale Chip Data Fix | DONE |
+| 7 | LED Feedback System | TODO |
 
 ---
 
@@ -67,15 +68,35 @@ StandardError=append:/var/log/smart_speaker.log
 **Flow:**
 ```
 Boot → Check WiFi → Connected? 
-  ├─ Yes → Start normally
-  └─ No → Create hotspot "SmartSpeaker-Setup" 
-          → User connects → Configures WiFi via web page
+  ├─ Yes → Start normally (green LED pulse)
+  └─ No → Create hotspot "SmartSpeaker-Setup" (blue pulsing LED)
+          → User connects → Configures WiFi via captive portal
           → Reboot → Connect to configured WiFi
 ```
 
-**Options:**
-- Use `comitup` package (easy WiFi provisioning)
-- Custom script with `hostapd`
+**Recommended Approach: `comitup`**
+- Raspberry Pi WiFi provisioning package
+- Creates AP with captive portal when no WiFi
+- Web UI for network selection
+- Automatically connects after config
+
+**Installation:**
+```bash
+sudo apt install comitup comitup-web
+sudo systemctl enable comitup
+```
+
+**Configuration (`/etc/comitup.conf`):**
+```ini
+ap_name: SmartSpeaker-Setup
+web_ui_port: 80
+```
+
+**LED Integration:**
+- Blue pulsing = AP mode (waiting for config)
+- Yellow breathing = Connecting to WiFi
+- Green pulse = Connected successfully
+- Red flash = Connection failed
 
 ---
 
@@ -180,6 +201,51 @@ iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 
 ---
 
+## 7. 💡 LED Feedback System (2-3 hrs)
+
+**What:** Visual feedback through RGB LEDs for all speaker states
+
+**LED Patterns:**
+
+| State | Pattern | Color |
+|-------|---------|-------|
+| Idle | Slow breathing | White (dim) |
+| Playing | Pulsing | Green |
+| Paused | Steady | Yellow |
+| Recording | Pulsing | Red |
+| NFC Scan | Quick flash | Blue |
+| Loading | Rotating | Cyan |
+| Error | Fast blink | Red |
+| Blocked (Parental) | Double flash | Orange |
+| WiFi AP Mode | Slow pulse | Blue |
+| WiFi Connecting | Fast pulse | Yellow |
+| Volume Change | Brief flash (intensity = volume) | White |
+
+**Implementation:**
+- Extend `ui/lights.py` with pattern functions
+- Add LED state tracking to `ui_controller.py`
+- Hook into actions: play, pause, record, scan, errors
+- Non-blocking async LED animations
+
+**Hardware:** APA102 LED strip (existing)
+
+**Code Structure:**
+```python
+# ui/lights.py
+class LightPatterns:
+    IDLE = {"pattern": "breathe", "color": (30, 30, 30), "speed": 2.0}
+    PLAYING = {"pattern": "pulse", "color": (0, 255, 0), "speed": 1.0}
+    RECORDING = {"pattern": "pulse", "color": (255, 0, 0), "speed": 0.5}
+    ERROR = {"pattern": "blink", "color": (255, 0, 0), "speed": 0.2}
+    # ...
+
+def set_pattern(pattern: dict):
+    """Set LED pattern (non-blocking)"""
+    pass
+```
+
+---
+
 ## Priority Order
 
 | # | Item | Time | Value |
@@ -188,5 +254,6 @@ iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 | 2 | Recording Time Limit | 1 hr | ⭐⭐⭐ |
 | 3 | Advanced App Settings | DONE | ⭐⭐⭐⭐⭐ |
 | 4 | Debug Service | DONE | ⭐⭐⭐⭐ |
-| 5 | WiFi Config | TODO | ⭐⭐⭐ |
+| 5 | WiFi Config | TODO | ⭐⭐⭐⭐ |
 | 6 | Stale Chip Data Fix | DONE | Bug fix |
+| 7 | LED Feedback | TODO | ⭐⭐⭐⭐⭐ |

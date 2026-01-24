@@ -6,16 +6,24 @@
 |---|---------|--------|
 | 1 | WebSocket Real-Time | TODO |
 | 2 | PTT Voice Commands | TODO |
-| 3 | Parental Controls | DONE |
+| 3 | Parental Controls | DONE ✅ |
 | 4 | Usage Analytics | TODO |
 | 5 | Fix README | TODO |
-| 6 | Service Separation | DONE |
+| 6 | Service Separation | DONE ✅ |
+| 7 | WiFi Provisioning | TODO |
+| 8 | LED Feedback | TODO |
 
 ---
 
-## Current Status: ✅ B+/A-
+## Current Status: ✅ A-
 
-Working: REST API, Flutter App, NFC, Buttons, Volume Control, Auto Chip Registration
+**Working:** REST API, Flutter App, NFC, Buttons, Volume Control, Auto Chip Registration, Parental Controls, Developer Tools, Service Separation
+
+**Recent Additions (Jan 2026):**
+- Parental controls with volume limits, quiet hours, chip whitelists
+- Developer tools screen with service management, logs, git operations
+- Separated server and hardware controller as independent services
+- Debug logging to files for remote troubleshooting
 
 ---
 
@@ -111,13 +119,49 @@ Replace PillTrack content with Smart Speaker docs.
 
 ---
 
+## 7. 📶 WiFi Provisioning (2-3 hrs)
+
+**What:** Auto-create hotspot when no WiFi available for easy setup
+
+**Flow:**
+```
+Boot → Check WiFi → Connected? 
+  ├─ Yes → Normal startup
+  └─ No → Create "SmartSpeaker-Setup" AP
+          → Captive portal for WiFi config
+          → Connect to selected network
+```
+
+**Implementation:** Use `comitup` package (Raspberry Pi WiFi provisioning)
+
+**See:** `FIXES_AND_IMPROVEMENTS.md` for detailed implementation
+
+---
+
+## 8. 💡 LED Feedback System (2-3 hrs)
+
+**What:** Visual feedback through APA102 RGB LEDs for all states
+
+**Key Patterns:**
+- Idle: Dim white breathing
+- Playing: Green pulse
+- Recording: Red pulse
+- Error/Blocked: Red/Orange flash
+- WiFi Setup: Blue pulse
+
+**See:** `FIXES_AND_IMPROVEMENTS.md` for full pattern table
+
+---
+
 ## Priority Order
 
 | # | Feature | Time | Demo Value |
 |---|---------|------|------------|
-| 1 | WebSocket | 3-4 hrs | ⭐⭐⭐⭐ |
-| 2 | PTT Voice | 3-4 hrs | ⭐⭐⭐⭐⭐ |
-| 3 | Parental Controls | DONE | ⭐⭐⭐⭐ |
-| 4 | Analytics | 2-3 hrs | ⭐⭐⭐ |
-| 5 | README | 15 min | ⭐⭐ |
-| 6 | Service Separation | DONE | ⭐⭐⭐⭐ |
+| 1 | LED Feedback | 2-3 hrs | ⭐⭐⭐⭐⭐ |
+| 2 | WiFi Provisioning | 2-3 hrs | ⭐⭐⭐⭐⭐ |
+| 3 | WebSocket | 3-4 hrs | ⭐⭐⭐⭐ |
+| 4 | PTT Voice | 3-4 hrs | ⭐⭐⭐⭐⭐ |
+| 5 | Parental Controls | DONE | ⭐⭐⭐⭐ |
+| 6 | Analytics | 2-3 hrs | ⭐⭐⭐ |
+| 7 | README | 15 min | ⭐⭐ |
+| 8 | Service Separation | DONE | ⭐⭐⭐⭐ |
