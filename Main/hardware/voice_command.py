@@ -3,7 +3,7 @@ Voice command processor for PTT (Push-to-Talk) feature.
 Handles recording, transcription, and command parsing.
 Uses Google Speech API (requires internet).
 
-Supported commands (must start with "hi speaker"):
+Supported commands (must start with "hi speaker" or "hey speaker"):
 - "hi speaker play" -> play
 - "hi speaker pause" -> pause  
 - "hi speaker stop" -> stop
@@ -13,6 +13,8 @@ Supported commands (must start with "hi speaker"):
 import subprocess
 import tempfile
 import os
+import time
+import signal
 from typing import Optional
 
 from config.settings import (
@@ -25,15 +27,17 @@ from hardware.speech_recognition_wrapper import SpeechRecognitionWrapper
 from utils.logger import log
 
 
+# Max recording duration to prevent endless recording
+MAX_RECORD_DURATION = 10.0  # seconds
+
+
 class VoiceCommand:
     """
     Voice command processor with wake phrase detection.
     
-    Flow:
-    1. Record audio for fixed duration (2.5s)
-    2. Transcribe using Google Speech API
-    3. Parse for wake phrase + command
-    4. Return command or None
+    Supports two modes:
+    1. Fixed duration: listen_and_parse(duration) - records for set time
+    2. Hold-to-talk: start_recording() / stop_and_parse() - records while button held
     """
     
     # Supported commands after wake phrase
@@ -46,11 +50,169 @@ class VoiceCommand:
         self._wake_phrase = PTT_WAKE_PHRASE.lower()
         
         self._speech = SpeechRecognitionWrapper()
+        
+        # For hold-to-talk mode
+        self._recording_process = None
+        self._recording_file = None
+        self._recording_start_time = None
+        
         log(f"[VOICE] Initialized (wake phrase: '{self._wake_phrase}')")
+    
+    def start_recording(self) -> bool:
+        """
+        Start recording audio (for hold-to-talk mode).
+        Call stop_and_parse() when done to get the command.
+        
+        Returns:
+            True if recording started, False on error
+        """
+        if not self._enabled:
+            log("[VOICE] PTT is disabled")
+            return False
+        
+        if self._recording_process is not None:
+            log("[VOICE] Already recording")
+            return False
+        
+        # Create temp file for recording
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+            self._recording_file = f.name
+        
+        try:
+            # Build arecord command (no duration limit, we'll stop it manually)
+            cmd = [
+                'arecord',
+                '-f', 'S16_LE',
+                '-r', '16000',
+                '-c', '1',
+                '-q',
+                self._recording_file
+            ]
+            
+            if RECORDING_DEVICE and RECORDING_DEVICE.strip():
+                cmd.insert(1, '-D')
+                cmd.insert(2, RECORDING_DEVICE)
+            
+            # Start recording in background
+            self._recording_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE
+            )
+            self._recording_start_time = time.time()
+            
+            log("[VOICE] Recording started (hold button, release when done)")
+            return True
+            
+        except Exception as e:
+            log(f"[VOICE] Failed to start recording: {e}")
+            self._cleanup_recording()
+            return False
+    
+    def stop_and_parse(self) -> Optional[str]:
+        """
+        Stop recording and parse the command (for hold-to-talk mode).
+        
+        Returns:
+            Command string ("play", "pause", "stop", "clear") or None
+        """
+        if self._recording_process is None:
+            log("[VOICE] Not recording")
+            return None
+        
+        # Calculate recording duration
+        duration = time.time() - self._recording_start_time if self._recording_start_time else 0
+        log(f"[VOICE] Stopping recording (duration: {duration:.1f}s)")
+        
+        # Stop the recording process
+        try:
+            self._recording_process.terminate()
+            self._recording_process.wait(timeout=2)
+        except:
+            try:
+                self._recording_process.kill()
+                self._recording_process.wait()
+            except:
+                pass
+        
+        self._recording_process = None
+        
+        # Check minimum duration
+        if duration < 0.5:
+            log("[VOICE] Recording too short (< 0.5s)")
+            self._cleanup_recording()
+            return None
+        
+        # Read the recorded audio
+        try:
+            with open(self._recording_file, 'rb') as f:
+                wav_data = f.read()
+            
+            if len(wav_data) <= 44:
+                log("[VOICE] Recording file too small")
+                self._cleanup_recording()
+                return None
+            
+            audio_data = wav_data[44:]  # Skip WAV header
+            
+        except Exception as e:
+            log(f"[VOICE] Failed to read recording: {e}")
+            self._cleanup_recording()
+            return None
+        finally:
+            self._cleanup_recording()
+        
+        # Transcribe
+        log("[VOICE] Transcribing via Google Speech API...")
+        text = self._speech.transcribe(audio_data, sample_rate=16000)
+        
+        if text is None:
+            log("[VOICE] Transcription failed")
+            return None
+        
+        # Parse command
+        command = self._parse_command(text)
+        
+        if command:
+            log(f"[VOICE] Command recognized: {command}")
+        else:
+            log(f"[VOICE] No valid command in: '{text}'")
+        
+        return command
+    
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        return self._recording_process is not None
+    
+    def cancel_recording(self):
+        """Cancel current recording without processing."""
+        if self._recording_process is not None:
+            try:
+                self._recording_process.terminate()
+                self._recording_process.wait(timeout=1)
+            except:
+                try:
+                    self._recording_process.kill()
+                except:
+                    pass
+            self._recording_process = None
+            log("[VOICE] Recording cancelled")
+        self._cleanup_recording()
+    
+    def _cleanup_recording(self):
+        """Clean up recording temp file."""
+        if self._recording_file:
+            try:
+                os.unlink(self._recording_file)
+            except:
+                pass
+            self._recording_file = None
+        self._recording_start_time = None
     
     def listen_and_parse(self, duration: Optional[float] = None) -> Optional[str]:
         """
-        Record audio, transcribe, and parse for command.
+        Record audio for fixed duration, transcribe, and parse for command.
+        (Original mode - kept for compatibility)
         
         Args:
             duration: Recording duration in seconds (default from settings)

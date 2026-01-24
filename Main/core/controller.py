@@ -786,48 +786,73 @@ class Controller:
         """
         Handle PTT (Push-to-Talk) button for voice commands.
         
-        When pressed:
-        1. Take over Light 1 (health LED) - set to BLUE (listening)
-        2. Record audio for ~2.5 seconds
-        3. Set Light 1 to CYAN (processing)
-        4. Transcribe and parse command
-        5. Execute command if recognized
-        6. Flash GREEN (success) or RED (not recognized)
-        7. Health monitor will restore Light 1 within 5 seconds
+        Hold-to-talk mode (like walkie-talkie):
+        1. Press button → LED BLUE, start recording
+        2. Hold and speak your command
+        3. Release button → LED CYAN, process command
+        4. Execute → LED GREEN (success) or RED (fail)
         
-        Supported commands (must start with "hi speaker"):
-        - "hi speaker play" -> play/resume
-        - "hi speaker pause" -> pause
-        - "hi speaker stop" -> stop
-        - "hi speaker clear" -> clear chip
+        Supported commands (say "hi speaker" or "hey speaker" then):
+        - "play" -> play/resume
+        - "pause" -> pause
+        - "stop" -> stop
+        - "clear" -> clear chip assignment
         """
         # Skip if PTT not enabled or not initialized
         if self._voice_command is None:
             return
         
-        # Check if PTT button was just pressed
-        if not self._buttons.just_pressed(ButtonID.PTT):
-            return
-        
-        # Block PTT during recording
+        # Block PTT during audio recording (voice memo)
         if state == State.RECORDING:
-            log_event("[PTT] Blocked - recording in progress")
-            self._ui.on_blocked_action()
+            if self._buttons.just_pressed(ButtonID.PTT):
+                log_event("[PTT] Blocked - voice memo recording in progress")
+                self._ui.on_blocked_action()
             return
         
-        log_button("🎙️ PTT button pressed - listening for voice command")
+        # Handle button press - START recording
+        if self._buttons.just_pressed(ButtonID.PTT):
+            log_button("🎙️ PTT pressed - hold and speak, release when done")
+            
+            # Take over Light 1 - BLUE (listening/recording)
+            if self._ptt_leds:
+                self._ptt_leds.set_light(1, Colors.BLUE)
+            
+            # Start recording
+            self._voice_command.start_recording()
+            return
         
-        # Step 1: Take over Light 1 - BLUE (listening)
-        if self._ptt_leds:
-            self._ptt_leds.set_light(1, Colors.BLUE)
+        # Handle button release - STOP recording and process
+        if self._buttons.just_released(ButtonID.PTT):
+            # Check if we were actually recording
+            if not self._voice_command.is_recording():
+                return
+            
+            log_button("🎙️ PTT released - processing command")
+            
+            # Show processing indicator
+            if self._ptt_leds:
+                self._ptt_leds.set_light(1, Colors.CYAN)
+            
+            # Stop recording and get command
+            command = self._voice_command.stop_and_parse()
+            
+            # Execute command
+            self._execute_ptt_command(command, state)
+            return
         
-        # Step 2: Listen and transcribe
-        if self._ptt_leds:
-            self._ptt_leds.set_light(1, Colors.CYAN)  # CYAN = processing
-        
-        command = self._voice_command.listen_and_parse()
-        
-        # Step 3: Execute command if recognized
+        # Safety: cancel recording if button held too long (>10s) without release
+        if self._voice_command.is_recording():
+            # Check how long button has been held
+            hold_time = self._buttons.hold_duration(ButtonID.PTT)
+            if hold_time > 10.0:
+                log_event("[PTT] Recording timeout (>10s) - cancelling")
+                self._voice_command.cancel_recording()
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.RED)
+                    time.sleep(0.3)
+    
+    def _execute_ptt_command(self, command: Optional[str], state: State):
+        """Execute a PTT voice command."""
         if command == "play":
             # Check quiet hours
             if self._check_quiet_hours():
