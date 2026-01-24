@@ -44,23 +44,30 @@
 ## 2. 🎙️ PTT Voice Commands (3-4 hrs)
 
 **What:** Press dedicated button, speak command → action executes  
-**Trigger:** Button 6 on IO expander (P5) - dedicated PTT button
+**Trigger:** Dedicated PTT button (future hardware addition)
 
 **Flow:**
-1. Press PTT button
-2. Speaker plays "beep" (listening)
+1. Press PTT button → LED turns blue (listening)
+2. Speaker plays "beep" 
 3. Listen for 2-3 seconds (fixed duration)
-4. Auto-process speech → execute command
-5. Speaker confirms: "Playing jazz" or "Not recognized"
+4. LED pulses cyan (processing)
+5. Execute command → LED flashes green/red (success/fail)
+6. Speaker confirms: "Playing jazz" or "Not recognized"
 
 **Commands to support:**
 - "Play [song name]" → search library and play
 - "Pause" / "Stop" / "Next"
 - "Volume up" / "Volume down"
 
+**Hardware (future):**
+- Dedicated PTT button (new GPIO or I2C expander)
+- Optional: Dedicated LED (Light 3) for voice mode feedback
+- Could share existing Light 2 if no dedicated LED available
+
 **Implementation:**
 - Use Vosk (offline speech-to-text, ~50MB model)
-- Add `BUTTON_PTT_BIT = 5` to settings.py
+- Add `BUTTON_PTT_BIT` to settings.py when hardware added
+- Integrate with LED system (Light 3 or shared Light 2)
 
 **Dependencies:** `vosk`, `sounddevice`
 
@@ -140,16 +147,18 @@ Boot → Check WiFi → Connected?
 
 ## 8. 💡 LED Feedback System (2-3 hrs)
 
-**What:** Visual feedback through APA102 RGB LEDs for all states
+**What:** Visual feedback through 2 dedicated RGB LEDs (PCF8574 @ 0x21)
 
-**Key Patterns:**
-- Idle: Dim white breathing
-- Playing: Green pulse
-- Recording: Red pulse
-- Error/Blocked: Red/Orange flash
-- WiFi Setup: Blue pulse
+**LED Assignment:**
+| LED | Purpose | Examples |
+|-----|---------|----------|
+| Light 1 | Device Health | WiFi status, service errors, booting |
+| Light 2 | Player State | Playing, paused, recording, blocked |
+| Light 3 (future) | PTT Voice Mode | Listening, processing, result |
 
-**See:** `FIXES_AND_IMPROVEMENTS.md` for full pattern table
+**Extensible design** for adding PTT button + LED later.
+
+**See:** `FIXES_AND_IMPROVEMENTS.md` for full pattern tables and code
 
 ---
 
