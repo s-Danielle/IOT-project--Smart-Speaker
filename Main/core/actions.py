@@ -31,12 +31,33 @@ def action_load_chip(device_state: DeviceState, chip_data: dict, audio_player, u
     return device_state
 
 
-def action_play(device_state: DeviceState, audio_player, ui) -> DeviceState:
-    """Start playback from loaded chip"""
+def action_play(device_state: DeviceState, audio_player, ui, chip_store=None) -> DeviceState:
+    """Start playback from loaded chip
+    
+    Args:
+        device_state: Current device state
+        audio_player: Audio player instance
+        ui: UI controller instance
+        chip_store: Optional ChipStore to fetch fresh data from server
+    """
     if device_state.loaded_chip is None:
         log_action("Cannot play: no chip loaded")
         ui.on_blocked_action()
         return device_state
+    
+    # ALWAYS fetch fresh chip data from server before playing
+    # This ensures any changes made in the app are reflected immediately
+    if chip_store is not None:
+        fresh_data = chip_store.lookup(device_state.loaded_chip.uid)
+        if fresh_data:
+            # Update loaded chip with fresh data from server
+            device_state.loaded_chip = ChipData(
+                uid=fresh_data['uid'],
+                name=fresh_data['name'],
+                uri=fresh_data.get('uri', ''),
+                metadata=fresh_data
+            )
+            log_action(f"Refreshed chip data from server: {device_state.loaded_chip.name}")
     
     # Check if chip has a song assigned
     if not device_state.loaded_chip.uri:

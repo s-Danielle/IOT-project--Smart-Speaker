@@ -6,9 +6,10 @@
 |---|---------|--------|
 | 1 | WebSocket Real-Time | TODO |
 | 2 | PTT Voice Commands | TODO |
-| 3 | Parental Controls | TODO |
+| 3 | Parental Controls | DONE |
 | 4 | Usage Analytics | TODO |
 | 5 | Fix README | TODO |
+| 6 | Service Separation | DONE |
 
 ---
 
@@ -57,18 +58,19 @@ Working: REST API, Flutter App, NFC, Buttons, Volume Control, Auto Chip Registra
 
 ---
 
-## 3. 👨‍👩‍👧 Parental Controls (2-3 hrs)
+## 3. 👨‍👩‍👧 Parental Controls - DONE ✅
 
-**Features:**
+**Implemented Features:**
 - Volume limit (cap at configurable %)
 - Quiet hours (disable playback during set times)
 - Chip whitelist/blacklist
-- Usage time limit per day
+- Daily usage time limit
 
 **Implementation:**
-- Add settings to `server_data.json`
-- Flutter screen to configure limits
-- Controller checks limits before actions
+- Settings stored in `server_data.json`
+- Flutter `ParentalControlsScreen` to configure limits
+- Controller enforces limits before playback actions
+- Blocked actions logged and show feedback
 
 ---
 
@@ -88,12 +90,34 @@ Replace PillTrack content with Smart Speaker docs.
 
 ---
 
+## 6. 🔧 Service Separation - DONE ✅
+
+**What:** Split server and hardware controller into separate systemd services
+
+**Architecture:**
+- `smart_speaker_server.service` - API server (always running)
+- `smart_speaker.service` - Hardware controller (can restart without losing API)
+
+**Benefits:**
+- App stays connected when restarting speaker hardware
+- Server is single source of truth for all data
+- Clean separation of concerns
+
+**Files:**
+- `Main/server_main.py` - Standalone server entry point
+- `Main/utils/server_client.py` - HTTP client for controller
+- `services/smart_speaker_server.service` - Server systemd unit
+- Updated `services/smart_speaker.service` - Hardware controller unit
+
+---
+
 ## Priority Order
 
 | # | Feature | Time | Demo Value |
 |---|---------|------|------------|
 | 1 | WebSocket | 3-4 hrs | ⭐⭐⭐⭐ |
 | 2 | PTT Voice | 3-4 hrs | ⭐⭐⭐⭐⭐ |
-| 3 | Parental Controls | 2-3 hrs | ⭐⭐⭐⭐ |
+| 3 | Parental Controls | DONE | ⭐⭐⭐⭐ |
 | 4 | Analytics | 2-3 hrs | ⭐⭐⭐ |
 | 5 | README | 15 min | ⭐⭐ |
+| 6 | Service Separation | DONE | ⭐⭐⭐⭐ |

@@ -6,9 +6,10 @@
 |---|-----------------|--------|
 | 1 | Recording Countdown Sync | DONE |
 | 2 | Recording Time Limit | TODO |
-| 3 | Debug Service | TODO |
+| 3 | Debug Service | DONE |
 | 4 | WiFi Config on Boot | TODO |
-| 5 | Advanced App Settings | TODO |
+| 5 | Advanced App Settings | DONE |
+| 6 | Stale Chip Data Fix | DONE |
 
 ---
 
@@ -37,18 +38,22 @@ RECORD_HOLD_DURATION = 3.8  # Was 3.0, now matches countdown.wav length exactly
 
 ---
 
-## 3. 🐛 Debug Service (30 min)
+## 3. 🐛 Debug Service - DONE ✅
 
 **What:** Systemd service that logs to file for debugging
 
-**Implementation:**
-- Update `smart_speaker.service` to log to `/var/log/smart_speaker.log`
-- Add log rotation
+**Implemented:**
+- Both services log to `/var/log/smart_speaker*.log`
+- Server: `/var/log/smart_speaker_server.log`
+- Hardware: `/var/log/smart_speaker.log`
 
-**Service update:**
+**Service files:**
 ```ini
-[Service]
-ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/Main/main.py
+# services/smart_speaker_server.service
+StandardOutput=append:/var/log/smart_speaker_server.log
+StandardError=append:/var/log/smart_speaker_server.log
+
+# services/smart_speaker.service
 StandardOutput=append:/var/log/smart_speaker.log
 StandardError=append:/var/log/smart_speaker.log
 ```
@@ -74,18 +79,22 @@ Boot → Check WiFi → Connected?
 
 ---
 
-## 5. 📱 Advanced App Settings (3-4 hrs)
+## 5. 📱 Advanced App Settings - DONE ✅
 
-### Remote Debug & Control Endpoints
+### Implemented Endpoints
 
 | Feature | Endpoint | Description |
 |---------|----------|-------------|
 | View I2C Devices | `GET /debug/i2c` | List all I2C devices |
-| Restart Service | `POST /debug/restart` | Restart smart_speaker service |
+| Speaker Status | `GET /debug/speaker/status` | Hardware controller status |
+| Start Speaker | `POST /debug/speaker/start` | Start hardware controller |
+| Stop Speaker | `POST /debug/speaker/stop` | Stop hardware controller |
+| Restart Speaker | `POST /debug/speaker/restart` | Restart hardware controller |
 | View Error Log | `GET /debug/logs` | Last 100 lines of log |
 | View System Info | `GET /debug/system` | CPU temp, memory, disk, uptime |
 | Git Pull | `POST /debug/git-pull` | Pull latest code from repo |
 | Git Status | `GET /debug/git-status` | Current branch, changes |
+| Daemon Reload | `POST /debug/service/daemon-reload` | Reload systemd daemon |
 | Reboot Pi | `POST /debug/reboot` | Reboot the Raspberry Pi |
 
 ### API Implementation
@@ -159,12 +168,25 @@ iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 
 ---
 
+## 6. 🔄 Stale Chip Data Fix - DONE ✅
+
+**Problem:** When you update a chip's song in the app, pressing play used cached data instead of fetching fresh data from the server.
+
+**Solution:** `action_play()` now always fetches fresh chip data from the server before playing.
+
+**Files Modified:**
+- `Main/core/actions.py` - Added `chip_store` parameter to `action_play`, fetches fresh data
+- `Main/core/controller.py` - Passes `chip_store` to `action_play` calls
+
+---
+
 ## Priority Order
 
 | # | Item | Time | Value |
 |---|------|------|-------|
-| 1 | Recording Sync Fix | 5 min | Bug fix |
+| 1 | Recording Sync Fix | DONE | Bug fix |
 | 2 | Recording Time Limit | 1 hr | ⭐⭐⭐ |
-| 3 | Advanced App Settings | 3-4 hrs | ⭐⭐⭐⭐⭐ |
-| 4 | Debug Service | 30 min | ⭐⭐⭐⭐ |
-| 5 | WiFi Config | 2-3 hrs | ⭐⭐⭐ |
+| 3 | Advanced App Settings | DONE | ⭐⭐⭐⭐⭐ |
+| 4 | Debug Service | DONE | ⭐⭐⭐⭐ |
+| 5 | WiFi Config | TODO | ⭐⭐⭐ |
+| 6 | Stale Chip Data Fix | DONE | Bug fix |

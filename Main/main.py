@@ -1,9 +1,13 @@
 #!/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python
 """
-Entry point: create controller + run loop
+Smart Speaker Hardware Controller
 
-Smart Speaker - Raspberry Pi IoT Project
-=========================================
+This is the hardware controller entry point. It runs the main event loop
+that handles NFC scanning, button presses, LED feedback, and audio playback.
+
+NOTE: This does NOT start the HTTP server. The server runs as a separate
+service (smart_speaker_server.service). This controller communicates with
+the server via HTTP to fetch chip data and parental controls.
 
 Controls:
 - Play/Pause button: Toggle playback
@@ -21,13 +25,10 @@ States:
 import sys
 import time
 
-
 from core.controller import Controller
 from hardware.health import HealthChecker
-from config.settings import SERVER_PORT
 from utils.logger import log, log_success, log_error, log_event
-from server import start_server
-
+from utils.server_client import check_server_health
 
 
 def run_health_check():
@@ -46,21 +47,48 @@ def run_health_check():
     return len(failures) == 0
 
 
+def wait_for_server(max_attempts=30, delay=1.0):
+    """Wait for the API server to be available.
+    
+    Args:
+        max_attempts: Maximum number of connection attempts
+        delay: Delay between attempts in seconds
+        
+    Returns:
+        True if server is available, False if timed out
+    """
+    log("Waiting for API server...")
+    for attempt in range(max_attempts):
+        if check_server_health():
+            log_success("API server is available")
+            return True
+        if attempt < max_attempts - 1:
+            time.sleep(delay)
+    
+    log_error(f"API server not available after {max_attempts} attempts")
+    return False
+
+
 def main():
+    log("=" * 60)
+    log("SMART SPEAKER HARDWARE CONTROLLER")
+    log("=" * 60)
+    
     # Optional: Run health check
-    if "--health-check" in sys.argv or "-h" in sys.argv:
+    if "--health-check" in sys.argv:
         all_healthy = run_health_check()
         if not all_healthy and "--strict" in sys.argv:
             log_error("Strict mode: exiting due to health check failures")
             sys.exit(1)
     
-    # Start HTTP server in background thread
-    log("Starting HTTP server...")
-    server_thread = start_server(port=SERVER_PORT)
-    # Give server a moment to start
-    time.sleep(0.5)
+    # Wait for the API server to be available
+    # (Server runs as separate service: smart_speaker_server.service)
+    if not wait_for_server():
+        log_error("Cannot start without API server. Is smart_speaker_server.service running?")
+        sys.exit(1)
     
     # Create and run controller
+    log("Starting hardware controller...")
     try:
         controller = Controller()
         controller.run()
@@ -69,12 +97,6 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
-    finally:
-        # the thread is running as a daemon, but it won't hurt to join it
-        log("Shutting down HTTP server...")
-        server_thread.stop()  # Gracefully stop the server
-        server_thread.join()  # Wait for thread to finish
-        log("HTTP server shut down")
 
 
 if __name__ == "__main__":

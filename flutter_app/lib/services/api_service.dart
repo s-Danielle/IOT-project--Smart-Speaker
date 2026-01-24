@@ -213,27 +213,45 @@ class ApiService {
     throw Exception('Failed to git pull: ${response.statusCode}');
   }
 
-  // POST /debug/service/stop
-  Future<Map<String, dynamic>> stopService() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/service/stop'));
+  // GET /debug/speaker/status
+  Future<Map<String, dynamic>> getSpeakerStatus() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/speaker/status'));
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
-    throw Exception('Failed to stop service: ${response.statusCode}');
+    throw Exception('Failed to get speaker status: ${response.statusCode}');
   }
 
-  // POST /debug/service/restart
-  Future<Map<String, dynamic>> restartService() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/service/restart'));
+  // POST /debug/speaker/start
+  Future<Map<String, dynamic>> startSpeaker() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/speaker/start'));
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
-    throw Exception('Failed to restart service: ${response.statusCode}');
+    throw Exception('Failed to start speaker: ${response.statusCode}');
   }
 
-  // POST /debug/service/daemon-reload
+  // POST /debug/speaker/stop
+  Future<Map<String, dynamic>> stopSpeaker() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/speaker/stop'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to stop speaker: ${response.statusCode}');
+  }
+
+  // POST /debug/speaker/restart
+  Future<Map<String, dynamic>> restartSpeaker() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/speaker/restart'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to restart speaker: ${response.statusCode}');
+  }
+
+  // POST /debug/daemon-reload
   Future<Map<String, dynamic>> daemonReload() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/service/daemon-reload'));
+    final response = await http.post(Uri.parse('$baseUrl/debug/daemon-reload'));
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }

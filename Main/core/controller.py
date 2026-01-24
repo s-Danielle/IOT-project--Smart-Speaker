@@ -26,7 +26,7 @@ from config.settings import (
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
-from server import get_parental_controls
+from utils.server_client import get_parental_controls
 
 
 class Controller:
@@ -571,7 +571,7 @@ class Controller:
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self.device_state = actions.action_play(
-                self.device_state, self._audio, self._ui
+                self.device_state, self._audio, self._ui, self._chip_store
             )
             return
         
