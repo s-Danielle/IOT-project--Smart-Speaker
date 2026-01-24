@@ -137,5 +137,125 @@ class ApiService {
     }
     throw Exception('Failed to upload file: ${response.statusCode}');
   }
+
+  // ===========================================================================
+  // PARENTAL CONTROLS
+  // ===========================================================================
+
+  // GET /settings/parental
+  Future<Map<String, dynamic>> getParentalSettings() async {
+    final response = await http.get(Uri.parse('$baseUrl/settings/parental'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get parental settings: ${response.statusCode}');
+  }
+
+  // PUT /settings/parental
+  Future<Map<String, dynamic>> updateParentalSettings(Map<String, dynamic> settings) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/settings/parental'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(settings),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to update parental settings: ${response.statusCode}');
+  }
+
+  // ===========================================================================
+  // DEBUG / DEVELOPER TOOLS
+  // ===========================================================================
+
+  // GET /debug/i2c
+  Future<Map<String, dynamic>> getI2cDevices() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/i2c'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get I2C devices: ${response.statusCode}');
+  }
+
+  // GET /debug/system
+  Future<Map<String, dynamic>> getSystemInfo() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/system'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get system info: ${response.statusCode}');
+  }
+
+  // GET /debug/logs
+  Future<Map<String, dynamic>> getLogs() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/logs'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get logs: ${response.statusCode}');
+  }
+
+  // GET /debug/git-status
+  Future<Map<String, dynamic>> getGitStatus() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/git-status'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get git status: ${response.statusCode}');
+  }
+
+  // POST /debug/git-pull
+  Future<Map<String, dynamic>> gitPull() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/git-pull'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to git pull: ${response.statusCode}');
+  }
+
+  // POST /debug/service/stop
+  Future<Map<String, dynamic>> stopService() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/service/stop'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to stop service: ${response.statusCode}');
+  }
+
+  // POST /debug/service/restart
+  Future<Map<String, dynamic>> restartService() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/service/restart'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to restart service: ${response.statusCode}');
+  }
+
+  // POST /debug/service/daemon-reload
+  Future<Map<String, dynamic>> daemonReload() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/service/daemon-reload'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to daemon reload: ${response.statusCode}');
+  }
+
+  // POST /debug/run-main
+  Future<Map<String, dynamic>> runMain() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/run-main'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to run main: ${response.statusCode}');
+  }
+
+  // POST /debug/reboot
+  Future<Map<String, dynamic>> rebootPi() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/reboot'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to reboot: ${response.statusCode}');
+  }
 }
 
