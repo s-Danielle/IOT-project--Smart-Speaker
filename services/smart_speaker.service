@@ -1,17 +1,18 @@
 [Unit]
-Description=Smart Speaker IoT Service
-After=network-online.target mopidy.service
-Wants=network-online.target
+Description=Smart Speaker Hardware Controller
+After=smart_speaker_server.service mopidy.service
+Requires=smart_speaker_server.service
+Wants=mopidy.service
 
 [Service]
 Type=simple
 User=iot-proj
 WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
-ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/Main/main.py
+ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python main.py
 Restart=on-failure
-RestartSec=10
+RestartSec=5
 
-# Logging - output to file for debug endpoints + journal for systemctl
+# Logging
 # View with: journalctl -u smart_speaker -f  OR  tail -f /var/log/smart_speaker.log
 StandardOutput=append:/var/log/smart_speaker.log
 StandardError=append:/var/log/smart_speaker.log

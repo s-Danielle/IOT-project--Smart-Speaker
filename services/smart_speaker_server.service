@@ -1,0 +1,22 @@
+[Unit]
+Description=Smart Speaker API Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=iot-proj
+WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
+ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python server_main.py
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=append:/var/log/smart_speaker_server.log
+StandardError=append:/var/log/smart_speaker_server.log
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -13,11 +13,13 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
   Map<String, dynamic>? _systemInfo;
   Map<String, dynamic>? _i2cInfo;
   Map<String, dynamic>? _gitStatus;
+  Map<String, dynamic>? _speakerStatus;
   List<String>? _logs;
   bool _loadingSystem = true;
   bool _loadingI2c = false;
   bool _loadingGit = false;
   bool _loadingLogs = false;
+  bool _loadingSpeaker = false;
   bool _showLogs = false;
   String? _actionStatus;
 
@@ -26,6 +28,7 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     super.initState();
     _loadSystemInfo();
     _loadGitStatus();
+    _loadSpeakerStatus();
   }
 
   Future<ApiService> _getApi() async {
@@ -117,35 +120,74 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     }
   }
 
-  Future<void> _stopService() async {
+  Future<void> _loadSpeakerStatus() async {
+    setState(() => _loadingSpeaker = true);
+    try {
+      final api = await _getApi();
+      final status = await api.getSpeakerStatus();
+      setState(() {
+        _speakerStatus = status;
+        _loadingSpeaker = false;
+      });
+    } catch (e) {
+      setState(() {
+        _speakerStatus = {'status': 'unknown', 'running': false, 'error': e.toString()};
+        _loadingSpeaker = false;
+      });
+    }
+  }
+
+  Future<void> _startSpeaker() async {
     final confirmed = await _confirmAction(
-      'Stop Service',
-      'Are you sure you want to stop the smart speaker service?',
+      'Start Speaker',
+      'Are you sure you want to start the smart speaker hardware controller?',
     );
     if (!confirmed) return;
 
-    _showActionStatus('Stopping service...');
+    _showActionStatus('Starting speaker...');
     try {
       final api = await _getApi();
-      final result = await api.stopService();
-      _showActionStatus('Service ${result['status']}');
+      final result = await api.startSpeaker();
+      _showActionStatus('Speaker ${result['status']}');
+      _loadSpeakerStatus();
     } catch (e) {
       _showActionStatus('Error: $e');
     }
   }
 
-  Future<void> _restartService() async {
+  Future<void> _stopSpeaker() async {
     final confirmed = await _confirmAction(
-      'Restart Service',
-      'Are you sure you want to restart the smart speaker service?',
+      'Stop Speaker',
+      'Are you sure you want to stop the smart speaker hardware controller?',
     );
     if (!confirmed) return;
 
-    _showActionStatus('Restarting service...');
+    _showActionStatus('Stopping speaker...');
     try {
       final api = await _getApi();
-      final result = await api.restartService();
-      _showActionStatus('Service ${result['status']}');
+      final result = await api.stopSpeaker();
+      _showActionStatus('Speaker ${result['status']}');
+      _loadSpeakerStatus();
+    } catch (e) {
+      _showActionStatus('Error: $e');
+    }
+  }
+
+  Future<void> _restartSpeaker() async {
+    final confirmed = await _confirmAction(
+      'Restart Speaker',
+      'Are you sure you want to restart the smart speaker hardware controller? The API server will stay running.',
+    );
+    if (!confirmed) return;
+
+    _showActionStatus('Restarting speaker...');
+    try {
+      final api = await _getApi();
+      final result = await api.restartSpeaker();
+      _showActionStatus('Speaker ${result['status']}');
+      // Wait a moment then refresh status
+      await Future.delayed(const Duration(seconds: 2));
+      _loadSpeakerStatus();
     } catch (e) {
       _showActionStatus('Error: $e');
     }
@@ -439,7 +481,7 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
 
           const SizedBox(height: 16),
 
-          // Service Controls Card
+          // Speaker Controls Card
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -448,28 +490,95 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.miscellaneous_services, color: theme.colorScheme.primary),
+                      Icon(Icons.speaker, color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
-                        'Service Controls',
+                        'Speaker Controls',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      const Spacer(),
+                      if (_loadingSpeaker)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        IconButton(
+                          onPressed: _loadSpeakerStatus,
+                          icon: const Icon(Icons.refresh),
+                          tooltip: 'Refresh status',
+                        ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Speaker Status Indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _speakerStatus?['running'] == true
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _speakerStatus?['running'] == true
+                            ? Colors.green
+                            : Colors.orange,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _speakerStatus?['running'] == true
+                              ? Icons.check_circle
+                              : Icons.pause_circle,
+                          color: _speakerStatus?['running'] == true
+                              ? Colors.green
+                              : Colors.orange,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Hardware: ${_speakerStatus?['status'] ?? 'unknown'}',
+                          style: TextStyle(
+                            color: _speakerStatus?['running'] == true
+                                ? Colors.green
+                                : Colors.orange,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Control the hardware controller (NFC, buttons, LEDs). The API server stays running.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      if (_speakerStatus?['running'] != true)
+                        OutlinedButton.icon(
+                          onPressed: _startSpeaker,
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Start'),
+                        )
+                      else
+                        OutlinedButton.icon(
+                          onPressed: _stopSpeaker,
+                          icon: const Icon(Icons.stop),
+                          label: const Text('Stop'),
+                        ),
                       OutlinedButton.icon(
-                        onPressed: _stopService,
-                        icon: const Icon(Icons.stop),
-                        label: const Text('Stop'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _restartService,
+                        onPressed: _restartSpeaker,
                         icon: const Icon(Icons.refresh),
                         label: const Text('Restart'),
                       ),
@@ -479,19 +588,6 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
                         label: const Text('Daemon Reload'),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _runMain,
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Run main.py'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.secondary,
-                        foregroundColor: theme.colorScheme.onSecondary,
-                      ),
-                    ),
                   ),
                 ],
               ),

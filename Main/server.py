@@ -470,8 +470,33 @@ def debug_git_pull() -> dict:
         return {"stdout": "", "stderr": str(e), "success": False}
 
 
-def debug_service_stop() -> dict:
-    """Stop the smart_speaker service."""
+def debug_speaker_status() -> dict:
+    """Get the status of the smart_speaker hardware service."""
+    try:
+        result = subprocess.run(
+            ['systemctl', 'is-active', 'smart_speaker'],
+            capture_output=True, text=True, timeout=10
+        )
+        status = result.stdout.strip()
+        return {"status": status, "running": status == "active"}
+    except Exception as e:
+        return {"status": "error", "running": False, "error": str(e)}
+
+
+def debug_speaker_start() -> dict:
+    """Start the smart_speaker hardware service."""
+    try:
+        result = subprocess.run(
+            ['sudo', 'systemctl', 'start', 'smart_speaker'],
+            capture_output=True, text=True, timeout=30
+        )
+        return {"status": "started" if result.returncode == 0 else "error", "error": result.stderr if result.returncode != 0 else None}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def debug_speaker_stop() -> dict:
+    """Stop the smart_speaker hardware service."""
     try:
         result = subprocess.run(
             ['sudo', 'systemctl', 'stop', 'smart_speaker'],
@@ -482,8 +507,8 @@ def debug_service_stop() -> dict:
         return {"status": "error", "error": str(e)}
 
 
-def debug_service_restart() -> dict:
-    """Restart the smart_speaker service."""
+def debug_speaker_restart() -> dict:
+    """Restart the smart_speaker hardware service."""
     try:
         result = subprocess.run(
             ['sudo', 'systemctl', 'restart', 'smart_speaker'],
@@ -596,6 +621,8 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(debug_get_logs())
         elif self.path == '/debug/git-status':
             self._send_json(debug_get_git_status())
+        elif self.path == '/debug/speaker/status':
+            self._send_json(debug_speaker_status())
         else:
             self.send_error(404)
 
@@ -817,11 +844,14 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         # Debug POST endpoints
         elif self.path == '/debug/git-pull':
             self._send_json(debug_git_pull())
-        elif self.path == '/debug/service/stop':
-            self._send_json(debug_service_stop())
-        elif self.path == '/debug/service/restart':
-            self._send_json(debug_service_restart())
-        elif self.path == '/debug/service/daemon-reload':
+        # Speaker service control (hardware controller)
+        elif self.path == '/debug/speaker/start':
+            self._send_json(debug_speaker_start())
+        elif self.path == '/debug/speaker/stop':
+            self._send_json(debug_speaker_stop())
+        elif self.path == '/debug/speaker/restart':
+            self._send_json(debug_speaker_restart())
+        elif self.path == '/debug/daemon-reload':
             self._send_json(debug_daemon_reload())
         elif self.path == '/debug/run-main':
             self._send_json(debug_run_main())
@@ -872,3 +902,25 @@ def start_server(port=8080, host='0.0.0.0'):
     server_thread = ServerThread(port=port, host=host)
     server_thread.start()
     return server_thread
+
+
+def run_server_blocking(port=8080, host='0.0.0.0'):
+    """
+    Run the HTTP server in the main thread (blocking).
+    
+    Use this for standalone server service mode where the server
+    is the main process and should run until terminated.
+    """
+    server = HTTPServer((host, port), SpeakerHandler)
+    log_success(f"HTTP Server started on http://{host}:{port}")
+    log(f"  - Data file: {DATA_FILE}")
+    log(f"  - Local files directory: {LOCAL_FILES_DIR}")
+    log("Server running in standalone mode (blocking)...")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        log("Server shutdown requested...")
+    finally:
+        server.server_close()
+        log("Server stopped.")
