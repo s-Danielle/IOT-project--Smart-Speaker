@@ -79,7 +79,8 @@ class HealthMonitor:
             with urllib.request.urlopen(req, timeout=3) as response:
                 if response.status == 200:
                     data = json.loads(response.read().decode())
-                    return data.get('status') == 'running'
+                    # Server returns {"status": "active", "running": true}
+                    return data.get('running', False) or data.get('status') == 'active'
         except Exception:
             pass
         return False
