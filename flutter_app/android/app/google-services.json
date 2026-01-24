@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:777964635043:android:714924fed60f215597d016",
         "android_client_info": {
-          "package_name": "com.pilltrack.iot"
+          "package_name": "com.smartspeaker.iot"
         }
       },
       "oauth_client": [

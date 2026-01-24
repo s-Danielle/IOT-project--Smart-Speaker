@@ -1,5 +1,5 @@
-name: iot2
-description: "A new Flutter project."
+name: smart_speaker
+description: "Smart Speaker companion app for managing NFC chips and music library."
 publish_to: "none"
 version: 0.1.0
 
