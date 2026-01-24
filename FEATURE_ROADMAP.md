@@ -149,16 +149,19 @@ Boot → Check WiFi → Connected?
 
 **What:** Visual feedback through 2 dedicated RGB LEDs (PCF8574 @ 0x21)
 
-**LED Assignment:**
-| LED | Purpose | Examples |
-|-----|---------|----------|
-| Light 1 | Device Health | WiFi status, service errors, booting |
-| Light 2 | Player State | Playing, paused, recording, blocked |
-| Light 3 (future) | PTT Voice Mode | Listening, processing, result |
+**Architecture:**
+| LED | Purpose | Controller | Key Colors |
+|-----|---------|------------|------------|
+| Light 1 | Device Health | `health_monitor.py` (separate service) | Green=OK, Yellow=partial, Red=error |
+| Light 2 | Player State | `Main` via `ui/lights.py` | Green=playing, Yellow=paused, Red=recording |
+| Light 3 | PTT Voice (future) | TBD | Blue=listening, Cyan=processing |
 
-**Extensible design** for adding PTT button + LED later.
+**Main ignores Light 1** - health is monitored by a separate service that checks:
+- Internet connectivity (ping 8.8.8.8)
+- Server status (GET /health)
+- Hardware status (GET /debug/speaker/status)
 
-**See:** `FIXES_AND_IMPROVEMENTS.md` for full pattern tables and code
+**See:** `FIXES_AND_IMPROVEMENTS.md` for full pattern tables and implementation code
 
 ---
 

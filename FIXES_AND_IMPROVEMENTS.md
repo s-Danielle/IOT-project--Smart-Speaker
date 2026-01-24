@@ -203,40 +203,84 @@ iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 
 ## 7. 💡 LED Feedback System (2-3 hrs)
 
-**What:** Visual feedback through 2 dedicated RGB LEDs
+**What:** Visual feedback through 2 dedicated RGB LEDs with separate concerns
 
 **Hardware:** PCF8574 I2C expander at 0x21
-- Light 1 (P0-P2): **Device Health**
-- Light 2 (P3-P5): **Player State**
-- Future: Light 3 for PTT mode (separate expander or additional pins)
+- **Light 1 (P0-P2):** Device Health - controlled by **health service** (Main ignores)
+- **Light 2 (P3-P5):** Player State - controlled by **Main**
+- Future: Light 3 for PTT mode
+
+**Available Colors:**
+| Color | R | G | B | Use |
+|-------|---|---|---|-----|
+| Red | ✓ | | | Errors, recording |
+| Green | | ✓ | | OK, playing |
+| Blue | | | ✓ | WiFi setup, NFC scan |
+| Yellow | ✓ | ✓ | | Partial/warning, paused |
+| Cyan | | ✓ | ✓ | Loading, hardware-only |
+| Magenta | ✓ | | ✓ | Blocked, server-only |
+| White | ✓ | ✓ | ✓ | Booting, volume |
 
 ---
 
-### Light 1: Device Health LED
+### Light 1: Device Health LED (Separate Health Service)
 
-| State | Color | Pattern |
-|-------|-------|---------|
-| Healthy / Connected | Green | Solid |
-| WiFi AP Mode (setup) | Blue | Slow blink |
-| WiFi Connecting | Yellow | Fast blink |
-| Service Error | Red | Solid |
-| Hardware Error | Red | Fast blink |
-| Booting | Cyan | Pulse |
+**Main does NOT control this LED** - managed by `health_monitor.py` service
+
+| State | Color | Pattern | Meaning |
+|-------|-------|---------|---------|
+| All Systems Go | Green | Solid | Internet ✓ Server ✓ Hardware ✓ |
+| WiFi Provisioning | Blue | Slow pulse | AP mode, waiting for config |
+| Connecting to WiFi | Blue | Fast blink | Trying to connect |
+| Partially Up | Yellow | Solid | Some services running, not all |
+| Hardware Only | Cyan | Solid | Hardware OK, no internet/server |
+| Server Only | Magenta | Solid | Server OK, hardware not responding |
+| No Internet | Yellow | Slow blink | WiFi connected but no internet |
+| Service Crashed | Red | Solid | Critical service down |
+| Hardware Error | Red | Fast blink | I2C/NFC/audio failure |
+| Booting | White | Pulse | System starting up |
+
+**Health Check Logic:**
+```
+┌─────────────────────────────────────────────────┐
+│           Health Monitor (every 5s)             │
+├─────────────────────────────────────────────────┤
+│  1. Check internet    → ping 8.8.8.8            │
+│  2. Check server      → GET localhost:5000/health│
+│  3. Check hardware    → GET /debug/speaker/status│
+├─────────────────────────────────────────────────┤
+│  All 3 OK     → GREEN solid                     │
+│  2 of 3       → YELLOW solid                    │
+│  HW only      → CYAN solid                      │
+│  Server only  → MAGENTA solid                   │
+│  None         → RED solid                       │
+│  No internet  → YELLOW blink                    │
+└─────────────────────────────────────────────────┘
+```
 
 ---
 
-### Light 2: Player State LED
+### Light 2: Player State LED (Main Controller)
 
-| State | Color | Pattern |
-|-------|-------|---------|
-| Idle | Off | - |
-| NFC Chip Scanned | Blue | Quick flash |
-| Playing | Green | Solid |
-| Paused | Yellow | Solid |
-| Recording | Red | Pulse |
-| Recording Countdown | Red | Blink (sync with countdown) |
-| Blocked (Parental) | Magenta | Double flash |
-| Error (playback) | Red | Quick flash |
+**Controlled by Main** via `ui/lights.py`
+
+| State | Color | Pattern | Trigger |
+|-------|-------|---------|---------|
+| Idle / Standby | Off | - | No activity |
+| Chip Scanned | Blue | Quick flash (200ms) | NFC read success |
+| Chip Unknown | Yellow | Double flash | NFC read but chip not in DB |
+| Loading Track | Cyan | Pulse | Fetching from Mopidy |
+| Playing | Green | Solid | Playback active |
+| Paused | Yellow | Solid | Playback paused |
+| Stopped | Off | - | Playback stopped |
+| Recording Countdown | Red | Blink (sync with beeps) | 3-2-1 countdown |
+| Recording Active | Red | Solid | Recording in progress |
+| Recording Saved | Green | Flash (500ms) | Recording saved successfully |
+| Volume Change | White | Brief flash (100ms) | Volume adjusted |
+| Blocked (Parental) | Magenta | Double flash | Quiet hours / blocked chip |
+| Blocked (Volume Cap) | Magenta | Single flash | Volume limit hit |
+| Playback Error | Red | Triple flash | Mopidy error |
+| Chip Error | Red | Quick flash | Failed to read/write chip |
 
 ---
 
@@ -247,54 +291,57 @@ iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 | PTT Idle | Off | - |
 | Listening | Blue | Pulse |
 | Processing | Cyan | Fast pulse |
-| Command OK | Green | Flash |
+| Command Recognized | Green | Flash |
 | Command Failed | Red | Flash |
+| No Match | Yellow | Flash |
 
 ---
 
-### Implementation
+### Architecture
 
-**Files to modify/create:**
-- `Main/hardware/leds.py` - Low-level PCF8574 control
-- `Main/ui/lights.py` - High-level state → LED mapping
-
-**Code Structure:**
-```python
-# Main/hardware/leds.py
-from smbus2 import SMBus
-
-I2C_ADDRESS = 0x21
-LIGHT1_PINS = (0, 1, 2)  # Device Health (R, G, B)
-LIGHT2_PINS = (3, 4, 5)  # Player State (R, G, B)
-
-class RGBLeds:
-    """Control 2 RGB LEDs via PCF8574"""
-    
-    def __init__(self):
-        self.bus = SMBus(1)
-        self._state = 0x00
-    
-    def set_health(self, r: bool, g: bool, b: bool):
-        """Set device health LED (Light 1)"""
-        self._set_light(LIGHT1_PINS, r, g, b)
-    
-    def set_player(self, r: bool, g: bool, b: bool):
-        """Set player state LED (Light 2)"""
-        self._set_light(LIGHT2_PINS, r, g, b)
-    
-    def _set_light(self, pins, r, g, b):
-        for pin, on in zip(pins, (r, g, b)):
-            if on:
-                self._state |= (1 << pin)
-            else:
-                self._state &= ~(1 << pin)
-        self.bus.write_byte(I2C_ADDRESS, self._state)
+```
+┌─────────────────────────────────────────────────────────┐
+│                    PCF8574 @ 0x21                       │
+├─────────────────────────┬───────────────────────────────┤
+│   Light 1 (P0-P2)       │   Light 2 (P3-P5)             │
+│   DEVICE HEALTH         │   PLAYER STATE                │
+├─────────────────────────┼───────────────────────────────┤
+│   health_monitor.py     │   Main (controller.py)        │
+│   (separate service)    │   via ui/lights.py            │
+└─────────────────────────┴───────────────────────────────┘
 ```
 
+**3 Services:**
+1. `smart_speaker_server.service` - API server (always running)
+2. `smart_speaker.service` - Hardware controller (Main) → controls Light 2
+3. `smart_speaker_health.service` - Health monitor → controls Light 1 (NEW)
+
+---
+
+### Implementation Files
+
+**New files:**
+- `Main/health_monitor.py` - Health service controlling Light 1
+- `services/smart_speaker_health.service` - Systemd unit for health monitor
+
+**Modified files:**
+- `Main/hardware/leds.py` - Low-level PCF8574 control (shared library)
+- `Main/ui/lights.py` - Player state LED methods (Light 2 only)
+- `Main/core/controller.py` - Hook LED calls into state transitions
+
+---
+
+### Code: Shared LED Hardware Layer
+
 ```python
-# Main/ui/lights.py
+# Main/hardware/leds.py - Shared low-level control
+from smbus2 import SMBus
 import threading
 import time
+
+I2C_ADDRESS = 0x21
+LIGHT1_PINS = (0, 1, 2)  # Health (R, G, B)
+LIGHT2_PINS = (3, 4, 5)  # Player (R, G, B)
 
 class Colors:
     OFF =     (False, False, False)
@@ -304,46 +351,278 @@ class Colors:
     YELLOW =  (True,  True,  False)
     CYAN =    (False, True,  True)
     MAGENTA = (True,  False, True)
+    WHITE =   (True,  True,  True)
 
-class Lights:
-    """High-level LED state management"""
+class RGBLeds:
+    """Control RGB LEDs via PCF8574 - each service controls its own LED"""
     
-    def __init__(self, leds: RGBLeds):
-        self.leds = leds
+    def __init__(self):
+        self.bus = SMBus(1)
+        # Read current state to preserve other LED
+        try:
+            self._state = self.bus.read_byte(I2C_ADDRESS)
+        except:
+            self._state = 0x00
+    
+    def set_light(self, light_num: int, color: tuple):
+        """Set LED 1 or 2 to a color tuple (r, g, b)"""
+        pins = LIGHT1_PINS if light_num == 1 else LIGHT2_PINS
+        for pin, on in zip(pins, color):
+            if on:
+                self._state |= (1 << pin)
+            else:
+                self._state &= ~(1 << pin)
+        self.bus.write_byte(I2C_ADDRESS, self._state)
+    
+    def off(self, light_num: int):
+        """Turn off specific LED"""
+        self.set_light(light_num, Colors.OFF)
+```
+
+---
+
+### Code: Player State LED (Main)
+
+```python
+# Main/ui/lights.py - Player LED only (Light 2)
+import threading
+import time
+from hardware.leds import RGBLeds, Colors
+
+class PlayerLights:
+    """Player state LED (Light 2) - used by Main controller"""
+    
+    LIGHT_NUM = 2  # Player uses Light 2
+    
+    def __init__(self):
+        self.leds = RGBLeds()
+        self._pattern_thread = None
+        self._stop_pattern = threading.Event()
+    
+    def _stop_current_pattern(self):
+        """Stop any running pattern"""
+        self._stop_pattern.set()
+        if self._pattern_thread and self._pattern_thread.is_alive():
+            self._pattern_thread.join(timeout=0.5)
+        self._stop_pattern.clear()
+    
+    # === Solid states ===
+    def idle(self):
+        self._stop_current_pattern()
+        self.leds.off(self.LIGHT_NUM)
+    
+    def playing(self):
+        self._stop_current_pattern()
+        self.leds.set_light(self.LIGHT_NUM, Colors.GREEN)
+    
+    def paused(self):
+        self._stop_current_pattern()
+        self.leds.set_light(self.LIGHT_NUM, Colors.YELLOW)
+    
+    def recording(self):
+        self._stop_current_pattern()
+        self.leds.set_light(self.LIGHT_NUM, Colors.RED)
+    
+    # === Flash patterns ===
+    def chip_scanned(self):
+        """Blue flash on NFC scan"""
+        self._flash(Colors.BLUE, duration=0.2)
+    
+    def chip_unknown(self):
+        """Yellow double flash for unknown chip"""
+        self._double_flash(Colors.YELLOW)
+    
+    def blocked(self):
+        """Magenta double flash for parental block"""
+        self._double_flash(Colors.MAGENTA)
+    
+    def volume_changed(self):
+        """Brief white flash on volume change"""
+        self._flash(Colors.WHITE, duration=0.1)
+    
+    def success(self):
+        """Green flash for success"""
+        self._flash(Colors.GREEN, duration=0.5)
+    
+    def error(self):
+        """Red triple flash for error"""
+        self._triple_flash(Colors.RED)
+    
+    # === Pattern helpers ===
+    def _flash(self, color, duration=0.2):
+        def do_flash():
+            self.leds.set_light(self.LIGHT_NUM, color)
+            time.sleep(duration)
+            self.leds.off(self.LIGHT_NUM)
+        threading.Thread(target=do_flash, daemon=True).start()
+    
+    def _double_flash(self, color):
+        def do_double():
+            for _ in range(2):
+                self.leds.set_light(self.LIGHT_NUM, color)
+                time.sleep(0.15)
+                self.leds.off(self.LIGHT_NUM)
+                time.sleep(0.1)
+        threading.Thread(target=do_double, daemon=True).start()
+    
+    def _triple_flash(self, color):
+        def do_triple():
+            for _ in range(3):
+                self.leds.set_light(self.LIGHT_NUM, color)
+                time.sleep(0.1)
+                self.leds.off(self.LIGHT_NUM)
+                time.sleep(0.1)
+        threading.Thread(target=do_triple, daemon=True).start()
+    
+    def loading(self):
+        """Cyan pulsing while loading"""
+        self._stop_current_pattern()
+        def do_pulse():
+            while not self._stop_pattern.is_set():
+                self.leds.set_light(self.LIGHT_NUM, Colors.CYAN)
+                time.sleep(0.3)
+                self.leds.off(self.LIGHT_NUM)
+                time.sleep(0.3)
+        self._pattern_thread = threading.Thread(target=do_pulse, daemon=True)
+        self._pattern_thread.start()
+```
+
+---
+
+### Code: Health Monitor Service
+
+```python
+# Main/health_monitor.py - Separate service for Light 1
+import time
+import subprocess
+import requests
+from hardware.leds import RGBLeds, Colors
+
+class HealthMonitor:
+    """Monitor system health and control Light 1"""
+    
+    LIGHT_NUM = 1
+    CHECK_INTERVAL = 5  # seconds
+    
+    def __init__(self):
+        self.leds = RGBLeds()
+        self.server_url = "http://localhost:5000"
         self._blink_thread = None
         self._stop_blink = threading.Event()
     
-    # Device Health
-    def health_ok(self):
-        self.leds.set_health(*Colors.GREEN)
+    def check_internet(self) -> bool:
+        """Ping Google DNS"""
+        try:
+            result = subprocess.run(
+                ['ping', '-c', '1', '-W', '2', '8.8.8.8'],
+                capture_output=True, timeout=3
+            )
+            return result.returncode == 0
+        except:
+            return False
     
-    def health_wifi_setup(self):
-        self._blink_health(Colors.BLUE, interval=1.0)
+    def check_server(self) -> bool:
+        """Check if API server is responding"""
+        try:
+            r = requests.get(f"{self.server_url}/health", timeout=2)
+            return r.status_code == 200
+        except:
+            return False
     
-    def health_error(self):
-        self.leds.set_health(*Colors.RED)
+    def check_hardware(self) -> bool:
+        """Check if hardware controller is running"""
+        try:
+            r = requests.get(f"{self.server_url}/debug/speaker/status", timeout=2)
+            data = r.json()
+            return data.get("status") == "running"
+        except:
+            return False
     
-    # Player State
-    def player_idle(self):
-        self.leds.set_player(*Colors.OFF)
+    def _set_solid(self, color):
+        self._stop_blink.set()
+        self.leds.set_light(self.LIGHT_NUM, color)
     
-    def player_playing(self):
-        self.leds.set_player(*Colors.GREEN)
+    def _set_blink(self, color, interval=0.5):
+        self._stop_blink.set()
+        time.sleep(0.1)
+        self._stop_blink.clear()
+        
+        def do_blink():
+            while not self._stop_blink.is_set():
+                self.leds.set_light(self.LIGHT_NUM, color)
+                time.sleep(interval)
+                self.leds.off(self.LIGHT_NUM)
+                time.sleep(interval)
+        
+        self._blink_thread = threading.Thread(target=do_blink, daemon=True)
+        self._blink_thread.start()
     
-    def player_paused(self):
-        self.leds.set_player(*Colors.YELLOW)
+    def update_led(self):
+        internet = self.check_internet()
+        server = self.check_server()
+        hardware = self.check_hardware()
+        
+        if internet and server and hardware:
+            self._set_solid(Colors.GREEN)       # All systems go
+        elif server and hardware and not internet:
+            self._set_blink(Colors.YELLOW)      # No internet
+        elif hardware and not server:
+            self._set_solid(Colors.CYAN)        # Hardware only
+        elif server and not hardware:
+            self._set_solid(Colors.MAGENTA)     # Server only
+        elif not internet and not server and not hardware:
+            self._set_solid(Colors.RED)         # Critical - all down
+        else:
+            self._set_solid(Colors.YELLOW)      # Partial
     
-    def player_recording(self):
-        self._pulse_player(Colors.RED, interval=0.5)
-    
-    def player_blocked(self):
-        self._double_flash(Colors.MAGENTA)
+    def run(self):
+        """Main loop"""
+        # Boot animation
+        self._set_blink(Colors.WHITE, interval=0.3)
+        time.sleep(3)
+        
+        while True:
+            try:
+                self.update_led()
+            except Exception as e:
+                self._set_solid(Colors.RED)
+            time.sleep(self.CHECK_INTERVAL)
+
+if __name__ == "__main__":
+    monitor = HealthMonitor()
+    monitor.run()
 ```
 
-**Integration points:**
-- `core/controller.py` - Call `lights.player_*()` on state changes
-- `server.py` - Call `lights.health_*()` on startup/errors
-- WiFi provisioning script - Call `lights.health_wifi_setup()`
+---
+
+### Integration in Controller
+
+```python
+# Main/core/controller.py - Add LED hooks
+from ui.lights import PlayerLights
+
+class Controller:
+    def __init__(self, ...):
+        # ... existing init ...
+        self.lights = PlayerLights()
+    
+    def _on_state_change(self, new_state):
+        # Update LED based on state
+        if new_state == State.IDLE:
+            self.lights.idle()
+        elif new_state == State.PLAYING:
+            self.lights.playing()
+        elif new_state == State.PAUSED:
+            self.lights.paused()
+        elif new_state == State.RECORDING:
+            self.lights.recording()
+    
+    def _on_chip_scanned(self, chip_id):
+        self.lights.chip_scanned()
+    
+    def _on_blocked(self, reason):
+        self.lights.blocked()
+```
 
 ---
 
