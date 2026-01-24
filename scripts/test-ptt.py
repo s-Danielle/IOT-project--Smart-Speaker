@@ -18,27 +18,42 @@ main_dir = os.path.join(project_root, 'Main')
 sys.path.insert(0, main_dir)
 os.chdir(main_dir)
 
-def test_vosk_availability():
-    """Test if Vosk is installed and model is available."""
-    print("\n=== Testing Vosk Availability ===")
+
+def test_speech_recognition():
+    """Test if SpeechRecognition library is installed."""
+    print("\n=== Testing Speech Recognition Library ===")
     
     try:
-        import vosk
-        print(f"✓ Vosk installed (version: {vosk.__version__ if hasattr(vosk, '__version__') else 'unknown'})")
+        import speech_recognition as sr
+        print(f"[OK] SpeechRecognition installed (version: {sr.__version__})")
+        return True
     except ImportError:
-        print("✗ Vosk not installed")
-        print("  Install with: pip install vosk")
+        print("[FAIL] SpeechRecognition not installed")
+        print("  Install with: pip install SpeechRecognition")
         return False
+
+
+def test_internet():
+    """Test internet connectivity (required for Google Speech API)."""
+    print("\n=== Testing Internet Connectivity ===")
     
-    model_path = os.path.join(main_dir, 'models', 'vosk-model-small-en-us')
-    if os.path.exists(model_path):
-        print(f"✓ Model found at: {model_path}")
-    else:
-        print(f"✗ Model not found at: {model_path}")
-        print("  Download with: ./scripts/download-vosk-model.sh")
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['ping', '-c', '1', '-W', '3', '8.8.8.8'],
+            capture_output=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            print("[OK] Internet connection available")
+            return True
+        else:
+            print("[FAIL] No internet connection")
+            print("  Google Speech API requires internet")
+            return False
+    except Exception as e:
+        print(f"[FAIL] Connection test failed: {e}")
         return False
-    
-    return True
 
 
 def test_microphone():
@@ -60,23 +75,23 @@ def test_microphone():
         )
         
         if result.returncode != 0:
-            print(f"✗ Recording failed: {result.stderr.decode()}")
+            print(f"[FAIL] Recording failed: {result.stderr.decode()}")
             return False
         
         size = os.path.getsize(temp_path)
-        print(f"✓ Recording successful ({size} bytes)")
+        print(f"[OK] Recording successful ({size} bytes)")
         
         if size < 1000:
-            print("⚠ Recording seems very small - check microphone")
+            print("[WARN] Recording seems very small - check microphone")
             return False
         
         return True
         
     except FileNotFoundError:
-        print("✗ arecord not found - install alsa-utils")
+        print("[FAIL] arecord not found - install alsa-utils")
         return False
     except subprocess.TimeoutExpired:
-        print("✗ Recording timed out")
+        print("[FAIL] Recording timed out")
         return False
     finally:
         try:
@@ -85,26 +100,26 @@ def test_microphone():
             pass
 
 
-def test_voice_command():
-    """Test the voice command processor."""
+def test_voice_command_init():
+    """Test the voice command processor initialization."""
     print("\n=== Testing Voice Command Processor ===")
     
     try:
         from hardware.voice_command import VoiceCommand
         
         vc = VoiceCommand()
-        print("✓ VoiceCommand initialized")
+        print("[OK] VoiceCommand initialized")
         
         if vc.is_available():
-            print("✓ Voice commands are available")
+            print("[OK] Voice commands are available")
         else:
-            print("✗ Voice commands not available (check Vosk/model)")
+            print("[FAIL] Voice commands not available")
             return False
         
         return True
         
     except Exception as e:
-        print(f"✗ Failed to initialize VoiceCommand: {e}")
+        print(f"[FAIL] Failed to initialize VoiceCommand: {e}")
         return False
 
 
@@ -120,17 +135,17 @@ def test_parse_command():
         ("hi speaker pause", "pause"),
         ("hi speaker stop", "stop"),
         ("hi speaker clear", "clear"),
-        ("hi speaker play music", "play"),  # Extra words after command
-        ("play", None),  # Missing wake phrase
-        ("hello speaker play", None),  # Wrong wake phrase
-        ("hi speaker volume up", None),  # Unsupported command
+        ("hi speaker play music", "play"),
+        ("play", None),
+        ("hello speaker play", None),
+        ("hi speaker volume up", None),
         ("", None),
     ]
     
     all_passed = True
     for text, expected in test_cases:
         result = vc._parse_command(text)
-        status = "✓" if result == expected else "✗"
+        status = "[OK]" if result == expected else "[FAIL]"
         if result != expected:
             all_passed = False
         print(f"  {status} '{text}' -> {result} (expected: {expected})")
@@ -139,9 +154,10 @@ def test_parse_command():
 
 
 def test_live_recognition():
-    """Test live voice recognition."""
+    """Test live voice recognition with Google Speech API."""
     print("\n=== Testing Live Voice Recognition ===")
     print("Say 'hi speaker play' (or another command) when prompted...")
+    print("NOTE: Requires internet connection for Google Speech API")
     print("Press Ctrl+C to skip this test.\n")
     
     try:
@@ -155,10 +171,10 @@ def test_live_recognition():
         command = vc.listen_and_parse(duration=3.0)
         
         if command:
-            print(f"✓ Recognized command: {command}")
+            print(f"[OK] Recognized command: {command}")
             return True
         else:
-            print("✗ No command recognized")
+            print("[FAIL] No command recognized")
             print("  Make sure you said 'hi speaker' followed by a command")
             return False
             
@@ -166,22 +182,24 @@ def test_live_recognition():
         print("\nSkipped live recognition test")
         return True
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False
 
 
 def main():
     print("=" * 50)
     print("PTT Voice Command Test Suite")
+    print("(Uses Google Speech API - requires internet)")
     print("=" * 50)
     
     results = {}
     
     # Run tests
-    results['vosk'] = test_vosk_availability()
+    results['speech_lib'] = test_speech_recognition()
+    results['internet'] = test_internet()
     results['microphone'] = test_microphone()
-    results['voice_command'] = test_voice_command()
-    results['parse_command'] = test_parse_command()
+    results['voice_init'] = test_voice_command_init()
+    results['parse'] = test_parse_command()
     
     # Optional live test
     if all(results.values()):

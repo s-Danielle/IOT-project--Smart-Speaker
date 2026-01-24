@@ -128,20 +128,58 @@ Replace PillTrack content with Smart Speaker docs.
 
 ## 7. 📶 WiFi Provisioning (2-3 hrs)
 
-**What:** Auto-create hotspot when no WiFi available for easy setup
+**What:** Manage WiFi connections via NetworkManager with AP fallback + app control
+
+**Problem:** 
+- Headless device needs keyboard/SSH to configure WiFi
+- No way to manage saved networks from the app
+- No way to test AP mode without losing connections
+
+**Solution:** NetworkManager-based system with full API control
 
 **Flow:**
 ```
-Boot → Check WiFi → Connected? 
-  ├─ Yes → Normal startup
-  └─ No → Create "SmartSpeaker-Setup" AP
-          → Captive portal for WiFi config
-          → Connect to selected network
+Boot → NetworkManager auto-connects to known networks
+  ├─ Connected → Green LED, normal operation
+  └─ No known networks → Wait 30s → Start AP mode
+                         → Blue pulsing LED
+                         → Captive portal at 192.168.4.1
+                         → User configures WiFi
+                         → Reboot into normal mode
 ```
 
-**Implementation:** Use `comitup` package (Raspberry Pi WiFi provisioning)
+**API Endpoints (for Flutter app):**
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/debug/wifi/status` | GET | Current connection (ssid, ip, signal) |
+| `/debug/wifi/connections` | GET | List saved networks |
+| `/debug/wifi/scan` | GET | Scan available networks |
+| `/debug/wifi/connect` | POST | Connect to network |
+| `/debug/wifi/forget` | POST | Delete saved network |
+| `/debug/wifi/priority` | POST | Set network priority |
+| `/debug/wifi/ap-mode` | POST | **Force AP mode for testing** |
 
-**See:** `FIXES_AND_IMPROVEMENTS.md` for detailed implementation
+**Components:**
+- `Main/wifi_provisioner.py` - Boot-time provisioner (NetworkManager-based)
+- `services/smart_speaker_wifi.service` - Systemd unit
+- Server endpoints for app control
+
+**LED Integration (Light 1):**
+| State | Color | Pattern |
+|-------|-------|---------|
+| Waiting for auto-connect | Yellow | Pulsing |
+| AP Mode (setup) | Blue | Pulsing |
+| Connected | Green | Solid |
+| Connection failed | Red | Triple flash |
+
+**Key Features:**
+- ✅ Keeps existing nmtui-configured networks
+- ✅ Auto-connects to best available known network
+- ✅ Manage networks from Flutter app
+- ✅ Force AP mode for testing without losing configs
+- ✅ Priority-based network selection
+
+**See:** `FIXES_AND_IMPROVEMENTS.md` Section 4 for full implementation
 
 ---
 

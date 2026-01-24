@@ -1,6 +1,7 @@
 """
 Voice command processor for PTT (Push-to-Talk) feature.
 Handles recording, transcription, and command parsing.
+Uses Google Speech API (requires internet).
 
 Supported commands (must start with "hi speaker"):
 - "hi speaker play" -> play
@@ -18,10 +19,9 @@ from config.settings import (
     PTT_ENABLED,
     PTT_LISTEN_DURATION,
     PTT_WAKE_PHRASE,
-    VOSK_MODEL_PATH,
     RECORDING_DEVICE,
 )
-from hardware.vosk_wrapper import VoskWrapper
+from hardware.speech_recognition_wrapper import SpeechRecognitionWrapper
 from utils.logger import log
 
 
@@ -31,7 +31,7 @@ class VoiceCommand:
     
     Flow:
     1. Record audio for fixed duration (2.5s)
-    2. Transcribe using Vosk
+    2. Transcribe using Google Speech API
     3. Parse for wake phrase + command
     4. Return command or None
     """
@@ -40,16 +40,12 @@ class VoiceCommand:
     COMMANDS = {"play", "pause", "stop", "clear"}
     
     def __init__(self):
-        """Initialize voice command processor (lazy loads model)."""
+        """Initialize voice command processor."""
         self._enabled = PTT_ENABLED
         self._duration = PTT_LISTEN_DURATION
         self._wake_phrase = PTT_WAKE_PHRASE.lower()
         
-        # Build absolute model path
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        model_path = os.path.join(base_dir, VOSK_MODEL_PATH)
-        
-        self._vosk = VoskWrapper(model_path)
+        self._speech = SpeechRecognitionWrapper()
         log(f"[VOICE] Initialized (wake phrase: '{self._wake_phrase}')")
     
     def listen_and_parse(self, duration: Optional[float] = None) -> Optional[str]:
@@ -76,9 +72,9 @@ class VoiceCommand:
             log("[VOICE] Recording failed")
             return None
         
-        # Step 2: Transcribe
-        log("[VOICE] Transcribing...")
-        text = self._vosk.transcribe(audio_data, sample_rate=16000)
+        # Step 2: Transcribe (uses Google Speech API - needs internet)
+        log("[VOICE] Transcribing via Google Speech API...")
+        text = self._speech.transcribe(audio_data, sample_rate=16000)
         
         if text is None:
             log("[VOICE] Transcription failed")
@@ -111,7 +107,7 @@ class VoiceCommand:
         try:
             # Build arecord command
             # -f S16_LE: 16-bit signed little-endian
-            # -r 16000: 16kHz sample rate (optimal for Vosk)
+            # -r 16000: 16kHz sample rate (good for speech)
             # -c 1: mono
             # -d N: duration in seconds
             cmd = [
@@ -201,4 +197,4 @@ class VoiceCommand:
     
     def is_available(self) -> bool:
         """Check if voice commands are available."""
-        return self._enabled and self._vosk.is_available()
+        return self._enabled and self._speech.is_available()
