@@ -58,13 +58,15 @@ class HealthMonitor:
         """Check if API server is responding"""
         try:
             import urllib.request
+            # Use /status endpoint - simple and fast
             req = urllib.request.Request(
-                f"{self.SERVER_URL}/health",
+                f"{self.SERVER_URL}/status",
                 method='GET'
             )
             with urllib.request.urlopen(req, timeout=3) as response:
                 return response.status == 200
-        except Exception:
+        except Exception as e:
+            print(f"[HEALTH] Server check failed: {e}")
             return False
     
     def check_hardware(self) -> bool:
@@ -80,9 +82,12 @@ class HealthMonitor:
                 if response.status == 200:
                     data = json.loads(response.read().decode())
                     # Server returns {"status": "active", "running": true}
-                    return data.get('running', False) or data.get('status') == 'active'
-        except Exception:
-            pass
+                    result = data.get('running', False) or data.get('status') == 'active'
+                    if not result:
+                        print(f"[HEALTH] Hardware check got: {data}")
+                    return result
+        except Exception as e:
+            print(f"[HEALTH] Hardware check failed: {e}")
         return False
     
     def update_led(self):
