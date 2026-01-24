@@ -9,6 +9,10 @@
 
 # Secrets
 include/wifiCredentials.h
+SECRETS
+*.secrets
+.env
+.env.local
 
 # Python
 __pycache__/

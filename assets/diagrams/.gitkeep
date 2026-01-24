@@ -1,0 +1,7 @@
+# Add your wiring diagrams here
+# Supported formats: PNG, JPG, SVG
+# 
+# Suggested files:
+# - wiring_diagram.png (main hardware connections)
+# - i2c_schematic.png (I2C bus layout)
+# - pcb_layout.png (if using custom PCB)

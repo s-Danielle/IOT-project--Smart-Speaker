@@ -2,77 +2,265 @@
 
 A smart speaker system that uses NFC chips to trigger music playback. Scan an NFC tag to instantly play songs from Spotify or local files, record voice memos, and control playback through physical buttons, voice commands, or a companion mobile app.
 
+## Team Members
+
+| Name | Role | Responsibilities |
+|------|------|------------------|
+| Daniella Shimon | Product & Project Manager | Project planning, Flutter app development, testing, integration & deployment |
+| Zohar Shtamberg | Tech Lead | System architecture, Raspberry Pi setup, hardware drivers (NFC, buttons, LEDs), Mopidy audio integration |
+| Shiri Perechodnic | Creative Lead | 3D enclosure design, poster design, visual presentation |
+
+---
+
 ## Features
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| NFC Playback | Scan NFC tags to instantly play associated music | Done |
-| Multiple Audio Sources | Spotify tracks and local files via Mopidy | Done |
-| Voice Recording | Record audio clips and save to chips | Done |
-| Physical Buttons | Play/Pause, Record, Stop controls | Done |
-| Mobile App | Flutter app for chip and library management | Done |
-| Audio Feedback | Sound effects for all interactions | Done |
-| Parental Controls | Volume limits, quiet hours, chip whitelist | Done |
-| PTT Voice Commands | Press-to-talk voice control (play, pause, stop) | Done |
-| Developer Tools | Remote logs, service management, git operations | Done |
-| Service Architecture | Separate server and hardware services | Done |
-| WiFi Provisioning | AP mode fallback + app-based WiFi management | Done |
-| Health Monitor | LED status indicators + health API | Done |
+| NFC Playback | Scan NFC tags to instantly play associated music | ✅ Done |
+| Multiple Audio Sources | Spotify tracks and local files via Mopidy | ✅ Done |
+| Voice Recording | Record audio clips and save to chips | ✅ Done |
+| Physical Buttons | Play/Pause, Record, Stop, Volume, PTT controls | ✅ Done |
+| Mobile App | Flutter app for chip and library management | ✅ Done |
+| Audio Feedback | Sound effects for all interactions | ✅ Done |
+| Parental Controls | Volume limits, quiet hours, chip whitelist | ✅ Done |
+| PTT Voice Commands | Press-to-talk voice control (play, pause, stop) | ✅ Done |
+| Developer Tools | Remote logs, service management, git operations | ✅ Done |
+| Service Architecture | Separate server and hardware services | ✅ Done |
+| WiFi Provisioning | AP mode fallback + app-based WiFi management | ✅ Done |
+| Health Monitor | LED status indicators + health API | ✅ Done |
 
-## Hardware
+---
 
-| Component | Purpose | I2C Address |
-|-----------|---------|-------------|
-| Raspberry Pi | Main controller | - |
-| PN532 NFC Reader | Read NFC chip UIDs | 0x24 |
-| PCF8574 (Buttons) | Button input handling | 0x20 |
-| PCF8574 (LEDs) | RGB LED control | 0x21 |
-| Speaker | Audio output | - |
-| Microphone | Voice recording & commands | - |
+## Hardware Components
 
-## Button Controls
+### Bill of Materials (BOM)
 
-| Button | Short Press | Long Press (3s) |
-|--------|-------------|-----------------|
-| Play/Pause | Toggle playback | Play latest recording (2s hold) |
-| Record | Save recording | Start recording |
-| Stop | Stop / Cancel | Clear chip |
-| PTT | - | Voice command (hold to speak) |
+| Component | Model/Specs | Quantity | Purpose |
+|-----------|-------------|----------|---------|
+| Raspberry Pi | Raspberry Pi 4/5 | 1 | Main controller |
+| Audio HAT | ReSpeaker 2-Mic Pi HAT | 1 | I2C hub, audio output, microphone input |
+| NFC Reader | PN532 (I2C mode) | 1 | Read NFC chip UIDs |
+| I/O Expander | PCF8574 | 2 | Button input (0x20) + LED output (0x21) |
+| RGB LEDs | Common cathode 5mm | 2 | Health + Player status indicators |
+| Push Buttons | Momentary tactile | 6 | Play/Pause, Record, Stop, Vol+, Vol-, PTT |
+| Speaker | USB-powered speaker | 1 | Audio output (via 3.5mm jack) |
+| NFC Tags | NTAG213/215 | 4 | Music trigger chips |
+| Power Supply | 5V 3A USB-C | 1 | Raspberry Pi power |
 
-## Project Structure
+### I2C Addresses
+
+All I2C devices connect via the ReSpeaker Pi HAT's I2C breakout pins.
+
+| Device | Address | Description |
+|--------|---------|-------------|
+| PCF8574 (Buttons) | 0x20 | 6-button input expander |
+| PCF8574 (LEDs) | 0x21 | RGB LED controller |
+| PN532 NFC | 0x24 | NFC reader module |
+
+---
+
+## Wiring Diagram
+
+<!-- TODO: Add final wiring diagram image -->
+<!-- Upload your Fritzing/KiCad diagram to assets/diagrams/ and uncomment below -->
+
+<!-- ![Wiring Diagram](assets/diagrams/wiring_diagram.png) -->
+
+**System Architecture:**
+```
+┌─────────────────┐
+│  Raspberry Pi   │──USB──→ Speaker Power
+│                 │──5V───→ PN532 NFC VCC
+└────────┬────────┘
+         │ (GPIO header)
+┌────────┴────────┐
+│ ReSpeaker PiHAT │──3.5mm──→ Speaker Audio
+│                 │
+│  Built-in Mic   │ (for voice recording & PTT)
+│                 │
+│  SDA, CLK, GND  │──→ All I2C devices
+│                 |
+|  3.3V           │──→ PCF8574 power
+└────────┬────────┘
+         │
+    ┌────┴────┬─────────────┐
+    ↓         ↓             ↓
+ PN532    PCF8574(0x20)  PCF8574(0x21)
+  NFC      Buttons         LEDs
+```
+
+
+**Power Connections:**
+```
+Raspberry Pi    →    Device
+5V (GPIO pin)   →    PN532 NFC Reader VCC (requires 5V)
+USB port        →    Speaker power
+
+ReSpeaker HAT   →    Device
+3.3V            →    PCF8574 (buttons) VCC
+3.3V            →    PCF8574 (LEDs) VCC
+```
+
+**Audio Connections:**
+```
+ReSpeaker HAT   →    Device
+3.5mm Jack      →    Speaker audio input
+Built-in Mic    →    Voice recording & PTT commands
+```
+
+> **Note:** The ReSpeaker Pi HAT sits on top of the Raspberry Pi and provides I2C breakout, audio output via 3.5mm jack, and built-in microphones.
+
+**PCF8574 @ 0x20 (Buttons) Pin Mapping:**
+```
+P0 → Play/Pause button
+P1 → Record button
+P2 → Stop button
+P3 → Volume Up button
+P4 → Volume Down button
+P5 → PTT (Push-to-Talk) button
+P6 → (unused)
+P7 → (unused)
+```
+
+**PCF8574 @ 0x21 (LEDs) Pin Mapping:**
+```
+P0 → LED 1 Red
+P1 → LED 1 Green
+P2 → LED 1 Blue
+P3 → LED 2 Red
+P4 → LED 2 Green
+P5 → LED 2 Blue
+P6 → (unused)
+P7 → (unused)
+```
+
+---
+
+## Project Poster
+
+<!-- TODO: Add project poster image -->
+<!-- Upload your poster to assets/ and uncomment below -->
+
+<!-- ![Project Poster](assets/poster.png) -->
+
+---
+
+## Repository Structure
 
 ```
-├── Main/                    # Python backend
-│   ├── main.py              # Hardware controller entry
-│   ├── server.py            # REST API server
-│   ├── server_main.py       # Server standalone entry
-│   ├── health_monitor.py    # Health LED service
-│   ├── wifi_provisioner.py  # WiFi AP fallback
-│   ├── core/                # State machine & actions
-│   ├── hardware/            # NFC, buttons, audio, LEDs
-│   ├── ui/                  # Sound & light feedback
-│   └── config/              # Settings & chip mappings
+IOT-project--Smart-Speaker/
 │
-├── flutter_app/             # Mobile companion app
-│   └── lib/
-│       ├── screens/         # UI screens
-│       └── services/        # API client
+├── Main/                        # Python backend (Raspberry Pi)
+│   ├── main.py                  # Hardware controller entry point
+│   ├── server.py                # REST API server
+│   ├── server_main.py           # Server standalone entry
+│   ├── health_monitor.py        # Health LED service
+│   ├── wifi_provisioner.py      # WiFi AP fallback mode
+│   ├── core/                    # State machine & actions
+│   │   ├── controller.py        # Main hardware controller
+│   │   ├── actions.py           # Playback action handlers
+│   │   └── state.py             # State management
+│   ├── hardware/                # Hardware drivers
+│   │   ├── nfc_scanner.py       # PN532 NFC reader
+│   │   ├── buttons.py           # PCF8574 button handler
+│   │   ├── leds.py              # PCF8574 LED controller
+│   │   ├── audio_player.py      # Mopidy MPD client
+│   │   ├── recorder.py          # Audio recording
+│   │   └── voice_command.py     # PTT speech recognition
+│   ├── ui/                      # User feedback
+│   │   ├── sounds.py            # Sound effect player
+│   │   └── lights.py            # LED patterns
+│   ├── config/                  # Configuration
+│   │   ├── settings.py          # Hardware parameters
+│   │   ├── paths.py             # File paths
+│   │   └── tags.json            # NFC chip mappings
+│   └── assets/sounds/           # Audio feedback files
 │
-├── services/                # Systemd service files
-│   ├── smart_speaker.service
-│   ├── smart_speaker_server.service
-│   ├── smart_speaker_health.service
-│   └── smart_speaker_wifi.service
+├── flutter_app/                 # Mobile companion app (Flutter/Dart)
+│   ├── lib/
+│   │   ├── main.dart            # App entry point
+│   │   ├── screens/             # UI screens
+│   │   │   ├── home_screen.dart
+│   │   │   ├── chips_screen.dart
+│   │   │   ├── library_screen.dart
+│   │   │   ├── parental_controls_screen.dart
+│   │   │   └── developer_tools_screen.dart
+│   │   ├── services/            # API & utilities
+│   │   │   ├── api_service.dart
+│   │   │   └── spotify_utils.dart
+│   │   └── models/              # Data models
+│   ├── android/                 # Android build config
+│   ├── pubspec.yaml             # Flutter dependencies
+│   └── assets/                  # App assets (fonts)
 │
-└── Unit-tests/              # Hardware component tests
+├── services/                    # Systemd service files
+│   ├── smart_speaker.service           # Hardware controller
+│   ├── smart_speaker_server.service    # REST API server
+│   ├── smart_speaker_health.service    # Health monitor
+│   ├── smart_speaker_wifi.service      # WiFi provisioner
+│   └── copy-and-enable-service.sh      # Installation script
+│
+├── Unit-tests/                  # Hardware component tests
+│   ├── test_pn532.py            # NFC reader test
+│   ├── test_rgb_lights.py       # LED test
+│   ├── button.py                # Button test
+│   ├── health_check.py          # System health test
+│   ├── read_card.py             # NFC card reading test
+│   └── rfid-chip-test/          # ESP32 RFID test (PlatformIO)
+│
+├── scripts/                     # Utility scripts
+│   ├── install-ptt-deps.sh      # PTT dependencies installer
+│   └── test-ptt.py              # PTT functionality test
+│
+├── README.md                    # This file
+├── PARAMETERS.md                # Hardcoded parameters documentation
+├── SECRETS.template             # Credentials template (fill in your values)
+├── requirements.txt             # Python dependencies
+└── USER_STORIES.md              # User stories and requirements
 ```
+
+---
+
+## Software Dependencies
+
+### Raspberry Pi (Python 3.7+)
+
+All dependencies are listed in `requirements.txt`. Key libraries:
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| adafruit-circuitpython-pn532 | 2.4.6 | PN532 NFC reader driver |
+| smbus2 | 0.5.0 | I2C communication |
+| python-mpd2 | 3.1.1 | Mopidy MPD client |
+| RPi.GPIO | 0.7.1 | GPIO access |
+| SpeechRecognition | 3.10.0+ | PTT voice commands |
+| requests | 2.32.5 | HTTP client |
+| Adafruit-Blinka | 8.68.0 | CircuitPython compatibility |
+
+### System Requirements
+
+| Software | Version | Purpose |
+|----------|---------|---------|
+| Raspberry Pi OS | Bookworm (64-bit) | Operating system |
+| Python | 3.7+ | Runtime |
+| Mopidy | 3.4+ | Music server |
+| NetworkManager | 1.42+ | WiFi provisioning |
+
+### Flutter App
+
+Dependencies in `flutter_app/pubspec.yaml`:
+- Flutter SDK 3.x
+- http package for REST API
+- Material Design 3
+
+---
 
 ## Installation
 
 ### Prerequisites
 
-- Raspberry Pi with I2C enabled
-- Mopidy music server
+- Raspberry Pi with I2C enabled (`sudo raspi-config` → Interface Options → I2C)
+- Mopidy music server installed and configured
 - Python 3.7+
 - NetworkManager (for WiFi provisioning)
 
@@ -88,6 +276,10 @@ pip3 install -r requirements.txt
 
 # Install PTT voice command dependencies
 cd scripts && ./install-ptt-deps.sh && cd ..
+
+# Copy secrets template and fill in your values
+cp SECRETS.template SECRETS
+nano SECRETS  # Edit with your credentials
 
 # Start Mopidy
 sudo systemctl start mopidy
@@ -121,6 +313,45 @@ iot-proj ALL=(ALL) NOPASSWD: /bin/systemctl start smart_speaker
 iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 iot-proj ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 ```
+
+---
+
+## Button Controls
+
+| Button | Short Press | Long Press (3s) |
+|--------|-------------|-----------------|
+| Play/Pause | Toggle playback | Play latest recording (2s hold) |
+| Record | Save recording | Start recording |
+| Stop | Stop / Cancel | Clear chip assignment |
+| Volume + | Increase volume | - |
+| Volume - | Decrease volume | - |
+| PTT | - | Voice command (hold to speak) |
+
+---
+
+## Voice Commands
+
+Hold the PTT button and speak:
+- "hi speaker play" - Play/resume
+- "hi speaker pause" - Pause
+- "hi speaker stop" - Stop
+- "hi speaker clear" - Clear chip
+
+---
+
+## LED Indicators
+
+| LED | Color | Meaning |
+|-----|-------|---------|
+| Health (Light 1) | Green | All systems OK |
+| Health (Light 1) | Yellow | No internet connection |
+| Health (Light 1) | Red | System error |
+| Health (Light 1) | Blue (pulsing) | AP mode / WiFi setup |
+| Player (Light 2) | Green | Playing |
+| Player (Light 2) | Yellow | Paused |
+| Player (Light 2) | Red | Recording |
+
+---
 
 ## API Endpoints
 
@@ -164,6 +395,8 @@ iot-proj ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 | GET | `/parental/settings` | Get parental settings |
 | PUT | `/parental/settings` | Update settings |
 
+---
+
 ## Mobile App
 
 The Flutter app connects to the speaker's REST API (port 5000) to:
@@ -175,25 +408,7 @@ The Flutter app connects to the speaker's REST API (port 5000) to:
 
 Connect via: `http://<raspberry-pi-ip>:5000`
 
-## LED Indicators
-
-| LED | Color | Meaning |
-|-----|-------|---------|
-| Health (Light 1) | Green | All systems OK |
-| Health (Light 1) | Yellow | No internet |
-| Health (Light 1) | Red | System error |
-| Health (Light 1) | Blue (pulsing) | AP mode / WiFi setup |
-| Player (Light 2) | Green | Playing |
-| Player (Light 2) | Yellow | Paused |
-| Player (Light 2) | Red | Recording |
-
-## Voice Commands
-
-Hold the PTT button and speak:
-- "hi speaker play" - Play/resume
-- "hi speaker pause" - Pause
-- "hi speaker stop" - Stop
-- "hi speaker clear" - Clear chip
+---
 
 ## WiFi Setup
 
@@ -216,42 +431,49 @@ Once connected, use the mobile app's Developer Tools to:
 - Forget saved networks
 - Force AP mode for testing
 
-### Install WiFi Provisioner Service
-
-```bash
-cd services
-sudo ./install-wifi-provisioner.sh
-```
-
-### Manual AP Mode Testing
-
-```bash
-# Start hotspot manually
-sudo nmcli device wifi hotspot ssid SmartSpeaker-Setup
-
-# Check WiFi status
-nmcli device wifi list
-
-# Connect to a network
-sudo nmcli device wifi connect "NetworkName" password "password"
-```
+---
 
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| NFC not detected | Check I2C: `i2cdetect -y 1`, verify 0x24 |
-| Buttons not working | Check PCF8574 at 0x20 |
+| NFC not detected | Check I2C: `i2cdetect -y 1`, verify address 0x24 |
+| Buttons not working | Check PCF8574 at address 0x20 |
+| LEDs not working | Check PCF8574 at address 0x21 |
 | No audio | `systemctl status mopidy` |
 | Service won't start | Check logs: `tail -f /var/log/smart_speaker.log` |
 | WiFi issues | Force AP mode from app, connect to "SmartSpeaker-Setup" |
+| Voice commands fail | Check microphone: `arecord -l` |
 
-## Log Files
+### Log Files
 
 - Server: `/var/log/smart_speaker_server.log`
 - Hardware: `/var/log/smart_speaker.log`
+- Health: `/var/log/smart_speaker_health.log`
+
+### Verify I2C Devices
+
+```bash
+# List all I2C devices
+i2cdetect -y 1
+
+# Expected output should show:
+# 0x20 - PCF8574 (buttons)
+# 0x21 - PCF8574 (LEDs)
+# 0x24 - PN532 (NFC)
+```
 
 ---
+
+## Additional Documentation
+
+- **[PARAMETERS.md](PARAMETERS.md)** - All hardcoded parameters with descriptions
+- **[SECRETS.template](SECRETS.template)** - Template for credentials and API keys
+- **[USER_STORIES.md](USER_STORIES.md)** - User stories and requirements
+
+---
+
+## Credits
 
 ICST - The Interdisciplinary Center for Smart Technologies  
 Taub Faculty of Computer Science, Technion  
