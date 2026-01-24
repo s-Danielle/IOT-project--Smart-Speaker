@@ -9,7 +9,7 @@ CLEAR_CHIP_HOLD_DURATION = 3.0  # Hold duration to clear chip
 PLAY_LATEST_HOLD_DURATION = 2.0  # Hold duration on Play/Pause to play latest recording
 
 # Playback monitoring (handles variable Spotify loading times)
-MAX_WAIT_FOR_PLAYBACK = 15.0  # Max seconds to wait for Mopidy to confirm playback started
+MAX_WAIT_FOR_PLAYBACK = 60.0  # Max seconds to wait for Mopidy to confirm playback started
 MIN_PLAYBACK_DURATION = 2.0   # Min seconds of confirmed playback before considering "finished"
 
 # I2C addresses
