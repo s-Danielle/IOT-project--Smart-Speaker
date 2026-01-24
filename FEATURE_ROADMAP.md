@@ -5,7 +5,7 @@
 | # | Feature | Status |
 |---|---------|--------|
 | 1 | WebSocket Real-Time | TODO |
-| 2 | PTT Voice Commands | TODO |
+| 2 | PTT Voice Commands | DONE ✅ |
 | 3 | Parental Controls | DONE ✅ |
 | 4 | Usage Analytics | TODO |
 | 5 | Fix README | TODO |
@@ -17,7 +17,7 @@
 
 ## Current Status: ✅ A-
 
-**Working:** REST API, Flutter App, NFC, Buttons, Volume Control, Auto Chip Registration, Parental Controls, Developer Tools, Service Separation
+**Working:** REST API, Flutter App, NFC, Buttons, Volume Control, Auto Chip Registration, Parental Controls, Developer Tools, Service Separation, PTT Voice Commands
 
 **Recent Additions (Jan 2026):**
 - Parental controls with volume limits, quiet hours, chip whitelists
@@ -41,35 +41,36 @@
 
 ---
 
-## 2. 🎙️ PTT Voice Commands (3-4 hrs)
+## 2. 🎙️ PTT Voice Commands - DONE ✅
 
 **What:** Press dedicated button, speak command → action executes  
-**Trigger:** Dedicated PTT button (future hardware addition)
+**Trigger:** Dedicated PTT button on P5 (I2C expander at 0x20)
 
 **Flow:**
 1. Press PTT button → LED turns blue (listening)
-2. Speaker plays "beep" 
-3. Listen for 2-3 seconds (fixed duration)
-4. LED pulses cyan (processing)
-5. Execute command → LED flashes green/red (success/fail)
-6. Speaker confirms: "Playing jazz" or "Not recognized"
+2. Listen for 2.5 seconds (fixed duration)
+3. LED turns cyan (processing via Google Speech API)
+4. Execute command → LED flashes green/red (success/fail)
+5. Health monitor restores LED within 5 seconds
 
-**Commands to support:**
-- "Play [song name]" → search library and play
-- "Pause" / "Stop" / "Next"
-- "Volume up" / "Volume down"
+**Supported Commands:**
+- "hi speaker play" → play/resume
+- "hi speaker pause" → pause
+- "hi speaker stop" → stop
+- "hi speaker clear" → clear chip assignment
 
-**Hardware (future):**
-- Dedicated PTT button (new GPIO or I2C expander)
-- Optional: Dedicated LED (Light 3) for voice mode feedback
-- Could share existing Light 2 if no dedicated LED available
+**Hardware:**
+- PTT button on P5 of button I2C expander (0x20)
+- Uses Light 1 (health LED) for feedback during PTT
 
 **Implementation:**
-- Use Vosk (offline speech-to-text, ~50MB model)
-- Add `BUTTON_PTT_BIT` to settings.py when hardware added
-- Integrate with LED system (Light 3 or shared Light 2)
+- Uses Google Speech API via SpeechRecognition library (requires internet)
+- Works on Pi Zero (ARMv6) - Vosk not supported on this architecture
+- `BUTTON_PTT_BIT = 5` in settings.py
 
-**Dependencies:** `vosk`, `sounddevice`
+**Dependencies:** `SpeechRecognition`, `flac` (system package)
+
+**Setup:** Run `scripts/install-ptt-deps.sh`
 
 ---
 
