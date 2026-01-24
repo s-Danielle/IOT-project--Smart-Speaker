@@ -178,13 +178,19 @@ class VoiceCommand:
         
         text = text.lower().strip()
         
-        # Must start with wake phrase
-        if not text.startswith(self._wake_phrase):
-            log(f"[VOICE] No wake phrase (expected '{self._wake_phrase}')")
-            return None
+        # Accept variations of wake phrase (ordered by priority - longer matches first)
+        # "hi speaker" / "hey speaker" preferred, but "hi" / "hey" alone also work
+        wake_phrases = ["hi speaker", "hey speaker", "hi ", "hey "]
         
-        # Extract remainder after wake phrase
-        remainder = text[len(self._wake_phrase):].strip()
+        remainder = None
+        for phrase in wake_phrases:
+            if text.startswith(phrase):
+                remainder = text[len(phrase):].strip()
+                break
+        
+        if remainder is None:
+            log(f"[VOICE] No wake phrase found")
+            return None
         
         # Check for each command
         for cmd in self.COMMANDS:
