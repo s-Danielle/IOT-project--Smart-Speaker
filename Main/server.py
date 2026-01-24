@@ -13,6 +13,7 @@ import os
 import cgi
 import threading
 import subprocess
+import time
 from utils.logger import log, log_success
 
 # File paths - use Main directory for data storage
@@ -560,6 +561,256 @@ def debug_reboot() -> dict:
         return {"status": "error", "error": str(e)}
 
 
+# ============== WiFi Management Functions ==============
+
+AP_SSID = "SmartSpeaker-Setup"
+
+def wifi_get_status() -> dict:
+    """Get current WiFi connection status."""
+    try:
+        # Get current SSID
+        ssid_result = subprocess.run(['iwgetid', '-r'], capture_output=True, text=True)
+        ssid = ssid_result.stdout.strip()
+        
+        # Get IP address
+        ip_result = subprocess.run(
+            ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'device', 'show', 'wlan0'],
+            capture_output=True, text=True
+        )
+        ip = None
+        for line in ip_result.stdout.split('\n'):
+            if 'IP4.ADDRESS' in line:
+                ip = line.split(':')[1].split('/')[0] if ':' in line else None
+                break
+        
+        # Get signal strength
+        signal_result = subprocess.run(
+            ['nmcli', '-t', '-f', 'IN-USE,SIGNAL,SSID', 'device', 'wifi', 'list'],
+            capture_output=True, text=True
+        )
+        signal = None
+        for line in signal_result.stdout.split('\n'):
+            if line.startswith('*:'):
+                parts = line.split(':')
+                signal = int(parts[1]) if len(parts) > 1 and parts[1] else None
+                break
+        
+        return {
+            "connected": bool(ssid),
+            "ssid": ssid or None,
+            "ip": ip,
+            "signal": signal,
+            "mode": "ap" if ssid == AP_SSID else "client"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_get_connections() -> dict:
+    """List all saved WiFi connections."""
+    try:
+        result = subprocess.run(
+            ['nmcli', '-t', '-f', 'NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY', 'connection', 'show'],
+            capture_output=True, text=True
+        )
+        
+        connections = []
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            parts = line.split(':')
+            if len(parts) >= 2 and parts[1] == '802-11-wireless':
+                connections.append({
+                    "name": parts[0],
+                    "autoconnect": parts[2] == 'yes' if len(parts) > 2 else True,
+                    "priority": int(parts[3]) if len(parts) > 3 and parts[3] else 0
+                })
+        
+        return {"connections": connections}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_scan() -> dict:
+    """Scan for available WiFi networks."""
+    try:
+        # Trigger a fresh scan
+        subprocess.run(['nmcli', 'device', 'wifi', 'rescan'], capture_output=True)
+        time.sleep(2)
+        
+        result = subprocess.run(
+            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY,IN-USE', 'device', 'wifi', 'list'],
+            capture_output=True, text=True
+        )
+        
+        networks = []
+        seen = set()
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            parts = line.split(':')
+            ssid = parts[0] if parts else ''
+            if ssid and ssid not in seen:
+                seen.add(ssid)
+                networks.append({
+                    "ssid": ssid,
+                    "signal": int(parts[1]) if len(parts) > 1 and parts[1] else 0,
+                    "security": parts[2] if len(parts) > 2 else "Open",
+                    "connected": parts[3] == '*' if len(parts) > 3 else False
+                })
+        
+        # Sort by signal strength
+        networks.sort(key=lambda x: x['signal'], reverse=True)
+        return {"networks": networks}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_connect(ssid: str, password: str = None) -> dict:
+    """Connect to a WiFi network (new or existing)."""
+    try:
+        if not ssid:
+            return {"error": "SSID required"}
+        
+        # Check if connection already exists
+        existing = subprocess.run(
+            ['nmcli', 'connection', 'show', ssid],
+            capture_output=True, text=True
+        )
+        
+        if existing.returncode == 0:
+            # Existing connection - just activate it
+            result = subprocess.run(
+                ['sudo', 'nmcli', 'connection', 'up', ssid],
+                capture_output=True, text=True, timeout=30
+            )
+        else:
+            # New connection - need password
+            if not password:
+                return {"error": "Password required for new network"}
+            
+            result = subprocess.run(
+                ['sudo', 'nmcli', 'device', 'wifi', 'connect', ssid, 'password', password],
+                capture_output=True, text=True, timeout=30
+            )
+        
+        if result.returncode == 0:
+            return {"status": "connected", "ssid": ssid}
+        else:
+            return {"error": result.stderr or "Connection failed"}
+    except subprocess.TimeoutExpired:
+        return {"error": "Connection timeout"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_disconnect() -> dict:
+    """Disconnect from current WiFi (but keep saved)."""
+    try:
+        result = subprocess.run(
+            ['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'],
+            capture_output=True, text=True
+        )
+        return {"status": "disconnected"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_forget(name: str) -> dict:
+    """Delete a saved WiFi connection."""
+    try:
+        if not name:
+            return {"error": "Connection name required"}
+        
+        result = subprocess.run(
+            ['sudo', 'nmcli', 'connection', 'delete', name],
+            capture_output=True, text=True
+        )
+        
+        if result.returncode == 0:
+            return {"status": "deleted", "name": name}
+        else:
+            return {"error": result.stderr or "Delete failed"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_set_priority(name: str, priority: int) -> dict:
+    """Set connection priority (higher = preferred)."""
+    try:
+        if not name:
+            return {"error": "Connection name required"}
+        
+        result = subprocess.run(
+            ['sudo', 'nmcli', 'connection', 'modify', name, 
+             'connection.autoconnect-priority', str(priority)],
+            capture_output=True, text=True
+        )
+        
+        if result.returncode == 0:
+            return {"status": "updated", "name": name, "priority": priority}
+        else:
+            return {"error": result.stderr}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def wifi_ap_mode(enable: bool = True) -> dict:
+    """Force AP mode for testing (creates hotspot)."""
+    try:
+        if enable:
+            # Stop current connection
+            subprocess.run(['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'], 
+                         capture_output=True, check=False)
+            
+            # Check if hotspot connection exists
+            existing = subprocess.run(
+                ['nmcli', 'connection', 'show', AP_SSID],
+                capture_output=True
+            )
+            
+            if existing.returncode != 0:
+                # Create hotspot connection
+                subprocess.run([
+                    'sudo', 'nmcli', 'connection', 'add',
+                    'type', 'wifi',
+                    'con-name', AP_SSID,
+                    'autoconnect', 'no',
+                    'wifi.mode', 'ap',
+                    'wifi.ssid', AP_SSID,
+                    'ipv4.method', 'shared',
+                    'ipv4.addresses', '192.168.4.1/24'
+                ], capture_output=True)
+            
+            # Activate hotspot
+            result = subprocess.run(
+                ['sudo', 'nmcli', 'connection', 'up', AP_SSID],
+                capture_output=True, text=True
+            )
+            
+            if result.returncode == 0:
+                return {
+                    "status": "ap_mode_enabled",
+                    "ssid": AP_SSID,
+                    "ip": "192.168.4.1",
+                    "message": f"Connect to {AP_SSID} WiFi to configure"
+                }
+            else:
+                return {"error": result.stderr}
+        else:
+            # Disable AP mode, reconnect to normal WiFi
+            subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
+                         capture_output=True, check=False)
+            
+            # Let NetworkManager auto-connect to best available
+            subprocess.run(['sudo', 'nmcli', 'device', 'connect', 'wlan0'], 
+                         capture_output=True, check=False)
+            
+            return {"status": "ap_mode_disabled", "message": "Reconnecting to WiFi..."}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 class SpeakerHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override to use our logger instead of default logging"""
@@ -623,6 +874,13 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(debug_get_git_status())
         elif self.path == '/debug/speaker/status':
             self._send_json(debug_speaker_status())
+        # WiFi endpoints
+        elif self.path == '/debug/wifi/status':
+            self._send_json(wifi_get_status())
+        elif self.path == '/debug/wifi/connections':
+            self._send_json(wifi_get_connections())
+        elif self.path == '/debug/wifi/scan':
+            self._send_json(wifi_scan())
         else:
             self.send_error(404)
 
@@ -857,6 +1115,21 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(debug_run_main())
         elif self.path == '/debug/reboot':
             self._send_json(debug_reboot())
+        # WiFi POST endpoints
+        elif self.path == '/debug/wifi/connect':
+            body = self._read_body()
+            self._send_json(wifi_connect(body.get('ssid'), body.get('password')))
+        elif self.path == '/debug/wifi/disconnect':
+            self._send_json(wifi_disconnect())
+        elif self.path == '/debug/wifi/forget':
+            body = self._read_body()
+            self._send_json(wifi_forget(body.get('name')))
+        elif self.path == '/debug/wifi/priority':
+            body = self._read_body()
+            self._send_json(wifi_set_priority(body.get('name'), body.get('priority', 0)))
+        elif self.path == '/debug/wifi/ap-mode':
+            body = self._read_body() or {}
+            self._send_json(wifi_ap_mode(body.get('enable', True)))
         else:
             self.send_error(404)
 

@@ -22,6 +22,13 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
   bool _loadingSpeaker = false;
   bool _showLogs = false;
   String? _actionStatus;
+  
+  // WiFi state
+  Map<String, dynamic>? _wifiStatus;
+  List<dynamic>? _wifiNetworks;
+  List<dynamic>? _savedConnections;
+  bool _loadingWifi = false;
+  bool _scanningWifi = false;
 
   @override
   void initState() {
@@ -29,6 +36,7 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     _loadSystemInfo();
     _loadGitStatus();
     _loadSpeakerStatus();
+    _loadWifiStatus();
   }
 
   Future<ApiService> _getApi() async {
@@ -236,6 +244,141 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     } catch (e) {
       _showActionStatus('Error: $e');
     }
+  }
+
+  // WiFi Methods
+  Future<void> _loadWifiStatus() async {
+    setState(() => _loadingWifi = true);
+    try {
+      final api = await _getApi();
+      final status = await api.getWifiStatus();
+      final connections = await api.getWifiConnections();
+      setState(() {
+        _wifiStatus = status;
+        _savedConnections = connections['connections'] as List<dynamic>?;
+        _loadingWifi = false;
+      });
+    } catch (e) {
+      setState(() {
+        _wifiStatus = {'error': e.toString()};
+        _loadingWifi = false;
+      });
+    }
+  }
+
+  Future<void> _scanWifiNetworks() async {
+    setState(() => _scanningWifi = true);
+    try {
+      final api = await _getApi();
+      final result = await api.scanWifiNetworks();
+      setState(() {
+        _wifiNetworks = result['networks'] as List<dynamic>?;
+        _scanningWifi = false;
+      });
+    } catch (e) {
+      _showActionStatus('Scan failed: $e');
+      setState(() => _scanningWifi = false);
+    }
+  }
+
+  Future<void> _connectToWifi(String ssid) async {
+    // Check if it's a saved connection
+    final isSaved = _savedConnections?.any((c) => c['name'] == ssid) ?? false;
+    
+    String? password;
+    if (!isSaved) {
+      password = await _showPasswordDialog(ssid);
+      if (password == null) return; // User cancelled
+    }
+
+    _showActionStatus('Connecting to $ssid...');
+    try {
+      final api = await _getApi();
+      final result = await api.connectWifi(ssid, password: password);
+      if (result['status'] == 'connected') {
+        _showActionStatus('Connected to $ssid');
+        _loadWifiStatus();
+      } else {
+        _showActionStatus('Failed: ${result['error'] ?? 'Unknown error'}');
+      }
+    } catch (e) {
+      _showActionStatus('Error: $e');
+    }
+  }
+
+  Future<void> _forgetWifi(String name) async {
+    final confirmed = await _confirmAction(
+      'Forget Network',
+      'Are you sure you want to forget "$name"? You will need to enter the password again to reconnect.',
+    );
+    if (!confirmed) return;
+
+    _showActionStatus('Forgetting $name...');
+    try {
+      final api = await _getApi();
+      await api.forgetWifi(name);
+      _showActionStatus('Forgot $name');
+      _loadWifiStatus();
+    } catch (e) {
+      _showActionStatus('Error: $e');
+    }
+  }
+
+  Future<void> _enableApMode() async {
+    final confirmed = await _confirmAction(
+      'Enable AP Mode',
+      'This will disconnect from the current WiFi and create a "SmartSpeaker-Setup" hotspot. You will need to connect your phone to that network to access the device.',
+    );
+    if (!confirmed) return;
+
+    _showActionStatus('Enabling AP mode...');
+    try {
+      final api = await _getApi();
+      final result = await api.setApMode(true);
+      if (result['status'] == 'ap_mode_enabled') {
+        _showActionStatus('AP Mode enabled. Connect to SmartSpeaker-Setup');
+      } else {
+        _showActionStatus('Failed: ${result['error'] ?? 'Unknown error'}');
+      }
+    } catch (e) {
+      _showActionStatus('Error: $e');
+    }
+  }
+
+  Future<String?> _showPasswordDialog(String ssid) async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Connect to $ssid'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'Password',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getSignalBars(int signal) {
+    if (signal >= 75) return '████';
+    if (signal >= 50) return '███░';
+    if (signal >= 25) return '██░░';
+    return '█░░░';
   }
 
   Future<bool> _confirmAction(String title, String message) async {
@@ -588,6 +731,245 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
                         label: const Text('Daemon Reload'),
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // WiFi Management Card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.wifi, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'WiFi Management',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_loadingWifi)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        IconButton(
+                          onPressed: _loadWifiStatus,
+                          icon: const Icon(Icons.refresh),
+                          tooltip: 'Refresh status',
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Current Connection Status
+                  if (_wifiStatus != null && _wifiStatus!['error'] == null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _wifiStatus!['connected'] == true
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _wifiStatus!['connected'] == true
+                              ? Colors.green
+                              : Colors.orange,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                _wifiStatus!['connected'] == true
+                                    ? Icons.wifi
+                                    : Icons.wifi_off,
+                                color: _wifiStatus!['connected'] == true
+                                    ? Colors.green
+                                    : Colors.orange,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _wifiStatus!['connected'] == true
+                                      ? 'Connected: ${_wifiStatus!['ssid']}'
+                                      : 'Not connected',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: _wifiStatus!['connected'] == true
+                                        ? Colors.green
+                                        : Colors.orange,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_wifiStatus!['connected'] == true) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Signal: ${_getSignalBars(_wifiStatus!['signal'] ?? 0)} ${_wifiStatus!['signal'] ?? 0}%  |  IP: ${_wifiStatus!['ip'] ?? 'N/A'}',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            if (_wifiStatus!['mode'] == 'ap')
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  'Mode: Access Point',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: Colors.blue,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ] else if (_wifiStatus?['error'] != null)
+                    Text(
+                      'Error: ${_wifiStatus!['error']}',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Scan for Networks
+                  Row(
+                    children: [
+                      Text(
+                        'Available Networks',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const Spacer(),
+                      if (_scanningWifi)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        TextButton.icon(
+                          onPressed: _scanWifiNetworks,
+                          icon: const Icon(Icons.search, size: 18),
+                          label: const Text('Scan'),
+                        ),
+                    ],
+                  ),
+                  
+                  if (_wifiNetworks != null && _wifiNetworks!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _wifiNetworks!.length > 5 ? 5 : _wifiNetworks!.length,
+                        separatorBuilder: (_, __) => Divider(height: 1, color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+                        itemBuilder: (context, index) {
+                          final network = _wifiNetworks![index];
+                          final isConnected = network['connected'] == true;
+                          final hasPassword = network['security']?.isNotEmpty == true && network['security'] != 'Open';
+                          return ListTile(
+                            dense: true,
+                            leading: Icon(
+                              hasPassword ? Icons.lock : Icons.lock_open,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            title: Text(
+                              network['ssid'] ?? 'Unknown',
+                              style: TextStyle(
+                                fontWeight: isConnected ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${_getSignalBars(network['signal'] ?? 0)} ${network['signal'] ?? 0}%',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            trailing: isConnected
+                                ? const Chip(
+                                    label: Text('Connected'),
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                  )
+                                : TextButton(
+                                    onPressed: () => _connectToWifi(network['ssid']),
+                                    child: const Text('Connect'),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                  ] else if (_wifiNetworks != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'No networks found. Try scanning again.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  
+                  // Saved Networks
+                  if (_savedConnections != null && _savedConnections!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Saved Networks',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ...(_savedConnections!.take(5).map((conn) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.wifi, size: 18),
+                      title: Text(conn['name'] ?? 'Unknown'),
+                      subtitle: Text('Priority: ${conn['priority'] ?? 0}'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        onPressed: () => _forgetWifi(conn['name']),
+                        tooltip: 'Forget network',
+                      ),
+                    ))),
+                  ],
+                  
+                  const SizedBox(height: 16),
+                  
+                  // AP Mode Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _enableApMode,
+                      icon: const Icon(Icons.settings_input_antenna),
+                      label: const Text('Force AP Mode (Setup)'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Creates a hotspot for reconfiguring WiFi via phone',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),

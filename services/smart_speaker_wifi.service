@@ -1,0 +1,22 @@
+[Unit]
+Description=Smart Speaker WiFi Provisioner
+After=NetworkManager.service
+Before=smart_speaker_server.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
+ExecStart=/usr/bin/python3 wifi_provisioner.py
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=append:/var/log/smart_speaker_wifi.log
+StandardError=append:/var/log/smart_speaker_wifi.log
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

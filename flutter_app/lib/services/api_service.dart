@@ -275,5 +275,97 @@ class ApiService {
     }
     throw Exception('Failed to reboot: ${response.statusCode}');
   }
+
+  // ===========================================================================
+  // WIFI MANAGEMENT
+  // ===========================================================================
+
+  // GET /debug/wifi/status
+  Future<Map<String, dynamic>> getWifiStatus() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/wifi/status'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get WiFi status: ${response.statusCode}');
+  }
+
+  // GET /debug/wifi/connections
+  Future<Map<String, dynamic>> getWifiConnections() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/wifi/connections'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get WiFi connections: ${response.statusCode}');
+  }
+
+  // GET /debug/wifi/scan
+  Future<Map<String, dynamic>> scanWifiNetworks() async {
+    final response = await http.get(Uri.parse('$baseUrl/debug/wifi/scan'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to scan WiFi networks: ${response.statusCode}');
+  }
+
+  // POST /debug/wifi/connect
+  Future<Map<String, dynamic>> connectWifi(String ssid, {String? password}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/debug/wifi/connect'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'ssid': ssid, 'password': password}),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to connect to WiFi: ${response.statusCode}');
+  }
+
+  // POST /debug/wifi/disconnect
+  Future<Map<String, dynamic>> disconnectWifi() async {
+    final response = await http.post(Uri.parse('$baseUrl/debug/wifi/disconnect'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to disconnect WiFi: ${response.statusCode}');
+  }
+
+  // POST /debug/wifi/forget
+  Future<Map<String, dynamic>> forgetWifi(String name) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/debug/wifi/forget'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'name': name}),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to forget WiFi: ${response.statusCode}');
+  }
+
+  // POST /debug/wifi/priority
+  Future<Map<String, dynamic>> setWifiPriority(String name, int priority) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/debug/wifi/priority'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'name': name, 'priority': priority}),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to set WiFi priority: ${response.statusCode}');
+  }
+
+  // POST /debug/wifi/ap-mode
+  Future<Map<String, dynamic>> setApMode(bool enable) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/debug/wifi/ap-mode'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'enable': enable}),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to set AP mode: ${response.statusCode}');
+  }
 }
 
