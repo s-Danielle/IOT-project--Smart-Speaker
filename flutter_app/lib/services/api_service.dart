@@ -68,6 +68,16 @@ class ApiService {
     }
   }
 
+  // DELETE /chips/{chip_id}
+  Future<void> deleteChip(String chipId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/chips/$chipId'),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete chip: ${response.statusCode}');
+    }
+  }
+
   // GET /library
   Future<List<Song>> getLibrary() async {
     final response = await http.get(Uri.parse('$baseUrl/library'));

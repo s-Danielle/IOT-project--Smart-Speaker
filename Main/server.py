@@ -412,6 +412,28 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                         return
                 
             self.send_error(404)
+        
+        elif self.path.startswith('/chips/'):
+            # Delete a chip: DELETE /chips/{chip_id}
+            chip_id = self.path.split('/')[2]
+            
+            with _data_lock:
+                if os.path.exists(DATA_FILE):
+                    with open(DATA_FILE, 'r') as f:
+                        data = json.load(f)
+                else:
+                    self.send_error(404)
+                    return
+                
+                for i, chip in enumerate(data.get('chips', [])):
+                    if chip['id'] == chip_id:
+                        data['chips'].pop(i)
+                        save_data_unlocked(data)
+                        log(f"Deleted chip {chip_id}")
+                        self._send_ok(204)
+                        return
+                
+            self.send_error(404)
             
         elif self.path.startswith('/library/'):
             song_id = self.path.split('/')[2]
@@ -427,6 +449,12 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                 for i, song in enumerate(data.get('library', [])):
                     if song['id'] == song_id:
                         data['library'].pop(i)
+                        # Cascade: clear song from any chips that reference it
+                        for chip in data.get('chips', []):
+                            if chip.get('song_id') == song_id:
+                                chip['song_id'] = None
+                                chip['song_name'] = None
+                                log(f"Cleared song {song_id} from chip {chip['id']}")
                         save_data_unlocked(data)
                         log(f"Deleted song {song_id}")
                         self._send_ok(204)

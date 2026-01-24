@@ -171,6 +171,48 @@ class _ChipsScreenState extends State<ChipsScreen> {
     }
   }
 
+  Future<void> _deleteChip(SpeakerChip chip) async {
+    final chipDisplayName = chip.name.isEmpty ? chip.id : chip.name;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Chip'),
+        content: Text('Are you sure you want to delete "$chipDisplayName"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final baseUrl = await SettingsService.getBaseUrl();
+        final api = ApiService(baseUrl);
+        await api.deleteChip(chip.id);
+        _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Deleted "$chipDisplayName"')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -275,6 +317,8 @@ class _ChipsScreenState extends State<ChipsScreen> {
                                     _assignSong(chip);
                                   case 'reset':
                                     _resetAssignment(chip);
+                                  case 'delete':
+                                    _deleteChip(chip);
                                 }
                               },
                               itemBuilder: (_) => [
@@ -305,6 +349,16 @@ class _ChipsScreenState extends State<ChipsScreen> {
                                       Icon(Icons.clear, size: 20),
                                       SizedBox(width: 8),
                                       Text('Reset Assignment'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, size: 20, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Delete Chip', style: TextStyle(color: Colors.red)),
                                     ],
                                   ),
                                 ),
