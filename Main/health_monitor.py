@@ -26,6 +26,7 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from hardware.leds import RGBLeds, Colors
+from config.settings import SERVER_HOST, SERVER_PORT
 
 
 class HealthMonitor:
@@ -33,7 +34,7 @@ class HealthMonitor:
     
     LIGHT = 1  # Health uses Light 1
     CHECK_INTERVAL = 5  # seconds between checks
-    SERVER_URL = "http://localhost:5000"
+    SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
     
     def __init__(self):
         """Initialize health monitor"""
