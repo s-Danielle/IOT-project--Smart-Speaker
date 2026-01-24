@@ -15,7 +15,8 @@ from config.settings import (
     BUTTON_RECORD_BIT, 
     BUTTON_STOP_BIT,
     BUTTON_VOLUME_UP_BIT,
-    BUTTON_VOLUME_DOWN_BIT
+    BUTTON_VOLUME_DOWN_BIT,
+    BUTTON_PTT_BIT,
 )
 from utils.logger import log_button, log_error
 from utils.hardware_health import HardwareHealthManager
@@ -36,6 +37,7 @@ class ButtonID(Enum):
     STOP = auto()
     VOLUME_UP = auto()
     VOLUME_DOWN = auto()
+    PTT = auto()  # Push-to-Talk for voice commands
 
 
 @dataclass
@@ -56,6 +58,7 @@ class Buttons:
         ButtonID.STOP: BUTTON_STOP_BIT,
         ButtonID.VOLUME_UP: BUTTON_VOLUME_UP_BIT,
         ButtonID.VOLUME_DOWN: BUTTON_VOLUME_DOWN_BIT,
+        ButtonID.PTT: BUTTON_PTT_BIT,
     }
     
     def __init__(self):

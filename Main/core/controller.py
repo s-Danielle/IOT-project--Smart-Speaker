@@ -22,11 +22,14 @@ from config.settings import (
     CLEAR_CHIP_HOLD_DURATION,
     PLAY_LATEST_HOLD_DURATION,
     MAX_WAIT_FOR_PLAYBACK,
-    MIN_PLAYBACK_DURATION
+    MIN_PLAYBACK_DURATION,
+    PTT_ENABLED,
+    BUTTON_PTT_BIT,
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
 from utils.server_client import get_parental_controls
+from hardware.leds import RGBLeds, Colors
 
 
 class Controller:
@@ -62,6 +65,19 @@ class Controller:
         # Track NFC chip presence for edge detection
         self._last_nfc_uid: Optional[str] = None
         self._nfc_chip_present = False
+        
+        # PTT (Push-to-Talk) voice command support
+        self._voice_command = None
+        self._ptt_leds = None
+        if PTT_ENABLED:
+            try:
+                from hardware.voice_command import VoiceCommand
+                self._voice_command = VoiceCommand()
+                self._ptt_leds = RGBLeds()  # Separate instance to control Light 1
+                log("[PTT] Voice command support enabled")
+            except Exception as e:
+                log_error(f"[PTT] Failed to initialize voice commands: {e}")
+                self._voice_command = None
         
         # Track when play was initiated to allow grace period for Mopidy startup
         self._play_initiated_time: Optional[float] = None
@@ -506,6 +522,9 @@ class Controller:
         
         # Handle Volume buttons (work in all states except recording)
         self._handle_volume_buttons(state)
+        
+        # Handle PTT (Push-to-Talk) button for voice commands
+        self._handle_ptt_button(state)
     
     def _handle_play_pause_button(self, state: State):
         """Handle Play/Pause button logic
@@ -762,3 +781,144 @@ class Controller:
             log_button(f"🔉 Volume DOWN → {new_vol}")
             self._ui.on_volume_change(new_vol)
             return
+    
+    def _handle_ptt_button(self, state: State):
+        """
+        Handle PTT (Push-to-Talk) button for voice commands.
+        
+        When pressed:
+        1. Take over Light 1 (health LED) - set to BLUE (listening)
+        2. Record audio for ~2.5 seconds
+        3. Set Light 1 to CYAN (processing)
+        4. Transcribe and parse command
+        5. Execute command if recognized
+        6. Flash GREEN (success) or RED (not recognized)
+        7. Health monitor will restore Light 1 within 5 seconds
+        
+        Supported commands (must start with "hi speaker"):
+        - "hi speaker play" -> play/resume
+        - "hi speaker pause" -> pause
+        - "hi speaker stop" -> stop
+        - "hi speaker clear" -> clear chip
+        """
+        # Skip if PTT not enabled or not initialized
+        if self._voice_command is None:
+            return
+        
+        # Check if PTT button was just pressed
+        if not self._buttons.just_pressed(ButtonID.PTT):
+            return
+        
+        # Block PTT during recording
+        if state == State.RECORDING:
+            log_event("[PTT] Blocked - recording in progress")
+            self._ui.on_blocked_action()
+            return
+        
+        log_button("🎙️ PTT button pressed - listening for voice command")
+        
+        # Step 1: Take over Light 1 - BLUE (listening)
+        if self._ptt_leds:
+            self._ptt_leds.set_light(1, Colors.BLUE)
+        
+        # Step 2: Listen and transcribe
+        if self._ptt_leds:
+            self._ptt_leds.set_light(1, Colors.CYAN)  # CYAN = processing
+        
+        command = self._voice_command.listen_and_parse()
+        
+        # Step 3: Execute command if recognized
+        if command == "play":
+            # Check quiet hours
+            if self._check_quiet_hours():
+                self._ui.on_blocked_action()
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.RED)
+                    time.sleep(0.3)
+                return
+            
+            if state == State.PAUSED:
+                # Resume paused playback
+                self._play_initiated_time = time.time()
+                self._playback_confirmed = False
+                self._playback_confirmed_time = None
+                self.device_state = actions.action_resume(
+                    self.device_state, self._audio, self._ui
+                )
+            elif state == State.IDLE_CHIP_LOADED:
+                # Start playback
+                self._play_initiated_time = time.time()
+                self._playback_confirmed = False
+                self._playback_confirmed_time = None
+                self.device_state = actions.action_play(
+                    self.device_state, self._audio, self._ui, self._chip_store
+                )
+            elif state == State.IDLE_NO_CHIP:
+                log_event("[PTT] Play blocked - no chip loaded")
+                self._ui.on_blocked_action()
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.RED)
+                    time.sleep(0.3)
+                return
+            else:
+                # Already playing - do nothing special
+                log_event("[PTT] Already playing")
+            
+            if self._ptt_leds:
+                self._ptt_leds.set_light(1, Colors.GREEN)
+                time.sleep(0.3)
+        
+        elif command == "pause":
+            if state == State.PLAYING:
+                self._reset_playback_tracking()
+                self.device_state = actions.action_pause(
+                    self.device_state, self._audio, self._ui
+                )
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.GREEN)
+                    time.sleep(0.3)
+            else:
+                log_event("[PTT] Pause ignored - not playing")
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.RED)
+                    time.sleep(0.3)
+        
+        elif command == "stop":
+            if state in (State.PLAYING, State.PAUSED):
+                self._reset_playback_tracking()
+                self.device_state = actions.action_stop(
+                    self.device_state, self._audio, self._ui
+                )
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.GREEN)
+                    time.sleep(0.3)
+            else:
+                log_event("[PTT] Stop ignored - not playing or paused")
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.RED)
+                    time.sleep(0.3)
+        
+        elif command == "clear":
+            if state != State.IDLE_NO_CHIP:
+                self._reset_playback_tracking()
+                # Clear the song assignment from the chip (via HTTP), not just unload it
+                self.device_state = actions.action_voice_clear_assignment(
+                    self.device_state, self._audio, self._ui
+                )
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.GREEN)
+                    time.sleep(0.3)
+            else:
+                log_event("[PTT] Clear ignored - no chip loaded")
+                if self._ptt_leds:
+                    self._ptt_leds.set_light(1, Colors.RED)
+                    time.sleep(0.3)
+        
+        else:
+            # Command not recognized - flash RED
+            log_event("[PTT] Command not recognized")
+            if self._ptt_leds:
+                self._ptt_leds.set_light(1, Colors.RED)
+                time.sleep(0.3)
+        
+        # Health monitor will restore Light 1 to correct color within 5 seconds

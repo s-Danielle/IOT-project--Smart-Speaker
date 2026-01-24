@@ -1,0 +1,2 @@
+# This directory holds the Vosk speech recognition model
+# Download with: ../scripts/download-vosk-model.sh

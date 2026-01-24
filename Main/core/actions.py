@@ -289,3 +289,54 @@ def action_cancel_recording_and_clear(device_state: DeviceState, recorder, audio
     ui.on_clear_chip()
     log_state(f"→ {device_state.state}")
     return device_state
+
+
+def action_voice_clear_assignment(device_state: DeviceState, audio_player, ui) -> DeviceState:
+    """
+    Clear the song assignment from currently loaded chip via voice command.
+    
+    This clears the chip's song assignment on the server (DELETE /chips/{id}/assignment)
+    and updates the local state. The chip remains loaded but with no song.
+    """
+    import urllib.request
+    from config.settings import SERVER_HOST, SERVER_PORT
+    
+    if device_state.loaded_chip is None:
+        log_action("[VOICE] Cannot clear assignment: no chip loaded")
+        ui.on_blocked_action()
+        return device_state
+    
+    # Stop any playback
+    if device_state.state in (State.PLAYING, State.PAUSED):
+        audio_player.stop()
+    
+    # Get chip ID from metadata
+    chip_id = device_state.loaded_chip.metadata.get('id')
+    if not chip_id:
+        log_error("[VOICE] Cannot clear assignment: chip has no ID")
+        ui.on_error()
+        return device_state
+    
+    # Clear assignment on server
+    try:
+        url = f'http://{SERVER_HOST}:{SERVER_PORT}/chips/{chip_id}/assignment'
+        req = urllib.request.Request(url, method='DELETE')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                log_action(f"[VOICE] Cleared song assignment for chip '{device_state.loaded_chip.name}'")
+            else:
+                log_error(f"[VOICE] Failed to clear assignment: HTTP {response.status}")
+                ui.on_error()
+                return device_state
+    except Exception as e:
+        log_error(f"[VOICE] Failed to clear assignment: {e}")
+        ui.on_error()
+        return device_state
+    
+    # Update local state - chip still loaded but no song
+    device_state.loaded_chip.uri = ''
+    device_state.state = State.IDLE_CHIP_LOADED
+    
+    ui.on_clear_chip()
+    log_state(f"→ {device_state.state} (assignment cleared)")
+    return device_state

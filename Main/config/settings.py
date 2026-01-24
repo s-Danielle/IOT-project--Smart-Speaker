@@ -27,6 +27,7 @@ BUTTON_RECORD_BIT = 1       # P1
 BUTTON_STOP_BIT = 2         # P2
 BUTTON_VOLUME_UP_BIT = 3    # P3 (Button 4)
 BUTTON_VOLUME_DOWN_BIT = 4  # P4 (Button 5)
+BUTTON_PTT_BIT = 5          # P5 (Button 6) - Push-to-Talk voice commands
 
 # Volume settings
 VOLUME_STEP = 10  # Volume change per button press (0-100 scale)
@@ -55,3 +56,9 @@ NFC_TIMEOUT = 0.05# Short timeout for non-blocking reads
 # Or specify device like "plughw:0,0" or "hw:0,0"
 # List available devices with: arecord -l
 RECORDING_DEVICE = ""  # Empty = use default device (matches RecordShortAudio.sh)
+
+# PTT (Push-to-Talk) Voice Command settings
+PTT_ENABLED = True                          # Enable/disable PTT feature
+PTT_LISTEN_DURATION = 2.5                   # Seconds to listen for voice command
+PTT_WAKE_PHRASE = "hi speaker"              # Must say this before command
+VOSK_MODEL_PATH = "models/vosk-model-small-en-us"  # Path relative to Main/
