@@ -5,6 +5,7 @@ Implements the full state machine from States.txt
 
 import time
 import os
+from datetime import datetime
 
 
 from core.state import DeviceState, State
@@ -25,6 +26,7 @@ from config.settings import (
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
+from server import get_parental_controls
 
 
 class Controller:
@@ -117,6 +119,11 @@ class Controller:
     def _play_latest_recording(self):
         """Play the most recent recording file"""
         from config.paths import RECORDINGS_DIR
+        
+        # Check parental controls - quiet hours
+        if self._check_quiet_hours():
+            self._ui.on_blocked_action()
+            return
         
         log_event(f"[DEBUG] Looking for recordings in: {RECORDINGS_DIR}")
         
@@ -308,6 +315,100 @@ class Controller:
         self._playback_confirmed_time = None
     
     # =========================================================================
+    # PARENTAL CONTROLS
+    # =========================================================================
+    
+    def _check_quiet_hours(self) -> bool:
+        """Check if playback is blocked due to quiet hours.
+        Returns True if blocked, False if allowed.
+        """
+        try:
+            pc = get_parental_controls()
+            if not pc.get('enabled', False):
+                return False
+            
+            qh = pc.get('quiet_hours', {})
+            if not qh.get('enabled', False):
+                return False
+            
+            start_str = qh.get('start', '21:00')
+            end_str = qh.get('end', '07:00')
+            
+            now = datetime.now().time()
+            start_time = datetime.strptime(start_str, '%H:%M').time()
+            end_time = datetime.strptime(end_str, '%H:%M').time()
+            
+            # Handle overnight quiet hours (e.g., 21:00 to 07:00)
+            if start_time > end_time:
+                # Quiet hours span midnight
+                is_quiet = now >= start_time or now <= end_time
+            else:
+                # Quiet hours within same day
+                is_quiet = start_time <= now <= end_time
+            
+            if is_quiet:
+                log_event(f"[PARENTAL] Playback blocked - quiet hours active ({start_str}-{end_str})")
+                return True
+            
+            return False
+        except Exception as e:
+            log_error(f"[PARENTAL] Error checking quiet hours: {e}")
+            return False
+    
+    def _check_chip_allowed(self, uid: str) -> bool:
+        """Check if a chip is allowed based on whitelist/blacklist.
+        Returns True if blocked, False if allowed.
+        """
+        try:
+            pc = get_parental_controls()
+            if not pc.get('enabled', False):
+                return False
+            
+            blacklist = pc.get('chip_blacklist', [])
+            whitelist_mode = pc.get('chip_whitelist_mode', False)
+            whitelist = pc.get('chip_whitelist', [])
+            
+            # Check blacklist first
+            if uid in blacklist:
+                log_event(f"[PARENTAL] Chip blocked - UID in blacklist")
+                return True
+            
+            # Check whitelist mode
+            if whitelist_mode and whitelist:
+                if uid not in whitelist:
+                    log_event(f"[PARENTAL] Chip blocked - UID not in whitelist")
+                    return True
+            
+            return False
+        except Exception as e:
+            log_error(f"[PARENTAL] Error checking chip allowed: {e}")
+            return False
+    
+    def _get_volume_limit(self) -> int:
+        """Get the volume limit from parental controls.
+        Returns 100 if no limit or parental controls disabled.
+        """
+        try:
+            pc = get_parental_controls()
+            if not pc.get('enabled', False):
+                return 100
+            
+            return pc.get('volume_limit', 100)
+        except Exception as e:
+            log_error(f"[PARENTAL] Error getting volume limit: {e}")
+            return 100
+    
+    def _enforce_volume_limit(self, volume: int) -> int:
+        """Enforce volume limit from parental controls.
+        Returns the capped volume value.
+        """
+        limit = self._get_volume_limit()
+        if volume > limit:
+            log_event(f"[PARENTAL] Volume capped at {limit}% (limit enforced)")
+            return limit
+        return volume
+    
+    # =========================================================================
     # NFC HANDLING
     # =========================================================================
     
@@ -353,6 +454,12 @@ class Controller:
         if self.device_state.loaded_chip and self.device_state.loaded_chip.uid == uid:
             log_event("Same chip scanned - no action")
             self._ui.on_same_chip_scanned()
+            self._last_nfc_uid = uid
+            return
+        
+        # Check parental controls - whitelist/blacklist
+        if self._check_chip_allowed(uid):
+            self._ui.on_blocked_action()
             self._last_nfc_uid = uid
             return
         
@@ -454,6 +561,11 @@ class Controller:
         
         # IDLE_CHIP_LOADED: Start playback
         if state == State.IDLE_CHIP_LOADED:
+            # Check parental controls - quiet hours
+            if self._check_quiet_hours():
+                self._ui.on_blocked_action()
+                return
+            
             # Track play initiation time and reset tracking state
             self._play_initiated_time = time.time()
             self._playback_confirmed = False
@@ -634,6 +746,12 @@ class Controller:
         # Volume Up - trigger on button press (not release) for responsive feel
         if self._buttons.just_pressed(ButtonID.VOLUME_UP):
             new_vol = self._audio.volume_up()
+            # Enforce parental volume limit
+            limit = self._get_volume_limit()
+            if new_vol > limit:
+                log_event(f"[PARENTAL] Volume capped at {limit}% (limit enforced)")
+                self._audio.set_volume(limit)
+                new_vol = limit
             log_button(f"🔊 Volume UP → {new_vol}")
             self._ui.on_volume_change(new_vol)
             return

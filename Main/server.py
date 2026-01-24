@@ -12,6 +12,7 @@ import uuid
 import os
 import cgi
 import threading
+import subprocess
 from utils.logger import log, log_success
 
 # File paths - use Main directory for data storage
@@ -37,7 +38,20 @@ DEFAULT_DATA = {
     "library": [
         {"id": "song001", "name": "Surprise", "uri": "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"},
         {"id": "song002", "name": "Lights", "uri": "file:///home/iot-proj/lights.mp3"},
-    ]
+    ],
+    "parental_controls": {
+        "enabled": False,
+        "volume_limit": 100,
+        "quiet_hours": {
+            "enabled": False,
+            "start": "21:00",
+            "end": "07:00"
+        },
+        "daily_limit_minutes": 0,
+        "chip_blacklist": [],
+        "chip_whitelist_mode": False,
+        "chip_whitelist": []
+    }
 }
 
 # Thread-safe data access
@@ -136,10 +150,59 @@ def load_data():
                     data['chips'] = []
                 if 'library' not in data:
                     data['library'] = []
+                # Ensure parental_controls key exists
+                if 'parental_controls' not in data:
+                    data['parental_controls'] = DEFAULT_DATA['parental_controls'].copy()
                 return data
         else:
             save_data_unlocked(DEFAULT_DATA)
             return DEFAULT_DATA.copy()
+
+
+def get_parental_controls() -> dict:
+    """Get parental control settings."""
+    data = load_data()
+    return data.get('parental_controls', DEFAULT_DATA['parental_controls'].copy())
+
+
+def update_parental_controls(settings: dict) -> dict:
+    """Update parental control settings."""
+    with _data_lock:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+        else:
+            data = DEFAULT_DATA.copy()
+        
+        if 'parental_controls' not in data:
+            data['parental_controls'] = DEFAULT_DATA['parental_controls'].copy()
+        
+        # Update only provided fields
+        pc = data['parental_controls']
+        if 'enabled' in settings:
+            pc['enabled'] = settings['enabled']
+        if 'volume_limit' in settings:
+            pc['volume_limit'] = max(0, min(100, settings['volume_limit']))
+        if 'quiet_hours' in settings:
+            qh = settings['quiet_hours']
+            if 'enabled' in qh:
+                pc['quiet_hours']['enabled'] = qh['enabled']
+            if 'start' in qh:
+                pc['quiet_hours']['start'] = qh['start']
+            if 'end' in qh:
+                pc['quiet_hours']['end'] = qh['end']
+        if 'daily_limit_minutes' in settings:
+            pc['daily_limit_minutes'] = max(0, settings['daily_limit_minutes'])
+        if 'chip_blacklist' in settings:
+            pc['chip_blacklist'] = settings['chip_blacklist']
+        if 'chip_whitelist_mode' in settings:
+            pc['chip_whitelist_mode'] = settings['chip_whitelist_mode']
+        if 'chip_whitelist' in settings:
+            pc['chip_whitelist'] = settings['chip_whitelist']
+        
+        save_data_unlocked(data)
+        log(f"Updated parental controls: {pc}")
+        return pc
 
 def save_data_unlocked(data):
     """Save data to JSON file (must be called with lock held)."""
@@ -280,6 +343,198 @@ def add_recording_to_library(filepath: str, display_name: str = None):
     log(f"Recording added to library: {display_name}")
 
 
+# =============================================================================
+# DEBUG / DEVELOPER TOOL FUNCTIONS
+# =============================================================================
+
+LOG_FILE = '/var/log/smart_speaker.log'
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)  # Parent of Main/
+
+
+def debug_get_i2c_devices() -> dict:
+    """Get list of I2C devices using i2cdetect."""
+    try:
+        result = subprocess.run(
+            ['sudo', 'i2cdetect', '-y', '1'],
+            capture_output=True, text=True, timeout=10
+        )
+        return {"output": result.stdout, "error": result.stderr if result.returncode != 0 else None}
+    except subprocess.TimeoutExpired:
+        return {"output": "", "error": "Command timed out"}
+    except Exception as e:
+        return {"output": "", "error": str(e)}
+
+
+def debug_get_system_info() -> dict:
+    """Get system information: CPU temp, memory, disk, uptime."""
+    info = {}
+    
+    # CPU Temperature
+    try:
+        result = subprocess.run(
+            ['sudo', 'vcgencmd', 'measure_temp'],
+            capture_output=True, text=True, timeout=5
+        )
+        info['temperature'] = result.stdout.strip() if result.returncode == 0 else "N/A"
+    except Exception:
+        info['temperature'] = "N/A"
+    
+    # Uptime
+    try:
+        result = subprocess.run(
+            ['uptime', '-p'],
+            capture_output=True, text=True, timeout=5
+        )
+        info['uptime'] = result.stdout.strip() if result.returncode == 0 else "N/A"
+    except Exception:
+        info['uptime'] = "N/A"
+    
+    # Memory usage
+    try:
+        result = subprocess.run(
+            ['free', '-h'],
+            capture_output=True, text=True, timeout=5
+        )
+        info['memory'] = result.stdout.strip() if result.returncode == 0 else "N/A"
+    except Exception:
+        info['memory'] = "N/A"
+    
+    # Disk usage
+    try:
+        result = subprocess.run(
+            ['df', '-h', '/'],
+            capture_output=True, text=True, timeout=5
+        )
+        info['disk'] = result.stdout.strip() if result.returncode == 0 else "N/A"
+    except Exception:
+        info['disk'] = "N/A"
+    
+    return info
+
+
+def debug_get_logs(lines: int = 100) -> dict:
+    """Get last N lines from log file."""
+    try:
+        if os.path.exists(LOG_FILE):
+            result = subprocess.run(
+                ['tail', f'-{lines}', LOG_FILE],
+                capture_output=True, text=True, timeout=10
+            )
+            return {"logs": result.stdout.split('\n'), "error": None}
+        else:
+            return {"logs": [], "error": f"Log file not found: {LOG_FILE}"}
+    except Exception as e:
+        return {"logs": [], "error": str(e)}
+
+
+def debug_get_git_status() -> dict:
+    """Get git branch and status."""
+    try:
+        # Get current branch
+        branch_result = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            cwd=PROJECT_DIR,
+            capture_output=True, text=True, timeout=10
+        )
+        branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
+        
+        # Get status
+        status_result = subprocess.run(
+            ['git', 'status', '--short'],
+            cwd=PROJECT_DIR,
+            capture_output=True, text=True, timeout=10
+        )
+        status = status_result.stdout.strip() if status_result.returncode == 0 else ""
+        
+        return {"branch": branch, "status": status, "error": None}
+    except Exception as e:
+        return {"branch": "unknown", "status": "", "error": str(e)}
+
+
+def debug_git_pull() -> dict:
+    """Pull latest code from git."""
+    try:
+        result = subprocess.run(
+            ['git', 'pull'],
+            cwd=PROJECT_DIR,
+            capture_output=True, text=True, timeout=60
+        )
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "success": result.returncode == 0
+        }
+    except subprocess.TimeoutExpired:
+        return {"stdout": "", "stderr": "Command timed out", "success": False}
+    except Exception as e:
+        return {"stdout": "", "stderr": str(e), "success": False}
+
+
+def debug_service_stop() -> dict:
+    """Stop the smart_speaker service."""
+    try:
+        result = subprocess.run(
+            ['sudo', 'systemctl', 'stop', 'smart_speaker'],
+            capture_output=True, text=True, timeout=30
+        )
+        return {"status": "stopped" if result.returncode == 0 else "error", "error": result.stderr if result.returncode != 0 else None}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def debug_service_restart() -> dict:
+    """Restart the smart_speaker service."""
+    try:
+        result = subprocess.run(
+            ['sudo', 'systemctl', 'restart', 'smart_speaker'],
+            capture_output=True, text=True, timeout=30
+        )
+        return {"status": "restarting" if result.returncode == 0 else "error", "error": result.stderr if result.returncode != 0 else None}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def debug_daemon_reload() -> dict:
+    """Reload systemd daemon."""
+    try:
+        result = subprocess.run(
+            ['sudo', 'systemctl', 'daemon-reload'],
+            capture_output=True, text=True, timeout=30
+        )
+        return {"status": "reloaded" if result.returncode == 0 else "error", "error": result.stderr if result.returncode != 0 else None}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def debug_run_main() -> dict:
+    """Run main.py with venv activated (in background)."""
+    try:
+        # Run in background using bash to source venv and run python
+        venv_path = os.path.join(PROJECT_DIR, 'venv', 'bin', 'activate')
+        main_path = os.path.join(SCRIPT_DIR, 'main.py')
+        
+        cmd = f'source {venv_path} && python {main_path}'
+        subprocess.Popen(
+            ['bash', '-c', cmd],
+            cwd=PROJECT_DIR,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        return {"status": "started", "error": None}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def debug_reboot() -> dict:
+    """Reboot the Raspberry Pi."""
+    try:
+        subprocess.Popen(['sudo', 'reboot'])
+        return {"status": "rebooting"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 class SpeakerHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override to use our logger instead of default logging"""
@@ -330,10 +585,27 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         elif self.path == '/library':
             data = load_data()
             self._send_json(data.get('library', []))
+        elif self.path == '/settings/parental':
+            self._send_json(get_parental_controls())
+        # Debug endpoints
+        elif self.path == '/debug/i2c':
+            self._send_json(debug_get_i2c_devices())
+        elif self.path == '/debug/system':
+            self._send_json(debug_get_system_info())
+        elif self.path == '/debug/logs':
+            self._send_json(debug_get_logs())
+        elif self.path == '/debug/git-status':
+            self._send_json(debug_get_git_status())
         else:
             self.send_error(404)
 
     def do_PUT(self):
+        if self.path == '/settings/parental':
+            body = self._read_body()
+            updated = update_parental_controls(body)
+            self._send_json(updated)
+            return
+        
         if self.path.startswith('/chips/'):
             chip_id = self.path.split('/')[2]
             body = self._read_body()
@@ -541,6 +813,20 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             display_name = f"[UPLOAD] {file_id}"
             add_to_library(uri, display_name)
             self._send_json({"uri": uri, "name": display_name}, 201)
+        
+        # Debug POST endpoints
+        elif self.path == '/debug/git-pull':
+            self._send_json(debug_git_pull())
+        elif self.path == '/debug/service/stop':
+            self._send_json(debug_service_stop())
+        elif self.path == '/debug/service/restart':
+            self._send_json(debug_service_restart())
+        elif self.path == '/debug/service/daemon-reload':
+            self._send_json(debug_daemon_reload())
+        elif self.path == '/debug/run-main':
+            self._send_json(debug_run_main())
+        elif self.path == '/debug/reboot':
+            self._send_json(debug_reboot())
         else:
             self.send_error(404)
 

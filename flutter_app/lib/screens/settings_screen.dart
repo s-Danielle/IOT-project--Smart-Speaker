@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../services/api_service.dart';
+import 'parental_controls_screen.dart';
+import 'developer_tools_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -300,6 +302,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Parental Controls
+          Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.family_restroom,
+                color: theme.colorScheme.secondary,
+              ),
+              title: const Text('Parental Controls'),
+              subtitle: const Text('Volume limits, quiet hours, chip access'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ParentalControlsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Developer Tools
+          Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.developer_mode,
+                color: theme.colorScheme.secondary,
+              ),
+              title: const Text('Developer Tools'),
+              subtitle: const Text('System info, logs, service controls'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DeveloperToolsScreen(),
+                  ),
+                );
+              },
             ),
           ),
 
