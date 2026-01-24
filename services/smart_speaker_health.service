@@ -1,0 +1,20 @@
+[Unit]
+Description=Smart Speaker Health Monitor (LED 1)
+After=network.target smart_speaker_server.service
+Wants=smart_speaker_server.service
+
+[Service]
+Type=simple
+User=iot-proj
+Group=iot-proj
+WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
+ExecStart=/usr/bin/python3 health_monitor.py
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=append:/var/log/smart_speaker_health.log
+StandardError=append:/var/log/smart_speaker_health.log
+
+[Install]
+WantedBy=multi-user.target
