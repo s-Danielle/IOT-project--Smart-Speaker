@@ -6,7 +6,7 @@ A smart speaker system that uses NFC chips to trigger music playback. Scan an NF
 
 | Name | Role | Responsibilities |
 |------|------|------------------|
-| Daniella Shimon | Product & Project Manager | Project planning, Flutter app development, testing, integration & deployment |
+| Daniella Shimon | Project Manager | Project planning, Flutter app development, testing, integration & deployment |
 | Zohar Shtamberg | Tech Lead | System architecture, Raspberry Pi setup, hardware drivers (NFC, buttons, LEDs), Mopidy audio integration |
 | Shiri Perechodnic | Creative Lead | 3D enclosure design, poster design, visual presentation |
 
@@ -61,10 +61,7 @@ All I2C devices connect via the ReSpeaker Pi HAT's I2C breakout pins.
 
 ## Wiring Diagram
 
-<!-- TODO: Add final wiring diagram image -->
-<!-- Upload your Fritzing/KiCad diagram to assets/diagrams/ and uncomment below -->
-
-<!-- ![Wiring Diagram](assets/diagrams/wiring_diagram.png) -->
+![Wiring Diagram](assets/diagrams/wiring_diagram.png)
 
 **System Architecture:**
 ```
