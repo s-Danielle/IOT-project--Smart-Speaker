@@ -9,6 +9,7 @@ ChipStore reads from this same data file.
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import parse_qs
 import json
 import uuid
 import os
@@ -17,6 +18,10 @@ import threading
 import subprocess
 import time
 from utils.logger import log, log_success
+from hardware.wifi_manager import (
+    WiFiManager, AP_SSID, AP_IP, WEB_PORT,
+    render_network_list_html, render_status_html
+)
 
 
 # Thread-pool HTTP server limited to 2 workers (suitable for single-core RPi)
@@ -514,46 +519,12 @@ def debug_reboot() -> dict:
 
 
 # ============== WiFi Management Functions ==============
-
-AP_SSID = "SmartSpeaker-Setup"
+# These functions wrap the shared WiFiManager class for API responses
 
 def wifi_get_status() -> dict:
     """Get current WiFi connection status."""
     try:
-        # Get current SSID
-        ssid_result = subprocess.run(['iwgetid', '-r'], capture_output=True, text=True)
-        ssid = ssid_result.stdout.strip()
-        
-        # Get IP address
-        ip_result = subprocess.run(
-            ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'device', 'show', 'wlan0'],
-            capture_output=True, text=True
-        )
-        ip = None
-        for line in ip_result.stdout.split('\n'):
-            if 'IP4.ADDRESS' in line:
-                ip = line.split(':')[1].split('/')[0] if ':' in line else None
-                break
-        
-        # Get signal strength
-        signal_result = subprocess.run(
-            ['nmcli', '-t', '-f', 'IN-USE,SIGNAL,SSID', 'device', 'wifi', 'list'],
-            capture_output=True, text=True
-        )
-        signal = None
-        for line in signal_result.stdout.split('\n'):
-            if line.startswith('*:'):
-                parts = line.split(':')
-                signal = int(parts[1]) if len(parts) > 1 and parts[1] else None
-                break
-        
-        return {
-            "connected": bool(ssid),
-            "ssid": ssid or None,
-            "ip": ip,
-            "signal": signal,
-            "mode": "ap" if ssid == AP_SSID else "client"
-        }
+        return WiFiManager.get_status()
     except Exception as e:
         return {"error": str(e)}
 
@@ -561,24 +532,7 @@ def wifi_get_status() -> dict:
 def wifi_get_connections() -> dict:
     """List all saved WiFi connections."""
     try:
-        result = subprocess.run(
-            ['nmcli', '-t', '-f', 'NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY', 'connection', 'show'],
-            capture_output=True, text=True
-        )
-        
-        connections = []
-        for line in result.stdout.strip().split('\n'):
-            if not line:
-                continue
-            parts = line.split(':')
-            if len(parts) >= 2 and parts[1] == '802-11-wireless':
-                connections.append({
-                    "name": parts[0],
-                    "autoconnect": parts[2] == 'yes' if len(parts) > 2 else True,
-                    "priority": int(parts[3]) if len(parts) > 3 and parts[3] else 0
-                })
-        
-        return {"connections": connections}
+        return {"connections": WiFiManager.get_saved_connections()}
     except Exception as e:
         return {"error": str(e)}
 
@@ -586,34 +540,7 @@ def wifi_get_connections() -> dict:
 def wifi_scan() -> dict:
     """Scan for available WiFi networks."""
     try:
-        # Trigger a fresh scan
-        subprocess.run(['nmcli', 'device', 'wifi', 'rescan'], capture_output=True)
-        time.sleep(2)
-        
-        result = subprocess.run(
-            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY,IN-USE', 'device', 'wifi', 'list'],
-            capture_output=True, text=True
-        )
-        
-        networks = []
-        seen = set()
-        for line in result.stdout.strip().split('\n'):
-            if not line:
-                continue
-            parts = line.split(':')
-            ssid = parts[0] if parts else ''
-            if ssid and ssid not in seen:
-                seen.add(ssid)
-                networks.append({
-                    "ssid": ssid,
-                    "signal": int(parts[1]) if len(parts) > 1 and parts[1] else 0,
-                    "security": parts[2] if len(parts) > 2 else "Open",
-                    "connected": parts[3] == '*' if len(parts) > 3 else False
-                })
-        
-        # Sort by signal strength
-        networks.sort(key=lambda x: x['signal'], reverse=True)
-        return {"networks": networks}
+        return {"networks": WiFiManager.scan_networks_extended()}
     except Exception as e:
         return {"error": str(e)}
 
@@ -624,32 +551,10 @@ def wifi_connect(ssid: str, password: str = None) -> dict:
         if not ssid:
             return {"error": "SSID required"}
         
-        # Check if connection already exists
-        existing = subprocess.run(
-            ['nmcli', 'connection', 'show', ssid],
-            capture_output=True, text=True
-        )
-        
-        if existing.returncode == 0:
-            # Existing connection - just activate it
-            result = subprocess.run(
-                ['sudo', 'nmcli', 'connection', 'up', ssid],
-                capture_output=True, text=True, timeout=30
-            )
-        else:
-            # New connection - need password
-            if not password:
-                return {"error": "Password required for new network"}
-            
-            result = subprocess.run(
-                ['sudo', 'nmcli', 'device', 'wifi', 'connect', ssid, 'password', password],
-                capture_output=True, text=True, timeout=30
-            )
-        
-        if result.returncode == 0:
+        if WiFiManager.connect(ssid, password):
             return {"status": "connected", "ssid": ssid}
         else:
-            return {"error": result.stderr or "Connection failed"}
+            return {"error": "Connection failed"}
     except subprocess.TimeoutExpired:
         return {"error": "Connection timeout"}
     except Exception as e:
@@ -659,10 +564,7 @@ def wifi_connect(ssid: str, password: str = None) -> dict:
 def wifi_disconnect() -> dict:
     """Disconnect from current WiFi (but keep saved)."""
     try:
-        result = subprocess.run(
-            ['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'],
-            capture_output=True, text=True
-        )
+        WiFiManager.disconnect()
         return {"status": "disconnected"}
     except Exception as e:
         return {"error": str(e)}
@@ -674,15 +576,10 @@ def wifi_forget(name: str) -> dict:
         if not name:
             return {"error": "Connection name required"}
         
-        result = subprocess.run(
-            ['sudo', 'nmcli', 'connection', 'delete', name],
-            capture_output=True, text=True
-        )
-        
-        if result.returncode == 0:
+        if WiFiManager.forget(name):
             return {"status": "deleted", "name": name}
         else:
-            return {"error": result.stderr or "Delete failed"}
+            return {"error": "Delete failed"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -693,16 +590,10 @@ def wifi_set_priority(name: str, priority: int) -> dict:
         if not name:
             return {"error": "Connection name required"}
         
-        result = subprocess.run(
-            ['sudo', 'nmcli', 'connection', 'modify', name, 
-             'connection.autoconnect-priority', str(priority)],
-            capture_output=True, text=True
-        )
-        
-        if result.returncode == 0:
+        if WiFiManager.set_priority(name, priority):
             return {"status": "updated", "name": name, "priority": priority}
         else:
-            return {"error": result.stderr}
+            return {"error": "Failed to update priority"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -711,53 +602,19 @@ def wifi_ap_mode(enable: bool = True) -> dict:
     """Force AP mode for testing (creates hotspot)."""
     try:
         if enable:
-            # Stop current connection
-            subprocess.run(['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'], 
-                         capture_output=True, check=False)
-            
-            # Check if hotspot connection exists
-            existing = subprocess.run(
-                ['nmcli', 'connection', 'show', AP_SSID],
-                capture_output=True
-            )
-            
-            if existing.returncode != 0:
-                # Create hotspot connection
-                subprocess.run([
-                    'sudo', 'nmcli', 'connection', 'add',
-                    'type', 'wifi',
-                    'con-name', AP_SSID,
-                    'autoconnect', 'no',
-                    'wifi.mode', 'ap',
-                    'wifi.ssid', AP_SSID,
-                    'ipv4.method', 'shared',
-                    'ipv4.addresses', '192.168.4.1/24'
-                ], capture_output=True)
-            
-            # Activate hotspot
-            result = subprocess.run(
-                ['sudo', 'nmcli', 'connection', 'up', AP_SSID],
-                capture_output=True, text=True
-            )
-            
-            if result.returncode == 0:
+            if WiFiManager.start_ap():
                 return {
                     "status": "ap_mode_enabled",
                     "ssid": AP_SSID,
-                    "ip": "192.168.4.1",
-                    "message": f"Connect to {AP_SSID} WiFi to configure"
+                    "ip": AP_IP,
+                    "setup_url": f"http://{AP_IP}:{WEB_PORT}/wifi-setup",
+                    "message": f"Connect to {AP_SSID} WiFi, then visit http://{AP_IP}:{WEB_PORT}/wifi-setup to configure"
                 }
             else:
-                return {"error": result.stderr}
+                return {"error": "Failed to start AP mode"}
         else:
-            # Disable AP mode, reconnect to normal WiFi
-            subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
-                         capture_output=True, check=False)
-            
-            # Let NetworkManager auto-connect to best available
-            subprocess.run(['sudo', 'nmcli', 'device', 'connect', 'wlan0'], 
-                         capture_output=True, check=False)
-            
+            WiFiManager.stop_ap()
+            WiFiManager.reconnect()
             return {"status": "ap_mode_disabled", "message": "Reconnecting to WiFi..."}
     except Exception as e:
         return {"error": str(e)}
@@ -833,8 +690,23 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(wifi_get_connections())
         elif self.path == '/debug/wifi/scan':
             self._send_json(wifi_scan())
+        # Captive portal WiFi setup page
+        elif self.path == '/wifi-setup' or self.path == '/wifi-setup/':
+            self._serve_wifi_setup_page()
         else:
             self.send_error(404)
+    
+    def _serve_wifi_setup_page(self):
+        """Serve the WiFi setup captive portal page"""
+        try:
+            networks = WiFiManager.scan_networks()
+            html = render_network_list_html(networks, connect_action="/wifi-setup/connect")
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(html.encode())
+        except Exception as e:
+            self.send_error(500, str(e))
 
     def do_PUT(self):
         if self.path == '/settings/parental':
@@ -1082,8 +954,40 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         elif self.path == '/debug/wifi/ap-mode':
             body = self._read_body() or {}
             self._send_json(wifi_ap_mode(body.get('enable', True)))
+        # Captive portal WiFi connect handler
+        elif self.path == '/wifi-setup/connect':
+            self._handle_wifi_setup_connect()
         else:
             self.send_error(404)
+    
+    def _handle_wifi_setup_connect(self):
+        """Handle WiFi connection from captive portal form"""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            data = parse_qs(self.rfile.read(length).decode())
+            ssid = data.get('ssid', [''])[0]
+            password = data.get('password', [''])[0]
+            
+            log(f"WiFi setup: attempting connection to {ssid}")
+            success = WiFiManager.connect(ssid, password)
+            
+            html = render_status_html(success, ssid, connect_action="/wifi-setup/connect")
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(html.encode())
+            
+            if success:
+                log_success(f"WiFi setup: connected to {ssid}")
+                # Schedule a reboot after successful connection (like the provisioner does)
+                threading.Timer(5, lambda: subprocess.run(['sudo', 'reboot'])).start()
+            else:
+                log(f"WiFi setup: failed to connect to {ssid}")
+                # Re-enable AP mode so user can try again
+                WiFiManager.start_ap()
+        except Exception as e:
+            log(f"WiFi setup error: {e}")
+            self.send_error(500, str(e))
 
 
 def run_server_blocking(port=8080, host='0.0.0.0'):
