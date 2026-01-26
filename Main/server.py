@@ -7,6 +7,8 @@ ChipStore reads from this same data file.
 """
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
+from concurrent.futures import ThreadPoolExecutor
 import json
 import uuid
 import os
@@ -15,6 +17,25 @@ import threading
 import subprocess
 import time
 from utils.logger import log, log_success
+
+
+# Thread-pool HTTP server limited to 2 workers (suitable for single-core RPi)
+class ThreadPoolHTTPServer(ThreadingMixIn, HTTPServer):
+    """HTTP server that handles requests in a thread pool."""
+    
+    def __init__(self, server_address, RequestHandlerClass, max_workers=2):
+        super().__init__(server_address, RequestHandlerClass)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        log(f"Server configured with {max_workers} worker threads")
+    
+    def process_request(self, request, client_address):
+        """Submit request to thread pool instead of creating unlimited threads."""
+        self.executor.submit(self.process_request_thread, request, client_address)
+    
+    def server_close(self):
+        """Shutdown thread pool when server closes."""
+        super().server_close()
+        self.executor.shutdown(wait=True)
 
 # File paths - use Main directory for data storage
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -215,47 +236,6 @@ def save_data(data):
     with _data_lock:
         save_data_unlocked(data)
 
-def get_song_uri_by_id(song_id: str) -> str:
-    """Get song URI from library by song_id."""
-    data = load_data()
-    for song in data.get('library', []):
-        if song['id'] == song_id:
-            return song.get('uri', '')
-    return ''
-
-def lookup_chip_by_uid(uid: str) -> dict:
-    """
-    Look up chip data by NFC UID.
-    Returns dict with uid, name, uri (resolved from library) or None if not found.
-    This is called by ChipStore.
-    """
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-        else:
-            return None
-        
-        for chip in data.get('chips', []):
-            if chip.get('uid') == uid:
-                # Found chip - resolve URI from library
-                song_id = chip.get('song_id')
-                uri = ''
-                if song_id:
-                    for song in data.get('library', []):
-                        if song['id'] == song_id:
-                            uri = song.get('uri', '')
-                            break
-                
-                return {
-                    'uid': uid,
-                    'name': chip.get('name', 'Unknown'),
-                    'uri': uri,
-                    'song_id': song_id,
-                    'song_name': chip.get('song_name', ''),
-                }
-        
-        return None
 
 def register_new_chip(uid: str, name: str = None) -> dict:
     """
@@ -292,11 +272,6 @@ def register_new_chip(uid: str, name: str = None) -> dict:
         log(f"Registered new chip: {new_chip['name']} (UID: {uid[:20]}...)")
         return new_chip
 
-def get_all_chip_uids() -> list:
-    """Get all known chip UIDs."""
-    data = load_data()
-    return [chip.get('uid') for chip in data.get('chips', []) if chip.get('uid')]
-
 def add_to_library(uri: str, name: str):
     """
     Add a file to the library (thread-safe).
@@ -319,29 +294,6 @@ def add_to_library(uri: str, name: str):
         data['library'].append(new_song)
         save_data_unlocked(data)
         log(f"Added to library: {name} ({uri})")
-
-def add_recording_to_library(filepath: str, display_name: str = None):
-    """
-    Add a recording to the library with [RECORDING] prefix.
-    If display_name is not provided, extracts it from filename.
-    """
-    if not os.path.exists(filepath):
-        log(f"Warning: Recording file not found: {filepath}")
-        return
-    
-    # Generate display name if not provided
-    if display_name is None:
-        # Extract name from filename (remove extension and recording_ prefix)
-        basename = os.path.basename(filepath)
-        name_without_ext = os.path.splitext(basename)[0]
-        # Remove "recording_" prefix if present
-        if name_without_ext.startswith("recording_"):
-            name_without_ext = name_without_ext[10:]  # Remove "recording_" (10 chars)
-        display_name = f"[RECORDING] {name_without_ext}"
-    
-    uri = f"file://{filepath}"
-    add_to_library(uri, display_name)
-    log(f"Recording added to library: {display_name}")
 
 
 # =============================================================================
@@ -1134,49 +1086,6 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 
-class ServerThread(threading.Thread):
-    """Thread wrapper for the HTTP server"""
-    
-    def __init__(self, port=8080, host='0.0.0.0'):
-        super().__init__(daemon=True)  # Daemon thread so it exits when main exits
-        self.port = port
-        self.host = host
-        self.server = None
-        
-    def run(self):
-        """Start the HTTP server in this thread"""
-        try:
-            self.server = HTTPServer((self.host, self.port), SpeakerHandler)
-            log_success(f"HTTP Server started on http://{self.host}:{self.port}")
-            log(f"  - Data file: {DATA_FILE}")
-            log(f"  - Local files directory: {LOCAL_FILES_DIR}")
-            log(f"  - Uploads: {UPLOADS_DIR}")
-            log(f"  - Recordings: {RECORDINGS_DIR}")
-            log(f"  - Android Emulator: http://10.0.2.2:{self.port}")
-            log(f"  - Physical device (same WiFi): http://<your-ip>:{self.port}")
-            self.server.serve_forever()
-        except Exception as e:
-            log(f"Server error: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def stop(self):
-        """Stop the server"""
-        if self.server:
-            self.server.shutdown()
-            self.server.server_close()
-
-
-def start_server(port=8080, host='0.0.0.0'):
-    """
-    Start the HTTP server in a background thread.
-    Returns the ServerThread instance.
-    """
-    server_thread = ServerThread(port=port, host=host)
-    server_thread.start()
-    return server_thread
-
-
 def run_server_blocking(port=8080, host='0.0.0.0'):
     """
     Run the HTTP server in the main thread (blocking).
@@ -1184,7 +1093,7 @@ def run_server_blocking(port=8080, host='0.0.0.0'):
     Use this for standalone server service mode where the server
     is the main process and should run until terminated.
     """
-    server = HTTPServer((host, port), SpeakerHandler)
+    server = ThreadPoolHTTPServer((host, port), SpeakerHandler, max_workers=2)
     log_success(f"HTTP Server started on http://{host}:{port}")
     log(f"  - Data file: {DATA_FILE}")
     log(f"  - Local files directory: {LOCAL_FILES_DIR}")
