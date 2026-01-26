@@ -78,6 +78,11 @@ DEFAULT_DATA = {
         "chip_blacklist": [],
         "chip_whitelist_mode": False,
         "chip_whitelist": []
+    },
+    "daily_usage": {
+        # Tracks daily playback usage, resets each day
+        # "date": "YYYY-MM-DD",
+        # "seconds": 0
     }
 }
 
@@ -240,6 +245,62 @@ def save_data(data):
     """Save data to JSON file (thread-safe)."""
     with _data_lock:
         save_data_unlocked(data)
+
+
+# =============================================================================
+# DAILY USAGE TRACKING
+# =============================================================================
+
+def _get_today_str() -> str:
+    """Get today's date as YYYY-MM-DD string."""
+    from datetime import date
+    return date.today().isoformat()
+
+
+def get_daily_usage() -> dict:
+    """Get today's usage data. Resets if date changed."""
+    with _data_lock:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+        else:
+            data = DEFAULT_DATA.copy()
+        
+        usage = data.get('daily_usage', {})
+        today = _get_today_str()
+        
+        # Reset if new day
+        if usage.get('date') != today:
+            usage = {'date': today, 'seconds': 0}
+            data['daily_usage'] = usage
+            save_data_unlocked(data)
+        
+        return usage
+
+
+def add_daily_usage(seconds: int) -> dict:
+    """Add seconds to today's usage. Returns updated usage."""
+    with _data_lock:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+        else:
+            data = DEFAULT_DATA.copy()
+        
+        today = _get_today_str()
+        usage = data.get('daily_usage', {})
+        
+        # Reset if new day
+        if usage.get('date') != today:
+            usage = {'date': today, 'seconds': 0}
+        
+        # Add usage
+        usage['seconds'] = usage.get('seconds', 0) + max(0, int(seconds))
+        data['daily_usage'] = usage
+        save_data_unlocked(data)
+        
+        log(f"Daily usage updated: {usage['seconds']} seconds")
+        return usage
 
 
 def register_new_chip(uid: str, name: str = None) -> dict:
@@ -690,6 +751,8 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(data.get('library', []))
         elif path == '/settings/parental':
             self._send_json(get_parental_controls())
+        elif self.path == '/usage/today':
+            self._send_json(get_daily_usage())
         # Debug endpoints
         elif path == '/debug/i2c':
             self._send_json(debug_get_i2c_devices())
@@ -897,6 +960,12 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             
             log(f"Added song: {new_song}")
             self._send_json(new_song, 201)
+        
+        elif self.path == '/usage/add':
+            body = self._read_body()
+            seconds = body.get('seconds', 0)
+            updated = add_daily_usage(seconds)
+            self._send_json(updated)
             
         elif self.path == '/files':
             # Handle multipart file upload

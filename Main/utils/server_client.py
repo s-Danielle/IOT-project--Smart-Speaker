@@ -87,7 +87,7 @@ def get_parental_controls() -> Dict[str, Any]:
     Returns:
         Parental controls dict, or safe defaults on error
     """
-    result = _http_get('/parental')
+    result = _http_get('/settings/parental')
     if result is None:
         # Return safe defaults if server is unreachable
         return {
@@ -104,6 +104,35 @@ def get_parental_controls() -> Dict[str, Any]:
             'chip_whitelist': []
         }
     return result
+
+
+# =============================================================================
+# Daily Usage Tracking API
+# =============================================================================
+
+def get_daily_usage() -> int:
+    """Fetch today's playback usage in seconds from server.
+    
+    Returns:
+        Usage in seconds, or 0 on error
+    """
+    result = _http_get('/usage/today')
+    if result is None:
+        return 0
+    return result.get('seconds', 0)
+
+
+def add_daily_usage(seconds: int) -> bool:
+    """Add playback time to today's usage.
+    
+    Args:
+        seconds: Seconds of playback to add
+        
+    Returns:
+        True if successful, False on error
+    """
+    result = _http_post('/usage/add', {'seconds': seconds})
+    return result is not None
 
 
 # =============================================================================

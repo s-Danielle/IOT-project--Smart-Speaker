@@ -5,6 +5,7 @@ Implements the full state machine from States.txt
 
 import time
 import os
+import subprocess
 from datetime import datetime
 
 
@@ -25,11 +26,14 @@ from config.settings import (
     MIN_PLAYBACK_DURATION,
     PTT_ENABLED,
     BUTTON_PTT_BIT,
+    MAX_RECORDING_DURATION,
+    MIN_DISK_SPACE_MB,
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
-from utils.server_client import get_parental_controls
+from utils.server_client import get_parental_controls, get_daily_usage, add_daily_usage
 from hardware.leds import RGBLeds, Colors
+import shutil
 
 
 class Controller:
@@ -87,6 +91,12 @@ class Controller:
         self._playback_confirmed = False
         self._playback_confirmed_time: Optional[float] = None
         
+        # Track playback time for daily usage limit
+        self._playback_time_start: Optional[float] = None
+        
+        # Track recording start time for max duration limit
+        self._recording_start_time: Optional[float] = None
+        
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
         log("READY - Waiting for input...")
@@ -107,6 +117,9 @@ class Controller:
                 
                 # Check if playback finished naturally
                 self._check_playback_finished()
+                
+                # Check if recording exceeded max duration
+                self._check_recording_time_limit()
                 
                 # Sleep for loop interval
                 time.sleep(LOOP_INTERVAL)
@@ -287,6 +300,7 @@ class Controller:
                     if elapsed > MAX_WAIT_FOR_PLAYBACK:
                         # Timeout - playback never started, something went wrong
                         log_event(f"Playback timeout after {elapsed:.1f}s - Mopidy never started playing")
+                        self._playback_time_start = None  # Don't count failed playback
                         self._reset_playback_tracking()
                         
                         if self.device_state.loaded_chip is not None:
@@ -314,6 +328,7 @@ class Controller:
             
             # Playback genuinely finished
             log_event("Playback finished - returning to idle state")
+            self._update_playback_usage()  # Update daily usage when track ends
             self._reset_playback_tracking()
             
             if self.device_state.loaded_chip is not None:
@@ -423,6 +438,85 @@ class Controller:
             log_event(f"[PARENTAL] Volume capped at {limit}% (limit enforced)")
             return limit
         return volume
+    
+    def _check_daily_limit(self) -> bool:
+        """Check if playback is blocked due to daily usage limit.
+        Returns True if blocked, False if allowed.
+        """
+        try:
+            pc = get_parental_controls()
+            if not pc.get('enabled', False):
+                return False
+            
+            limit_minutes = pc.get('daily_limit_minutes', 0)
+            if limit_minutes <= 0:
+                return False  # No limit set
+            
+            usage_seconds = get_daily_usage()
+            usage_minutes = usage_seconds / 60.0
+            
+            if usage_minutes >= limit_minutes:
+                log_event(f"[PARENTAL] Playback blocked - daily limit reached ({usage_minutes:.1f}/{limit_minutes} minutes)")
+                return True
+            
+            return False
+        except Exception as e:
+            log_error(f"[PARENTAL] Error checking daily limit: {e}")
+            return False
+    
+    def _update_playback_usage(self):
+        """Update daily usage when playback stops/pauses."""
+        if self._playback_time_start is not None:
+            elapsed = time.time() - self._playback_time_start
+            if elapsed > 0:
+                add_daily_usage(int(elapsed))
+                log_event(f"[USAGE] Added {int(elapsed)} seconds to daily usage")
+            self._playback_time_start = None
+    
+    def _start_playback_tracking(self):
+        """Start tracking playback time for daily usage."""
+        self._playback_time_start = time.time()
+    
+    # =========================================================================
+    # RECORDING LIMITS
+    # =========================================================================
+    
+    def _check_disk_space(self) -> bool:
+        """Check if there's enough disk space for recording.
+        Returns True if enough space, False if blocked.
+        """
+        try:
+            from config.paths import RECORDINGS_DIR
+            
+            # Get disk usage for recordings directory
+            disk_usage = shutil.disk_usage(RECORDINGS_DIR)
+            free_mb = disk_usage.free / (1024 * 1024)
+            
+            if free_mb < MIN_DISK_SPACE_MB:
+                log_event(f"[RECORDING] Blocked - insufficient disk space ({free_mb:.1f}MB free, need {MIN_DISK_SPACE_MB}MB)")
+                return False
+            
+            log_event(f"[RECORDING] Disk space OK ({free_mb:.1f}MB free)")
+            return True
+        except Exception as e:
+            log_error(f"[RECORDING] Error checking disk space: {e}")
+            return True  # Allow recording on error (fail open)
+    
+    def _check_recording_time_limit(self):
+        """Check if recording has exceeded max duration and auto-stop if needed."""
+        if self.device_state.state != State.RECORDING:
+            return
+        
+        if self._recording_start_time is None:
+            return
+        
+        elapsed = time.time() - self._recording_start_time
+        if elapsed >= MAX_RECORDING_DURATION:
+            log_event(f"[RECORDING] Max duration reached ({MAX_RECORDING_DURATION}s) - auto-saving")
+            self._recording_start_time = None
+            self.device_state = actions.action_save_recording(
+                self.device_state, self._recorder, self._ui
+            )
     
     # =========================================================================
     # NFC HANDLING
@@ -585,10 +679,16 @@ class Controller:
                 self._ui.on_blocked_action()
                 return
             
+            # Check parental controls - daily usage limit
+            if self._check_daily_limit():
+                self._ui.on_blocked_action()
+                return
+            
             # Track play initiation time and reset tracking state
             self._play_initiated_time = time.time()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
+            self._start_playback_tracking()  # Start tracking for daily usage
             self.device_state = actions.action_play(
                 self.device_state, self._audio, self._ui, self._chip_store
             )
@@ -596,6 +696,7 @@ class Controller:
         
         # PLAYING: Pause
         if state == State.PLAYING:
+            self._update_playback_usage()  # Update daily usage on pause
             self._reset_playback_tracking()  # Reset tracking on user pause
             self.device_state = actions.action_pause(
                 self.device_state, self._audio, self._ui
@@ -604,10 +705,16 @@ class Controller:
         
         # PAUSED: Resume
         if state == State.PAUSED:
+            # Check parental controls - daily usage limit before resuming
+            if self._check_daily_limit():
+                self._ui.on_blocked_action()
+                return
+            
             # Track resume time - resuming may also need buffering for Spotify
             self._play_initiated_time = time.time()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
+            self._start_playback_tracking()  # Resume tracking for daily usage
             self.device_state = actions.action_resume(
                 self.device_state, self._audio, self._ui
             )
@@ -631,6 +738,7 @@ class Controller:
         if state == State.RECORDING:
             if self._buttons.just_pressed(ButtonID.RECORD):
                 log_button("Record button pressed - saving recording")
+                self._recording_start_time = None  # Reset recording time tracking
                 self.device_state = actions.action_save_recording(
                     self.device_state, self._recorder, self._ui
                 )
@@ -653,7 +761,15 @@ class Controller:
                 # Stop countdown sound
                 self._ui._sounds.stop()
                 self._countdown_played = False
+                
+                # Check disk space before recording
+                if not self._check_disk_space():
+                    self._ui.on_blocked_action()
+                    self._record_armed = False
+                    return
+                
                 # Start recording immediately (no need to wait for release)
+                self._recording_start_time = time.time()  # Track recording start
                 self.device_state = actions.action_start_recording(
                     self.device_state, self._audio, self._recorder, self._ui
                 )
@@ -702,12 +818,14 @@ class Controller:
                 if state == State.RECORDING:
                     # During recording: long press just cancels (keeps chip loaded)
                     log_button(f"🔄 Stop held {hold_time:.1f}s - CANCELING RECORDING (keeping chip)")
+                    self._recording_start_time = None  # Reset recording time tracking
                     self.device_state = actions.action_cancel_recording(
                         self.device_state, self._recorder, self._audio, self._ui
                     )
                 else:
                     # All other states: long press clears chip
                     log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
+                    self._update_playback_usage()  # Update daily usage before clearing
                     self._reset_playback_tracking()  # Reset tracking on clear chip
                     self.device_state = actions.action_clear_chip(
                         self.device_state, self._audio, self._ui, long_press=True
@@ -729,6 +847,7 @@ class Controller:
             
             # RECORDING: Cancel recording (no save) - returns to previous state
             if state == State.RECORDING:
+                self._recording_start_time = None  # Reset recording time tracking
                 self.device_state = actions.action_cancel_recording(
                     self.device_state, self._recorder, self._audio, self._ui
                 )
@@ -743,6 +862,7 @@ class Controller:
             
             # PLAYING or PAUSED: Stop playback, keep chip
             if state in (State.PLAYING, State.PAUSED):
+                self._update_playback_usage()  # Update daily usage before stop
                 self._reset_playback_tracking()  # Reset tracking on user stop
                 self.device_state = actions.action_stop(
                     self.device_state, self._audio, self._ui
@@ -854,9 +974,21 @@ class Controller:
     
     def _execute_ptt_command(self, command: Optional[str], state: State):
         """Execute a PTT voice command. Uses Light 2 (PTT LED)."""
+        
+        # Handle easter egg commands FIRST (they work regardless of chip state)
+        if command and command.startswith("easter_"):
+            self._execute_easter_egg(command, state)
+            return
+        
         if command == "play":
             # Check quiet hours
             if self._check_quiet_hours():
+                self._ui.on_blocked_action()
+                self._ptt_blink(Colors.RED)
+                return
+            
+            # Check daily limit
+            if self._check_daily_limit():
                 self._ui.on_blocked_action()
                 self._ptt_blink(Colors.RED)
                 return
@@ -866,6 +998,7 @@ class Controller:
                 self._play_initiated_time = time.time()
                 self._playback_confirmed = False
                 self._playback_confirmed_time = None
+                self._start_playback_tracking()  # Resume tracking for daily usage
                 self.device_state = actions.action_resume(
                     self.device_state, self._audio, self._ui
                 )
@@ -874,6 +1007,7 @@ class Controller:
                 self._play_initiated_time = time.time()
                 self._playback_confirmed = False
                 self._playback_confirmed_time = None
+                self._start_playback_tracking()  # Start tracking for daily usage
                 self.device_state = actions.action_play(
                     self.device_state, self._audio, self._ui, self._chip_store
                 )
@@ -891,6 +1025,7 @@ class Controller:
         
         elif command == "pause":
             if state == State.PLAYING:
+                self._update_playback_usage()  # Update daily usage on pause
                 self._reset_playback_tracking()
                 self.device_state = actions.action_pause(
                     self.device_state, self._audio, self._ui
@@ -902,6 +1037,7 @@ class Controller:
         
         elif command == "stop":
             if state in (State.PLAYING, State.PAUSED):
+                self._update_playback_usage()  # Update daily usage on stop
                 self._reset_playback_tracking()
                 self.device_state = actions.action_stop(
                     self.device_state, self._audio, self._ui
@@ -913,6 +1049,7 @@ class Controller:
         
         elif command == "clear":
             if state != State.IDLE_NO_CHIP:
+                self._update_playback_usage()  # Update daily usage before clear
                 self._reset_playback_tracking()
                 # Clear the song assignment from the chip (via HTTP), not just unload it
                 self.device_state = actions.action_voice_clear_assignment(
@@ -929,3 +1066,120 @@ class Controller:
             self._ptt_blink(Colors.RED)
         
         # PTT LED (Light 2) turns off after blink - stays off until next press
+    
+    def _execute_easter_egg(self, command: str, state: State):
+        """
+        Execute an easter egg command.
+        Easter eggs work regardless of chip state (but blocked during RECORDING).
+        
+        Args:
+            command: Easter egg command (e.g., "easter_shut_up")
+            state: Current device state
+        """
+        # Get easter egg config from voice command processor
+        easter_config = self._voice_command.get_easter_config() if self._voice_command else {}
+        
+        if command == "easter_shut_up":
+            # Set volume to 0 (mute)
+            log_event("[EASTER EGG] Shut up! Setting volume to 0")
+            self._audio.set_volume(0)
+            self._ui.on_volume_change(0)
+            self._ptt_blink(Colors.GREEN)
+        
+        elif command == "easter_happy_birthday":
+            # Play birthday song from Spotify
+            uri = easter_config.get('happy_birthday', {}).get('uri', 'spotify:track:2pW5kNCx133MWWirxegvng')
+            log_event(f"[EASTER EGG] Happy Birthday! Playing: {uri}")
+            
+            # Stop any current playback and play the easter egg
+            self._audio.stop()
+            self._reset_playback_tracking()
+            self._play_initiated_time = time.time()
+            self._playback_confirmed = False
+            self._playback_confirmed_time = None
+            self._audio.play_uri(uri)
+            
+            # Update state to PLAYING (even without chip)
+            self.device_state.state = State.PLAYING
+            self._ui.on_play()
+            self._ptt_blink(Colors.GREEN)
+            log_state(f"→ {self.device_state.state} (easter egg)")
+        
+        elif command == "easter_kill_yourself":
+            # Reboot the device
+            log_event("[EASTER EGG] Kill yourself! Rebooting system...")
+            self._ptt_blink(Colors.GREEN)
+            
+            # Give feedback before reboot
+            time.sleep(0.5)
+            
+            try:
+                # Use sudo reboot (works on Raspberry Pi)
+                subprocess.run(['sudo', 'reboot'], check=False)
+            except Exception as e:
+                log_error(f"[EASTER EGG] Failed to reboot: {e}")
+                self._ptt_blink(Colors.RED)
+        
+        elif command == "easter_despacito":
+            # Play Despacito from Spotify
+            uri = easter_config.get('despacito', {}).get('uri', 'spotify:track:6habFhsOp2NvshLv26DqMb')
+            log_event(f"[EASTER EGG] Hey Alexa, play Despacito! Playing: {uri}")
+            
+            # Stop any current playback and play the easter egg
+            self._audio.stop()
+            self._reset_playback_tracking()
+            self._play_initiated_time = time.time()
+            self._playback_confirmed = False
+            self._playback_confirmed_time = None
+            self._audio.play_uri(uri)
+            
+            # Update state to PLAYING (even without chip)
+            self.device_state.state = State.PLAYING
+            self._ui.on_play()
+            self._ptt_blink(Colors.GREEN)
+            log_state(f"→ {self.device_state.state} (easter egg)")
+        
+        elif command == "easter_grade":
+            # Play the grade sound (100.wav)
+            from config import paths
+            
+            # Get sound path from config, with fallback
+            sound_path = easter_config.get('grade', {}).get('sound', 'Main/assets/sounds/100.wav')
+            
+            # Handle relative path (relative to project root)
+            if not os.path.isabs(sound_path):
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                sound_path = os.path.join(project_root, sound_path)
+            
+            # Also try relative to Main/ directory
+            if not os.path.exists(sound_path):
+                alt_path = os.path.join(paths.SOUNDS_DIR, "100.wav")
+                if os.path.exists(alt_path):
+                    sound_path = alt_path
+            
+            if os.path.exists(sound_path):
+                log_event(f"[EASTER EGG] What is our grade? 100! Playing: {sound_path}")
+                
+                # Stop any current playback and play the sound
+                self._audio.stop()
+                self._reset_playback_tracking()
+                
+                # Convert to file:// URI
+                uri = f"file://{os.path.abspath(sound_path)}"
+                self._play_initiated_time = time.time()
+                self._playback_confirmed = False
+                self._playback_confirmed_time = None
+                self._audio.play_uri(uri)
+                
+                # Update state to PLAYING (even without chip)
+                self.device_state.state = State.PLAYING
+                self._ui.on_play()
+                self._ptt_blink(Colors.GREEN)
+                log_state(f"→ {self.device_state.state} (easter egg)")
+            else:
+                log_error(f"[EASTER EGG] Sound file not found: {sound_path}")
+                self._ptt_blink(Colors.RED)
+        
+        else:
+            log_event(f"[EASTER EGG] Unknown easter egg command: {command}")
+            self._ptt_blink(Colors.RED)

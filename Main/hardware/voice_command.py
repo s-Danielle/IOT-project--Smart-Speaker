@@ -8,6 +8,13 @@ Supported commands (must start with "hi speaker" or "hey speaker"):
 - "hi speaker pause" -> pause  
 - "hi speaker stop" -> stop
 - "hi speaker clear" -> clear
+
+Easter egg commands (work WITHOUT wake phrase, configured in SECRETS):
+- "shut up" / "speaker shut up" -> easter_shut_up
+- "happy birthday" / "speaker happy birthday" -> easter_happy_birthday
+- "kill yourself" / "speaker kill yourself" -> easter_kill_yourself
+- "hey alexa play despacito" -> easter_despacito
+- "what is our grade" -> easter_grade
 """
 
 import subprocess
@@ -27,6 +34,26 @@ from hardware.speech_recognition_wrapper import SpeechRecognitionWrapper
 from utils.logger import log
 
 
+# Easter egg configuration (hardcoded)
+EASTER_EGG_CONFIG = {
+    'enabled': True,
+    'shut_up': {'enabled': True},
+    'happy_birthday': {
+        'enabled': True,
+        'uri': 'spotify:track:2pW5kNCx133MWWirxegvng',
+    },
+    'kill_yourself': {'enabled': True},
+    'despacito': {
+        'enabled': True,
+        'uri': 'spotify:track:6habFhsOp2NvshLv26DqMb',
+    },
+    'grade': {
+        'enabled': True,
+        'sound': 'Main/assets/sounds/100.wav',
+    },
+}
+
+
 class VoiceCommand:
     """
     Voice command processor with wake phrase detection.
@@ -34,10 +61,21 @@ class VoiceCommand:
     Supports two modes:
     1. Fixed duration: listen_and_parse(duration) - records for set time
     2. Hold-to-talk: start_recording() / stop_and_parse() - records while button held
+    
+    Also supports easter egg commands that work WITHOUT wake phrase.
     """
     
     # Supported commands after wake phrase
     COMMANDS = {"play", "pause", "stop", "clear"}
+    
+    # Easter egg command identifiers (returned when easter egg detected)
+    EASTER_COMMANDS = {
+        "easter_shut_up",
+        "easter_happy_birthday", 
+        "easter_kill_yourself",
+        "easter_despacito",
+        "easter_grade",
+    }
     
     def __init__(self):
         """Initialize voice command processor."""
@@ -47,12 +85,17 @@ class VoiceCommand:
         
         self._speech = SpeechRecognitionWrapper()
         
+        # Easter egg configuration (hardcoded)
+        self._easter_config = EASTER_EGG_CONFIG
+        
         # For hold-to-talk mode
         self._recording_process = None
         self._recording_file = None
         self._recording_start_time = None
         
         log(f"[VOICE] Initialized (wake phrase: '{self._wake_phrase}')")
+        if self._easter_config.get('enabled'):
+            log(f"[VOICE] Easter egg commands enabled")
     
     def start_recording(self) -> bool:
         """
@@ -324,17 +367,24 @@ class VoiceCommand:
     def _parse_command(self, text: str) -> Optional[str]:
         """
         Parse transcribed text for wake phrase and command.
+        Also checks for easter egg commands (which don't require wake phrase).
         
         Args:
             text: Transcribed text (already lowercase)
             
         Returns:
-            Command string or None if not recognized
+            Command string or None if not recognized.
+            Easter egg commands return "easter_*" identifiers.
         """
         if not text:
             return None
         
         text = text.lower().strip()
+        
+        # Check for easter egg commands FIRST (they don't require wake phrase)
+        easter_cmd = self._check_easter_egg(text)
+        if easter_cmd:
+            return easter_cmd
         
         # Accept variations of wake phrase (ordered by priority - longer matches first)
         # "hi speaker" / "hey speaker" preferred, but "hi" / "hey" alone also work
@@ -358,6 +408,69 @@ class VoiceCommand:
         # Wake phrase present but no valid command
         log(f"[VOICE] Wake phrase found but unknown command: '{remainder}'")
         return None
+    
+    def _check_easter_egg(self, text: str) -> Optional[str]:
+        """
+        Check if text matches any easter egg command.
+        Easter eggs work WITHOUT wake phrase (but wake phrase is also accepted).
+        
+        Args:
+            text: Lowercase transcribed text
+            
+        Returns:
+            Easter egg command identifier (e.g., "easter_shut_up") or None
+        """
+        if not self._easter_config.get('enabled'):
+            return None
+        
+        # Strip optional wake phrase prefix for easter egg matching
+        # This allows both "shut up" and "speaker shut up" to work
+        text_variants = [text]
+        for prefix in ["hi speaker ", "hey speaker ", "hi ", "hey ", "speaker "]:
+            if text.startswith(prefix):
+                text_variants.append(text[len(prefix):].strip())
+        
+        # Check each easter egg
+        for variant in text_variants:
+            # "shut up" - mute volume
+            if self._easter_config.get('shut_up', {}).get('enabled'):
+                if variant in ["shut up", "shutup", "be quiet", "mute"]:
+                    log(f"[VOICE] Easter egg detected: shut_up")
+                    return "easter_shut_up"
+            
+            # "happy birthday" - play birthday song
+            if self._easter_config.get('happy_birthday', {}).get('enabled'):
+                if "happy birthday" in variant or "birthday" in variant:
+                    log(f"[VOICE] Easter egg detected: happy_birthday")
+                    return "easter_happy_birthday"
+            
+            # "kill yourself" - reboot
+            if self._easter_config.get('kill_yourself', {}).get('enabled'):
+                if "kill yourself" in variant or "reboot" in variant:
+                    log(f"[VOICE] Easter egg detected: kill_yourself")
+                    return "easter_kill_yourself"
+            
+            # "hey alexa play despacito" - play Despacito
+            if self._easter_config.get('despacito', {}).get('enabled'):
+                if "alexa" in variant and "despacito" in variant:
+                    log(f"[VOICE] Easter egg detected: despacito")
+                    return "easter_despacito"
+                # Also match just "play despacito"
+                if "despacito" in variant:
+                    log(f"[VOICE] Easter egg detected: despacito")
+                    return "easter_despacito"
+            
+            # "what is our grade" - play grade sound
+            if self._easter_config.get('grade', {}).get('enabled'):
+                if "grade" in variant or "what is our grade" in variant:
+                    log(f"[VOICE] Easter egg detected: grade")
+                    return "easter_grade"
+        
+        return None
+    
+    def get_easter_config(self) -> dict:
+        """Get easter egg configuration (for controller to access URIs/sounds)."""
+        return self._easter_config
     
     def is_available(self) -> bool:
         """Check if voice commands are available."""

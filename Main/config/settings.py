@@ -63,6 +63,8 @@ NFC_TIMEOUT = 0.05# Short timeout for non-blocking reads
 # Or specify device like "plughw:0,0" or "hw:0,0"
 # List available devices with: arecord -l
 RECORDING_DEVICE = ""  # Empty = use default device (matches RecordShortAudio.sh)
+MAX_RECORDING_DURATION = 300.0  # Maximum recording duration in seconds (5 minutes)
+MIN_DISK_SPACE_MB = 100  # Minimum free disk space in MB before allowing recording
 
 # PTT (Push-to-Talk) Voice Command settings
 PTT_ENABLED = True                          # Enable/disable PTT feature

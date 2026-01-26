@@ -12,5 +12,4 @@
 | 8 | Voice Commands | User | To speak commands like "play" or "pause" | I can control the speaker hands-free |
 | 9 | WiFi Setup | User | To configure WiFi without SSH access | I can set up the device easily on any network |
 | 10 | Remote Debugging | Developer | To view logs and restart services from the app | I can troubleshoot issues without physical access |
-| 11 | Health Monitoring | User | To see device status via LED indicators | I know if the speaker is connected and working |
-| 12 | Service Updates | Developer | To pull code updates from the app | I can deploy fixes without SSH access |
+
