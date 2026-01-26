@@ -244,7 +244,7 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
     
     def log_message(self, format, *args):
         """Log requests for debugging"""
-        print(f"[HTTP] {self.address_string()} - {format % args}")
+        print(f"[HTTP] WIFI-PROVISIONER: {self.address_string()} - {format % args}")
     
     def do_GET(self):
         """Handle GET requests - show network list"""
