@@ -95,16 +95,9 @@ class Buttons:
             self._health.report_success()
             return result
         except Exception as e:
-            # Use health manager for rate-limited, filtered error logging
-            if self._health.report_error(e):
-                log_error(f"Button read error: {e}")
-            
-            # Disable hardware after too many consecutive failures
-            if self._health.is_failed():
-                self._health.log_failure_once("Buttons disabled due to repeated hardware errors")
-                self._bus.close()
-                self._bus = None
-            
+            # Track errors silently (no logging to avoid flooding)
+            # Health monitor will handle recovery via LED feedback + service restart
+            self._health.report_error(e)
             return 0xFF
     
     def update(self):

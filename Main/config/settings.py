@@ -8,6 +8,10 @@ RECORD_HOLD_DURATION = 5.0  # Hold duration to arm recording
 CLEAR_CHIP_HOLD_DURATION = 3.0  # Hold duration to clear chip
 PLAY_LATEST_HOLD_DURATION = 2.0  # Hold duration on Play/Pause to play latest recording
 
+# Long press actions (Health Monitor)
+LONG_PRESS_REBOOT_DURATION = 5.0  # Hold Volume Up for 5s to reboot
+LONG_PRESS_RESTART_SERVICES_DURATION = 5.0  # Hold Volume Down for 5s to restart services
+
 # Playback monitoring (handles variable Spotify loading times)
 MAX_WAIT_FOR_PLAYBACK = 60.0  # Max seconds to wait for Mopidy to confirm playback started
 MIN_PLAYBACK_DURATION = 2.0   # Min seconds of confirmed playback before considering "finished"
