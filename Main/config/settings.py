@@ -63,6 +63,6 @@ RECORDING_DEVICE = ""  # Empty = use default device (matches RecordShortAudio.sh
 
 # PTT (Push-to-Talk) Voice Command settings
 PTT_ENABLED = True                          # Enable/disable PTT feature
-PTT_LISTEN_DURATION = 2.5                   # Seconds to listen for voice command
+PTT_LISTEN_DURATION = 5.0                   # Seconds to listen for voice command
 PTT_WAKE_PHRASE = "hi speaker"              # Must say this before command
 # Note: Uses Google Speech API (requires internet connection)
