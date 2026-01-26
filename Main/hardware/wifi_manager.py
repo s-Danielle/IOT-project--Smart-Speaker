@@ -155,78 +155,74 @@ class WiFiManager:
         
         return connections
     
-    # Path to dnsmasq captive portal config (for DNS hijacking)
+    # Path to dnsmasq captive portal config (for DNS wildcard redirect)
     DNSMASQ_CAPTIVE_CONF = '/etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf'
     
     @staticmethod
     def _enable_captive_dns():
-        """Enable DNS hijacking for captive portal detection."""
-        # Create dnsmasq config that redirects all DNS to AP IP
-        # This makes phones detect a captive portal automatically
+        """Enable DNS hijacking for captive portal detection.
+        
+        Creates a dnsmasq config that responds to ALL DNS queries with
+        the AP's IP address, making phones detect a captive portal.
+        """
         conf_content = f"address=/#/{AP_IP}\n"
         conf_dir = '/etc/NetworkManager/dnsmasq-shared.d'
         
         try:
-            # Create directory if it doesn't exist
             subprocess.run(['sudo', 'mkdir', '-p', conf_dir], check=False, capture_output=True)
-            # Write config file
             subprocess.run(
                 ['sudo', 'tee', WiFiManager.DNSMASQ_CAPTIVE_CONF],
                 input=conf_content.encode(),
                 capture_output=True
             )
         except Exception:
-            pass  # Non-critical, portal will still work with manual URL
+            pass
     
     @staticmethod
     def _disable_captive_dns():
         """Disable DNS hijacking (restore normal DNS)."""
         try:
-            subprocess.run(
-                ['sudo', 'rm', '-f', WiFiManager.DNSMASQ_CAPTIVE_CONF],
-                check=False, capture_output=True
-            )
+            subprocess.run(['sudo', 'rm', '-f', WiFiManager.DNSMASQ_CAPTIVE_CONF],
+                          check=False, capture_output=True)
         except Exception:
             pass
     
     @staticmethod
     def start_ap() -> bool:
         """Start AP mode using NetworkManager. Returns True on success."""
-        # Enable captive portal DNS hijacking
+        # Enable DNS hijacking BEFORE starting AP so dnsmasq picks it up
         WiFiManager._enable_captive_dns()
         
-        # Check if hotspot exists
-        existing = subprocess.run(
-            ['nmcli', 'connection', 'show', AP_SSID],
-            capture_output=True
-        )
+        # Delete existing hotspot connection to force fresh start with new DNS config
+        subprocess.run(['sudo', 'nmcli', 'connection', 'delete', AP_SSID],
+                      check=False, capture_output=True)
         
-        if existing.returncode != 0:
-            # Create hotspot
-            subprocess.run([
-                'sudo', 'nmcli', 'connection', 'add',
-                'type', 'wifi',
-                'con-name', AP_SSID,
-                'autoconnect', 'no',
-                'wifi.mode', 'ap',
-                'wifi.ssid', AP_SSID,
-                'ipv4.method', 'shared',
-                'ipv4.addresses', f'{AP_IP}/24'
-            ])
+        # Create hotspot
+        subprocess.run([
+            'sudo', 'nmcli', 'connection', 'add',
+            'type', 'wifi',
+            'con-name', AP_SSID,
+            'autoconnect', 'no',
+            'wifi.mode', 'ap',
+            'wifi.ssid', AP_SSID,
+            'ipv4.method', 'shared',
+            'ipv4.addresses', f'{AP_IP}/24'
+        ])
         
-        # Disconnect current and start AP
+        # Disconnect current WiFi and start AP
         subprocess.run(['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'], 
                       check=False, capture_output=True)
         time.sleep(1)
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'up', AP_SSID], 
                                capture_output=True)
         time.sleep(2)
+        
         return result.returncode == 0
     
     @staticmethod
     def stop_ap() -> bool:
         """Stop AP mode. Returns True on success."""
-        # Disable captive portal DNS hijacking
+        # Disable DNS hijacking first
         WiFiManager._disable_captive_dns()
         
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
