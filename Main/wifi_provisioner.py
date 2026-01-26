@@ -243,8 +243,8 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
 </html>'''
     
     def log_message(self, format, *args):
-        """Suppress default logging"""
-        pass
+        """Log requests for debugging"""
+        print(f"[HTTP] {self.address_string()} - {format % args}")
     
     def do_GET(self):
         """Handle GET requests - show network list"""
