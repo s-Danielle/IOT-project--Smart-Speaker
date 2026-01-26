@@ -1,6 +1,11 @@
 """
-Player LED feedback (Light 2) via PCF8574
+Speaker LED feedback (Light 3 - Divided LED) via PCF8574
 Implements the show_* interface called by UIController
+
+Light 3 is split across two expanders:
+- Blue: P6 on 0x21
+- Green: P7 on 0x21
+- Red: P6 on 0x20
 """
 
 import threading
@@ -11,15 +16,21 @@ from utils.logger import log
 
 class Lights:
     """
-    High-level LED state management for player feedback.
-    Controls Light 2 (P3-P5) on PCF8574.
+    High-level LED state management for speaker/player feedback.
+    Controls Light 3 (Divided LED) on PCF8574.
     
     This class implements the interface already called by UIController:
     - show_idle(), show_chip_loaded(), show_playing(), show_paused()
     - show_recording(), show_success(), show_error(), show_volume()
+    
+    Color scheme (R/G/B only):
+    - GREEN: Playing
+    - BLUE: Idle/Pause
+    - RED: Recording
+    - RED blinking: Error
     """
     
-    LIGHT = 2  # Player uses Light 2
+    LIGHT = 3  # Speaker uses Light 3 (divided LED)
     
     def __init__(self, leds=None):
         """Initialize lights controller"""
@@ -30,7 +41,7 @@ class Lights:
         try:
             self._leds = leds or RGBLeds()
             self._enabled = True
-            log("[LIGHTS] Player LED initialized (Light 2)")
+            log("[LIGHTS] Speaker LED initialized (Light 3 - Divided)")
         except Exception as e:
             log(f"[LIGHTS] Failed to initialize: {e} - LEDs disabled")
             self._enabled = False
@@ -40,14 +51,14 @@ class Lights:
     # =========================================================================
     
     def show_idle(self):
-        """Chip cleared - LED off"""
+        """Chip cleared / Idle - blue solid"""
         if self._enabled:
-            self._leds.off(self.LIGHT)
+            self._leds.set_light(self.LIGHT, Colors.BLUE)
     
     def show_chip_loaded(self):
-        """Chip scanned/loaded - blue flash then off"""
+        """Chip scanned/loaded - green flash then blue (idle)"""
         if self._enabled:
-            self._flash(Colors.BLUE, duration=0.2)
+            self._flash(Colors.GREEN, duration=0.2, return_to=Colors.BLUE)
     
     def show_playing(self):
         """Playing - green solid"""
@@ -55,9 +66,9 @@ class Lights:
             self._leds.set_light(self.LIGHT, Colors.GREEN)
     
     def show_paused(self):
-        """Paused - yellow solid"""
+        """Paused - blue solid"""
         if self._enabled:
-            self._leds.set_light(self.LIGHT, Colors.YELLOW)
+            self._leds.set_light(self.LIGHT, Colors.BLUE)
     
     def show_recording(self):
         """Recording - red solid"""
@@ -79,12 +90,12 @@ class Lights:
             self._multi_flash(Colors.RED, times=3, on_time=0.1, off_time=0.1)
     
     def show_volume(self, volume: int):
-        """Volume change - white brief flash"""
+        """Volume change - blue brief flash"""
         if self._enabled:
-            self._flash(Colors.WHITE, duration=0.1)
+            self._flash(Colors.BLUE, duration=0.1)
     
     def off(self):
-        """Turn off player LED"""
+        """Turn off speaker LED"""
         if self._enabled:
             self._leds.off(self.LIGHT)
     
@@ -92,12 +103,15 @@ class Lights:
     # FLASH HELPERS (non-blocking)
     # =========================================================================
     
-    def _flash(self, color: tuple, duration: float = 0.2):
-        """Single flash then off (non-blocking)"""
+    def _flash(self, color: tuple, duration: float = 0.2, return_to: tuple = None):
+        """Single flash then off or return to color (non-blocking)"""
         def do_flash():
             self._leds.set_light(self.LIGHT, color)
             time.sleep(duration)
-            self._leds.off(self.LIGHT)
+            if return_to:
+                self._leds.set_light(self.LIGHT, return_to)
+            else:
+                self._leds.off(self.LIGHT)
         
         # Run in background thread so it doesn't block
         thread = threading.Thread(target=do_flash, daemon=True)

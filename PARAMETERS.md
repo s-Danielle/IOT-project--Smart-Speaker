@@ -36,25 +36,30 @@ All parameters are defined in `Main/config/settings.py`
 
 Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 
-| Parameter | Value | PCF8574 Pin | Physical Button |
-|-----------|-------|-------------|-----------------|
-| `BUTTON_PLAY_PAUSE_BIT` | 0 | P0 | Play/Pause |
-| `BUTTON_RECORD_BIT` | 1 | P1 | Record |
-| `BUTTON_STOP_BIT` | 2 | P2 | Stop |
-| `BUTTON_VOLUME_UP_BIT` | 3 | P3 | Volume Up |
-| `BUTTON_VOLUME_DOWN_BIT` | 4 | P4 | Volume Down |
-| `BUTTON_PTT_BIT` | 5 | P5 | Push-to-Talk |
+| Parameter | Value | PCF8574 Pin | Function |
+|-----------|-------|-------------|----------|
+| `BUTTON_PLAY_PAUSE_BIT` | 0 | P0 | Play/Pause button |
+| `BUTTON_RECORD_BIT` | 1 | P1 | Record button |
+| `BUTTON_STOP_BIT` | 2 | P2 | Stop button |
+| `BUTTON_VOLUME_UP_BIT` | 3 | P3 | Volume Up button |
+| `BUTTON_VOLUME_DOWN_BIT` | 4 | P4 | Volume Down button |
+| `BUTTON_PTT_BIT` | 5 | P5 | Push-to-Talk button |
+| - | 6 | P6 | Speaker LED Red (divided LED) |
+| - | 7 | P7 | (unused) |
 
 ---
 
 ## LED Pin Mappings
 
-RGB LEDs are connected to PCF8574 at address 0x21.
+3 RGB LEDs with pin order **B, G, R** (not R, G, B):
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `RGB_LIGHT1_PINS` | (0, 1, 2) | Health LED: P0=Red, P1=Green, P2=Blue |
-| `RGB_LIGHT2_PINS` | (3, 4, 5) | Player LED: P3=Red, P4=Green, P5=Blue |
+| LED | Pins | Expander | Description |
+|-----|------|----------|-------------|
+| Light 1 (Health) | P0=B, P1=G, P2=R | 0x21 | Device health status |
+| Light 2 (PTT) | P3=B, P4=G, P5=R | 0x21 | Push-to-talk feedback |
+| Light 3 (Speaker) | P6=B, P7=G (0x21), P6=R (0x20) | Divided | Player/speaker status |
+
+**Note:** Light 3 is a "divided LED" - its red pin is on the button expander (0x20) at P6.
 
 ---
 

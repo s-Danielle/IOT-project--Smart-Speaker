@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Health Monitor Service - Controls Light 1 (Device Health LED)
+Health Monitor Service - Controls Light 1 (Health LED)
 
 Monitors:
 - Internet connectivity (ping 8.8.8.8)
@@ -16,15 +16,12 @@ Button Error Recovery:
 - LED blinks red for 10 seconds
 - Health service restarts automatically to reinitialize buttons
 
-LED Colors:
-- Green: All systems OK (internet + server + hardware)
-- Yellow: Server + Hardware OK, no internet
-- Cyan: Hardware only (server down)
-- Magenta: Server only (hardware down)
-- Red: All down / Button error recovery in progress
-- White blink: Booting
-- Blue blink: Long press Volume Up detected (reboot pending)
-- Cyan blink: Long press Volume Down detected (restart services pending)
+LED Colors (R/G/B only):
+- GREEN solid: All systems OK
+- BLUE blinking: No server/internet (connectivity issues)
+- RED blinking: No hardware (but internet/server OK)
+- RED solid: Nothing works
+- BLUE blinking: AP mode / Long press detected
 """
 
 import sys
@@ -144,28 +141,32 @@ class HealthMonitor:
             print(f"[HEALTH] Internet={internet}, Server={server}, Hardware={hardware}")
             self._last_state = state
         
-        # Set LED color based on state
+        # Set LED color based on state (R/G/B only)
         if internet and server and hardware:
-            # All systems go - GREEN
+            # All systems go - GREEN solid
             self._leds.set_light(self.LIGHT, Colors.GREEN)
-        elif server and hardware and not internet:
-            # No internet but local services OK - YELLOW
-            self._leds.set_light(self.LIGHT, Colors.YELLOW)
-        elif hardware and not server:
-            # Hardware running but server down - CYAN
-            self._leds.set_light(self.LIGHT, Colors.CYAN)
-        elif server and not hardware:
-            # Server running but hardware down - MAGENTA
-            self._leds.set_light(self.LIGHT, Colors.MAGENTA)
+        elif hardware and (not internet or not server):
+            # Hardware OK but connectivity issues - BLUE blinking
+            self._blink(Colors.BLUE)
+        elif (internet or server) and not hardware:
+            # Internet/server OK but no hardware - RED blinking
+            self._blink(Colors.RED)
         else:
-            # Critical - nothing working - RED
+            # Nothing working - RED solid
             self._leds.set_light(self.LIGHT, Colors.RED)
     
+    def _blink(self, color: tuple):
+        """Single blink for status indication"""
+        if int(time.time() * 2) % 2 == 0:
+            self._leds.set_light(self.LIGHT, color)
+        else:
+            self._leds.off(self.LIGHT)
+    
     def boot_animation(self):
-        """White blink animation during startup"""
+        """Blue blink animation during startup"""
         print("[HEALTH] Boot animation...")
         for _ in range(3):
-            self._leds.set_light(self.LIGHT, Colors.WHITE)
+            self._leds.set_light(self.LIGHT, Colors.BLUE)
             time.sleep(0.3)
             self._leds.off(self.LIGHT)
             time.sleep(0.3)
@@ -299,12 +300,12 @@ class HealthMonitor:
                 self._restart_triggered = True
                 self._do_restart_services()
         elif vol_down_duration > 0:
-            # Show progress - blink cyan faster as we approach threshold
+            # Show progress - blink blue faster as we approach threshold
             progress = vol_down_duration / LONG_PRESS_RESTART_SERVICES_DURATION
             if progress > 0.5:
                 # Blink to indicate long press is being detected
                 if int(time.time() * 4) % 2 == 0:
-                    self._leds.set_light(self.LIGHT, Colors.CYAN)
+                    self._leds.set_light(self.LIGHT, Colors.BLUE)
                 else:
                     self._leds.off(self.LIGHT)
         else:

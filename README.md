@@ -41,7 +41,7 @@ A smart speaker system that uses NFC chips to trigger music playback. Scan an NF
 | Audio HAT | ReSpeaker 2-Mic Pi HAT | 1 | I2C hub, audio output, microphone input |
 | NFC Reader | PN532 (I2C mode) | 1 | Read NFC chip UIDs |
 | I/O Expander | PCF8574 | 2 | Button input (0x20) + LED output (0x21) |
-| RGB LEDs | Common cathode 5mm | 2 | Health + Player status indicators |
+| RGB LEDs | Common cathode 5mm | 3 | Health, PTT, and Speaker status indicators |
 | Push Buttons | Momentary tactile | 6 | Play/Pause, Record, Stop, Vol+, Vol-, PTT |
 | Speaker | USB-powered speaker | 1 | Audio output (via 3.5mm jack) |
 | NFC Tags | NTAG213/215 | 4 | Music trigger chips |
@@ -53,8 +53,8 @@ All I2C devices connect via the ReSpeaker Pi HAT's I2C breakout pins.
 
 | Device | Address | Description |
 |--------|---------|-------------|
-| PCF8574 (Buttons) | 0x20 | 6-button input expander |
-| PCF8574 (LEDs) | 0x21 | RGB LED controller |
+| PCF8574 (Buttons) | 0x20 | 6-button input + Speaker LED red pin |
+| PCF8574 (LEDs) | 0x21 | RGB LED controller (3 LEDs) |
 | PN532 NFC | 0x24 | NFC reader module |
 
 ---
@@ -115,20 +115,28 @@ P2 → Stop button
 P3 → Volume Up button
 P4 → Volume Down button
 P5 → PTT (Push-to-Talk) button
-P6 → (unused)
+P6 → Speaker LED Red (divided LED)
 P7 → (unused)
 ```
 
 **PCF8574 @ 0x21 (LEDs) Pin Mapping:**
 ```
-P0 → LED 1 Red
-P1 → LED 1 Green
-P2 → LED 1 Blue
-P3 → LED 2 Red
-P4 → LED 2 Green
-P5 → LED 2 Blue
-P6 → (unused)
-P7 → (unused)
+Pin order: Blue, Green, Red (B, G, R)
+
+Light 1 - Health LED:
+P0 → Health Blue
+P1 → Health Green
+P2 → Health Red
+
+Light 2 - PTT LED:
+P3 → PTT Blue
+P4 → PTT Green
+P5 → PTT Red
+
+Light 3 - Speaker LED (divided across expanders):
+P6 → Speaker Blue
+P7 → Speaker Green
+(Red on P6 of 0x20 - see above)
 ```
 
 ---
@@ -338,15 +346,23 @@ Hold the PTT button and speak:
 
 ## LED Indicators
 
+All LEDs use only Red, Green, Blue (no mixed colors).
+
 | LED | Color | Meaning |
 |-----|-------|---------|
-| Health (Light 1) | Green | All systems OK |
-| Health (Light 1) | Yellow | No internet connection |
-| Health (Light 1) | Red | System error |
-| Health (Light 1) | Blue (pulsing) | AP mode / WiFi setup |
-| Player (Light 2) | Green | Playing |
-| Player (Light 2) | Yellow | Paused |
-| Player (Light 2) | Red | Recording |
+| **Health (Light 1)** | Green solid | All systems OK |
+| | Blue blinking | No server/internet |
+| | Red blinking | No hardware (but internet OK) |
+| | Red solid | Nothing works |
+| | Blue blinking | AP mode / WiFi setup |
+| **PTT (Light 2)** | Off | Idle (default) |
+| | Blue solid | Pressed / listening |
+| | Green blinking | Command accepted |
+| | Red blinking | Error / unknown command |
+| **Speaker (Light 3)** | Green solid | Playing |
+| | Blue solid | Idle / Paused |
+| | Red solid | Recording |
+| | Red blinking | Error |
 
 ---
 

@@ -21,9 +21,12 @@ PCF8574_ADDRESS = 0x20  # Button expander address
 PCF8574_RGB_ADDRESS = 0x21  # RGB LED expander address
 PN532_I2C_ADDRESS = 0x24  # NFC reader address
 
-# RGB LED pin mappings on PCF8574 (at 0x21)
-RGB_LIGHT1_PINS = (0, 1, 2)  # P0=R, P1=G, P2=B
-RGB_LIGHT2_PINS = (3, 4, 5)  # P3=R, P4=G, P5=B
+# RGB LED pin mappings (B, G, R order - not R, G, B!)
+# Light 1 (Health):  P0=B, P1=G, P2=R on 0x21
+# Light 2 (PTT):     P3=B, P4=G, P5=R on 0x21
+# Light 3 (Speaker): P6=B, P7=G on 0x21, P6=R on 0x20 (divided LED)
+RGB_LIGHT1_PINS = (0, 1, 2)  # Health LED
+RGB_LIGHT2_PINS = (3, 4, 5)  # PTT LED
 
 # Button bit positions on PCF8574 (active-low)
 BUTTON_PLAY_PAUSE_BIT = 0  # P0

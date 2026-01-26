@@ -73,7 +73,7 @@ class Controller:
             try:
                 from hardware.voice_command import VoiceCommand
                 self._voice_command = VoiceCommand()
-                self._ptt_leds = RGBLeds()  # Separate instance to control Light 1
+                self._ptt_leds = RGBLeds()  # Separate instance to control Light 2 (PTT LED)
                 log("[PTT] Voice command support enabled")
             except Exception as e:
                 log_error(f"[PTT] Failed to initialize voice commands: {e}")
@@ -786,11 +786,11 @@ class Controller:
         """
         Handle PTT (Push-to-Talk) button for voice commands.
         
-        Hold-to-talk mode (like walkie-talkie):
-        1. Press button → LED BLUE, start recording
-        2. Hold and speak your command
-        3. Release button → LED CYAN, process command
-        4. Execute → LED GREEN (success) or RED (fail)
+        Uses Light 2 (PTT LED) - R/G/B only:
+        - OFF: Idle (default)
+        - BLUE: Pressed/listening
+        - GREEN blink: Command accepted
+        - RED blink: Error/unknown command
         
         Supported commands (say "hi speaker" or "hey speaker" then):
         - "play" -> play/resume
@@ -807,15 +807,17 @@ class Controller:
             if self._buttons.just_pressed(ButtonID.PTT):
                 log_event("[PTT] Blocked - voice memo recording in progress")
                 self._ui.on_blocked_action()
+                # Blink red to show blocked
+                self._ptt_blink(Colors.RED)
             return
         
         # Handle button press - START recording
         if self._buttons.just_pressed(ButtonID.PTT):
             log_button("🎙️ PTT pressed - hold and speak, release when done")
             
-            # Take over Light 1 - BLUE (listening/recording)
+            # Light 2 - BLUE (listening/recording)
             if self._ptt_leds:
-                self._ptt_leds.set_light(1, Colors.BLUE)
+                self._ptt_leds.set_light(2, Colors.BLUE)
             
             # Start recording
             self._voice_command.start_recording()
@@ -829,9 +831,9 @@ class Controller:
             
             log_button("🎙️ PTT released - processing command")
             
-            # Show processing indicator
+            # Keep BLUE while processing
             if self._ptt_leds:
-                self._ptt_leds.set_light(1, Colors.CYAN)
+                self._ptt_leds.set_light(2, Colors.BLUE)
             
             # Stop recording and get command
             command = self._voice_command.stop_and_parse()
@@ -840,15 +842,23 @@ class Controller:
             self._execute_ptt_command(command, state)
             return
     
+    def _ptt_blink(self, color: tuple, times: int = 3):
+        """Blink PTT LED (Light 2) then turn off"""
+        if not self._ptt_leds:
+            return
+        for _ in range(times):
+            self._ptt_leds.set_light(2, color)
+            time.sleep(0.1)
+            self._ptt_leds.off(2)
+            time.sleep(0.1)
+    
     def _execute_ptt_command(self, command: Optional[str], state: State):
-        """Execute a PTT voice command."""
+        """Execute a PTT voice command. Uses Light 2 (PTT LED)."""
         if command == "play":
             # Check quiet hours
             if self._check_quiet_hours():
                 self._ui.on_blocked_action()
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.RED)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.RED)
                 return
             
             if state == State.PAUSED:
@@ -870,17 +880,14 @@ class Controller:
             elif state == State.IDLE_NO_CHIP:
                 log_event("[PTT] Play blocked - no chip loaded")
                 self._ui.on_blocked_action()
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.RED)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.RED)
                 return
             else:
                 # Already playing - do nothing special
                 log_event("[PTT] Already playing")
             
-            if self._ptt_leds:
-                self._ptt_leds.set_light(1, Colors.GREEN)
-                time.sleep(0.3)
+            # Success - green blink
+            self._ptt_blink(Colors.GREEN)
         
         elif command == "pause":
             if state == State.PLAYING:
@@ -888,14 +895,10 @@ class Controller:
                 self.device_state = actions.action_pause(
                     self.device_state, self._audio, self._ui
                 )
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.GREEN)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.GREEN)
             else:
                 log_event("[PTT] Pause ignored - not playing")
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.RED)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.RED)
         
         elif command == "stop":
             if state in (State.PLAYING, State.PAUSED):
@@ -903,14 +906,10 @@ class Controller:
                 self.device_state = actions.action_stop(
                     self.device_state, self._audio, self._ui
                 )
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.GREEN)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.GREEN)
             else:
                 log_event("[PTT] Stop ignored - not playing or paused")
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.RED)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.RED)
         
         elif command == "clear":
             if state != State.IDLE_NO_CHIP:
@@ -919,20 +918,14 @@ class Controller:
                 self.device_state = actions.action_voice_clear_assignment(
                     self.device_state, self._audio, self._ui
                 )
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.GREEN)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.GREEN)
             else:
                 log_event("[PTT] Clear ignored - no chip loaded")
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.RED)
-                    time.sleep(0.3)
+                self._ptt_blink(Colors.RED)
         
         else:
-            # Command not recognized - flash RED
+            # Command not recognized - blink RED
             log_event("[PTT] Command not recognized")
-            if self._ptt_leds:
-                self._ptt_leds.set_light(1, Colors.RED)
-                time.sleep(0.3)
+            self._ptt_blink(Colors.RED)
         
-        # Health monitor will restore Light 1 to correct color within 5 seconds
+        # PTT LED (Light 2) turns off after blink - stays off until next press
