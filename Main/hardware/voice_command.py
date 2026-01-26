@@ -27,10 +27,6 @@ from hardware.speech_recognition_wrapper import SpeechRecognitionWrapper
 from utils.logger import log
 
 
-# Max recording duration to prevent endless recording
-MAX_RECORD_DURATION = 10.0  # seconds
-
-
 class VoiceCommand:
     """
     Voice command processor with wake phrase detection.

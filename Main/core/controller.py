@@ -839,17 +839,6 @@ class Controller:
             # Execute command
             self._execute_ptt_command(command, state)
             return
-        
-        # Safety: cancel recording if button held too long (>10s) without release
-        if self._voice_command.is_recording():
-            # Check how long button has been held
-            hold_time = self._buttons.hold_duration(ButtonID.PTT)
-            if hold_time > 10.0:
-                log_event("[PTT] Recording timeout (>10s) - cancelling")
-                self._voice_command.cancel_recording()
-                if self._ptt_leds:
-                    self._ptt_leds.set_light(1, Colors.RED)
-                    time.sleep(0.3)
     
     def _execute_ptt_command(self, command: Optional[str], state: State):
         """Execute a PTT voice command."""
