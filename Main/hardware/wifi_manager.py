@@ -155,59 +155,32 @@ class WiFiManager:
         
         return connections
     
-    # Path to dnsmasq captive portal config (for DNS wildcard redirect)
-    DNSMASQ_CAPTIVE_CONF = '/etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf'
-    
     @staticmethod
-    def _enable_captive_dns():
-        """Enable DNS hijacking for captive portal detection.
-        
-        Creates a dnsmasq config that responds to ALL DNS queries with
-        the AP's IP address, making phones detect a captive portal.
-        """
-        conf_content = f"address=/#/{AP_IP}\n"
-        conf_dir = '/etc/NetworkManager/dnsmasq-shared.d'
-        
-        try:
-            subprocess.run(['sudo', 'mkdir', '-p', conf_dir], check=False, capture_output=True)
-            subprocess.run(
-                ['sudo', 'tee', WiFiManager.DNSMASQ_CAPTIVE_CONF],
-                input=conf_content.encode(),
-                capture_output=True
-            )
-        except Exception:
-            pass
-    
-    @staticmethod
-    def _disable_captive_dns():
-        """Disable DNS hijacking (restore normal DNS)."""
-        try:
-            subprocess.run(['sudo', 'rm', '-f', WiFiManager.DNSMASQ_CAPTIVE_CONF],
-                          check=False, capture_output=True)
-        except Exception:
-            pass
+    def get_setup_url() -> str:
+        """Get the WiFi setup URL for QR code generation."""
+        return f"http://{AP_IP}:{WEB_PORT}/wifi-setup"
     
     @staticmethod
     def start_ap() -> bool:
         """Start AP mode using NetworkManager. Returns True on success."""
-        # Enable DNS hijacking BEFORE starting AP so dnsmasq picks it up
-        WiFiManager._enable_captive_dns()
+        # Check if hotspot exists
+        existing = subprocess.run(
+            ['nmcli', 'connection', 'show', AP_SSID],
+            capture_output=True
+        )
         
-        # Delete existing hotspot connection to force fresh start with new DNS config
-        subprocess.run(['sudo', 'nmcli', 'connection', 'delete', AP_SSID],
-                      check=False, capture_output=True)
-        
-        # Create hotspot
-        subprocess.run([
-            'sudo', 'nmcli', 'connection', 'add',
-            'type', 'wifi',
-            'con-name', AP_SSID,
-            'autoconnect', 'no',
-            'wifi.mode', 'ap',
-            'wifi.ssid', AP_SSID,
-            'ipv4.method', 'shared',
-            'ipv4.addresses', f'{AP_IP}/24'
-        ])
+        if existing.returncode != 0:
+            # Create hotspot
+            subprocess.run([
+                'sudo', 'nmcli', 'connection', 'add',
+                'type', 'wifi',
+                'con-name', AP_SSID,
+                'autoconnect', 'no',
+                'wifi.mode', 'ap',
+                'wifi.ssid', AP_SSID,
+                'ipv4.method', 'shared',
+                'ipv4.addresses', f'{AP_IP}/24'
+            ])
         
         # Disconnect current WiFi and start AP
         subprocess.run(['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'], 
@@ -222,9 +195,6 @@ class WiFiManager:
     @staticmethod
     def stop_ap() -> bool:
         """Stop AP mode. Returns True on success."""
-        # Disable DNS hijacking first
-        WiFiManager._disable_captive_dns()
-        
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
                                check=False, capture_output=True)
         return result.returncode == 0
