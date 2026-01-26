@@ -9,7 +9,7 @@ ChipStore reads from this same data file.
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 import json
 import uuid
 import os
@@ -649,9 +649,27 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/status':
+        # Parse path to handle query strings
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip('/')  # Normalize trailing slashes
+        
+        # Captive portal detection URLs - redirect to WiFi setup
+        # Android, iOS, Windows, etc. use these to detect captive portals
+        captive_portal_paths = [
+            '/generate_204', '/gen_204', '/ncsi.txt',  # Android/Chrome
+            '/canonical.html', '/success.txt',  # Various
+        ]
+        
+        if path in captive_portal_paths or path == '':
+            # Redirect to WiFi setup page
+            self.send_response(302)
+            self.send_header('Location', '/wifi-setup')
+            self.end_headers()
+            return
+        
+        if path == '/status':
             self._send_json({"connected": True})
-        elif self.path == '/health':
+        elif path == '/health':
             # Return hardware health status for all components
             from utils.hardware_health import HardwareHealthManager
             manager = HardwareHealthManager.get_instance()
@@ -664,34 +682,34 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                 for name, h in manager.get_all_status().items()
             }
             self._send_json(health_data)
-        elif self.path == '/chips':
+        elif path == '/chips':
             data = load_data()
             self._send_json(data.get('chips', []))
-        elif self.path == '/library':
+        elif path == '/library':
             data = load_data()
             self._send_json(data.get('library', []))
-        elif self.path == '/settings/parental':
+        elif path == '/settings/parental':
             self._send_json(get_parental_controls())
         # Debug endpoints
-        elif self.path == '/debug/i2c':
+        elif path == '/debug/i2c':
             self._send_json(debug_get_i2c_devices())
-        elif self.path == '/debug/system':
+        elif path == '/debug/system':
             self._send_json(debug_get_system_info())
-        elif self.path == '/debug/logs':
+        elif path == '/debug/logs':
             self._send_json(debug_get_logs())
-        elif self.path == '/debug/git-status':
+        elif path == '/debug/git-status':
             self._send_json(debug_get_git_status())
-        elif self.path == '/debug/speaker/status':
+        elif path == '/debug/speaker/status':
             self._send_json(debug_speaker_status())
         # WiFi endpoints
-        elif self.path == '/debug/wifi/status':
+        elif path == '/debug/wifi/status':
             self._send_json(wifi_get_status())
-        elif self.path == '/debug/wifi/connections':
+        elif path == '/debug/wifi/connections':
             self._send_json(wifi_get_connections())
-        elif self.path == '/debug/wifi/scan':
+        elif path == '/debug/wifi/scan':
             self._send_json(wifi_scan())
         # Captive portal WiFi setup page
-        elif self.path == '/wifi-setup' or self.path == '/wifi-setup/':
+        elif path == '/wifi-setup':
             self._serve_wifi_setup_page()
         else:
             self.send_error(404)
@@ -955,7 +973,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             body = self._read_body() or {}
             self._send_json(wifi_ap_mode(body.get('enable', True)))
         # Captive portal WiFi connect handler
-        elif self.path == '/wifi-setup/connect':
+        elif self.path == '/wifi-setup/connect' or self.path.startswith('/wifi-setup/connect?'):
             self._handle_wifi_setup_connect()
         else:
             self.send_error(404)
