@@ -720,9 +720,9 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             networks = WiFiManager.scan_networks()
             html = render_network_list_html(networks, connect_action="/wifi-setup/connect")
             self.send_response(200)
-            self.send_header('Content-type', 'text/html')
+            self.send_header('Content-type', 'text/html; charset=utf-8')
             self.end_headers()
-            self.wfile.write(html.encode())
+            self.wfile.write(html.encode('utf-8'))
         except Exception as e:
             self.send_error(500, str(e))
 
@@ -991,9 +991,9 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             
             html = render_status_html(success, ssid, connect_action="/wifi-setup/connect")
             self.send_response(200)
-            self.send_header('Content-type', 'text/html')
+            self.send_header('Content-type', 'text/html; charset=utf-8')
             self.end_headers()
-            self.wfile.write(html.encode())
+            self.wfile.write(html.encode('utf-8'))
             
             if success:
                 log_success(f"WiFi setup: connected to {ssid}")

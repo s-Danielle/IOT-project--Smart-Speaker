@@ -155,9 +155,46 @@ class WiFiManager:
         
         return connections
     
+    # Path to dnsmasq captive portal config (for DNS hijacking)
+    DNSMASQ_CAPTIVE_CONF = '/etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf'
+    
+    @staticmethod
+    def _enable_captive_dns():
+        """Enable DNS hijacking for captive portal detection."""
+        # Create dnsmasq config that redirects all DNS to AP IP
+        # This makes phones detect a captive portal automatically
+        conf_content = f"address=/#/{AP_IP}\n"
+        conf_dir = '/etc/NetworkManager/dnsmasq-shared.d'
+        
+        try:
+            # Create directory if it doesn't exist
+            subprocess.run(['sudo', 'mkdir', '-p', conf_dir], check=False, capture_output=True)
+            # Write config file
+            subprocess.run(
+                ['sudo', 'tee', WiFiManager.DNSMASQ_CAPTIVE_CONF],
+                input=conf_content.encode(),
+                capture_output=True
+            )
+        except Exception:
+            pass  # Non-critical, portal will still work with manual URL
+    
+    @staticmethod
+    def _disable_captive_dns():
+        """Disable DNS hijacking (restore normal DNS)."""
+        try:
+            subprocess.run(
+                ['sudo', 'rm', '-f', WiFiManager.DNSMASQ_CAPTIVE_CONF],
+                check=False, capture_output=True
+            )
+        except Exception:
+            pass
+    
     @staticmethod
     def start_ap() -> bool:
         """Start AP mode using NetworkManager. Returns True on success."""
+        # Enable captive portal DNS hijacking
+        WiFiManager._enable_captive_dns()
+        
         # Check if hotspot exists
         existing = subprocess.run(
             ['nmcli', 'connection', 'show', AP_SSID],
@@ -189,6 +226,9 @@ class WiFiManager:
     @staticmethod
     def stop_ap() -> bool:
         """Stop AP mode. Returns True on success."""
+        # Disable captive portal DNS hijacking
+        WiFiManager._disable_captive_dns()
+        
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
                                check=False, capture_output=True)
         return result.returncode == 0
@@ -281,6 +321,7 @@ class WiFiManager:
 CAPTIVE_PORTAL_HTML = '''<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>SmartSpeaker WiFi Setup</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>

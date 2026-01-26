@@ -96,9 +96,9 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         html = render_network_list_html(networks, connect_action="/connect")
         
         self.send_response(200)
-        self.send_header('Content-type', 'text/html')
+        self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(html.encode())
+        self.wfile.write(html.encode('utf-8'))
     
     def do_POST(self):
         """Handle POST requests - connect to network"""
@@ -125,9 +125,9 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         
         html = render_status_html(success, ssid, connect_action="/connect")
         self.send_response(200)
-        self.send_header('Content-type', 'text/html')
+        self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(html.encode())
+        self.wfile.write(html.encode('utf-8'))
 
 
 class WiFiProvisioner:
