@@ -16,7 +16,7 @@ from urllib.parse import parse_qs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 AP_SSID = "SmartSpeaker-Setup"
-WEB_PORT = 80
+WEB_PORT = 8080
 CONNECT_TIMEOUT = 30  # Seconds to wait for auto-connect
 
 
