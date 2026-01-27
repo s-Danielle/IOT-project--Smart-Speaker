@@ -97,6 +97,9 @@ class Controller:
         # Track recording start time for max duration limit
         self._recording_start_time: Optional[float] = None
         
+        # Track last volume limit check time (check periodically, not every loop)
+        self._last_volume_limit_check: float = 0.0
+        
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
         log("READY - Waiting for input...")
@@ -120,6 +123,13 @@ class Controller:
                 
                 # Check if recording exceeded max duration
                 self._check_recording_time_limit()
+                
+                # Periodically check volume limit (every 2 seconds)
+                # This ensures volume is reduced if a new lower limit is set
+                now = time.time()
+                if now - self._last_volume_limit_check >= 2.0:
+                    self._check_and_enforce_volume_limit()
+                    self._last_volume_limit_check = now
                 
                 # Sleep for loop interval
                 time.sleep(LOOP_INTERVAL)
@@ -439,6 +449,25 @@ class Controller:
             return limit
         return volume
     
+    def _check_and_enforce_volume_limit(self):
+        """Check current volume against parental limit and reduce if necessary.
+        
+        This ensures that if a volume limit is set while volume is already higher,
+        the volume is immediately reduced to the new limit.
+        """
+        try:
+            limit = self._get_volume_limit()
+            if limit >= 100:
+                return  # No limit active
+            
+            current_vol = self._audio.get_volume()
+            if current_vol > limit:
+                log_event(f"[PARENTAL] Current volume {current_vol}% exceeds limit {limit}% - reducing")
+                self._audio.set_volume(limit)
+                self._ui.on_volume_change(limit)
+        except Exception as e:
+            log_error(f"[PARENTAL] Error checking volume limit: {e}")
+    
     def _check_daily_limit(self) -> bool:
         """Check if playback is blocked due to daily usage limit.
         Returns True if blocked, False if allowed.
@@ -684,6 +713,9 @@ class Controller:
                 self._ui.on_blocked_action()
                 return
             
+            # Enforce volume limit before starting playback
+            self._check_and_enforce_volume_limit()
+            
             # Track play initiation time and reset tracking state
             self._play_initiated_time = time.time()
             self._playback_confirmed = False
@@ -709,6 +741,9 @@ class Controller:
             if self._check_daily_limit():
                 self._ui.on_blocked_action()
                 return
+            
+            # Enforce volume limit before resuming playback
+            self._check_and_enforce_volume_limit()
             
             # Track resume time - resuming may also need buffering for Spotify
             self._play_initiated_time = time.time()
@@ -992,6 +1027,9 @@ class Controller:
                 self._ui.on_blocked_action()
                 self._ptt_blink(Colors.RED)
                 return
+            
+            # Enforce volume limit before starting/resuming playback
+            self._check_and_enforce_volume_limit()
             
             if state == State.PAUSED:
                 # Resume paused playback

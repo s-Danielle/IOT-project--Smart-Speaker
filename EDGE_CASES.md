@@ -46,7 +46,7 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | # | Edge Case | How It's Handled |
 |---|-----------|------------------|
 | 18 | Quiet hours span midnight (21:00-07:00) | Correctly detects overnight range with time comparison logic |
-| 19 | Volume exceeds parental limit | Caps volume immediately, logs enforcement |
+| 19 | Volume exceeds parental limit | Caps volume immediately (checked every 2s, on play/resume, and on volume up) |
 | 20 | Chip in blacklist | Blocks scan, plays blocked sound |
 | 21 | Whitelist mode enabled | Only allows chips explicitly in whitelist |
 | 22 | Daily usage limit reached | Blocks new playback, tracks playtime (resets daily) |
