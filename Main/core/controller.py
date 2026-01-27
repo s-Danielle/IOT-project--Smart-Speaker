@@ -415,7 +415,7 @@ class Controller:
                 return True
             
             # Check whitelist mode
-            if whitelist_mode and whitelist:
+            if whitelist_mode:
                 if uid not in whitelist:
                     log_event(f"[PARENTAL] Chip blocked - UID not in whitelist")
                     return True

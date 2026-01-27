@@ -25,10 +25,11 @@ LIGHT2_PINS = (3, 4, 5)  # P3=B, P4=G, P5=R (PTT LED)
 
 class Colors:
     """RGB color tuples (B, G, R) as booleans - matches pin order"""
-    OFF =   (False, False, False)
-    BLUE =  (True,  False, False)
-    GREEN = (False, True,  False)
-    RED =   (False, False, True)
+    OFF =    (False, False, False)
+    BLUE =   (True,  False, False)
+    GREEN =  (False, True,  False)
+    RED =    (False, False, True)
+    YELLOW = (False, True,  True)   # Green + Red = Yellow
 
 
 class RGBLeds:
