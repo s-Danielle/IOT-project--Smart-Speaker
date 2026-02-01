@@ -1,3 +1,17 @@
+// =============================================================================
+// API SERVICE
+// =============================================================================
+//
+// HTTP client for the Smart Speaker backend. All methods are async and return
+// [Future]s; call them with await from async functions (e.g. in screen state).
+// On non-2xx responses, methods throw [Exception] with a message; the UI
+// typically catches and shows a SnackBar or error state.
+//
+// Base URL is set in Settings (e.g. http://smart-speaker-iot.local:8080).
+// Endpoints mirror the Python server (Main/server.py).
+//
+// =============================================================================
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -5,12 +19,20 @@ import '../models/status.dart';
 import '../models/chip.dart';
 import '../models/song.dart';
 
+/// HTTP client for the Smart Speaker REST API.
+///
+/// Create with [ApiService(baseUrl)]. All methods throw on HTTP errors.
 class ApiService {
+  /// Base URL of the speaker backend (e.g. http://192.168.1.10:8080).
   final String baseUrl;
 
   ApiService(this.baseUrl);
 
-  // GET /status
+  // ---------------------------------------------------------------------------
+  // Status
+  // ---------------------------------------------------------------------------
+
+  /// GET /status — connection state and current chip ID.
   Future<Status> getStatus() async {
     final response = await http.get(Uri.parse('$baseUrl/status'));
     if (response.statusCode == 200) {
@@ -19,7 +41,11 @@ class ApiService {
     throw Exception('Failed to get status: ${response.statusCode}');
   }
 
-  // GET /chips
+  // ---------------------------------------------------------------------------
+  // Chips (NFC tags)
+  // ---------------------------------------------------------------------------
+
+  /// GET /chips — list all registered chips.
   Future<List<SpeakerChip>> getChips() async {
     final response = await http.get(Uri.parse('$baseUrl/chips'));
     if (response.statusCode == 200) {
@@ -29,7 +55,7 @@ class ApiService {
     throw Exception('Failed to get chips: ${response.statusCode}');
   }
 
-  // POST /chips - Register a new chip
+  /// POST /chips — register a new chip by NFC UID; optional [name].
   Future<SpeakerChip> createChip(String uid, {String? name}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/chips'),
@@ -42,7 +68,7 @@ class ApiService {
     throw Exception('Failed to create chip: ${response.statusCode}');
   }
 
-  // PUT /chips/{chip_id}
+  /// PUT /chips/{chip_id} — update name and/or assigned song (only provided fields are sent).
   Future<void> updateChip(String chipId, {String? name, String? songId}) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
@@ -58,7 +84,7 @@ class ApiService {
     }
   }
 
-  // DELETE /chips/{chip_id}/assignment
+  /// DELETE /chips/{chip_id}/assignment — clear the chip's song assignment.
   Future<void> resetChipAssignment(String chipId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/chips/$chipId/assignment'),
@@ -68,7 +94,7 @@ class ApiService {
     }
   }
 
-  // DELETE /chips/{chip_id}
+  /// DELETE /chips/{chip_id} — remove the chip from the device.
   Future<void> deleteChip(String chipId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/chips/$chipId'),
@@ -78,7 +104,7 @@ class ApiService {
     }
   }
 
-  // GET /library
+  /// GET /library — list all songs in the device library.
   Future<List<Song>> getLibrary() async {
     final response = await http.get(Uri.parse('$baseUrl/library'));
     if (response.statusCode == 200) {
@@ -88,7 +114,7 @@ class ApiService {
     throw Exception('Failed to get library: ${response.statusCode}');
   }
 
-  // POST /library
+  /// POST /library — add a song (name + URI, e.g. Spotify URI or uploaded file URI).
   Future<Song> createSong(String name, String uri) async {
     final response = await http.post(
       Uri.parse('$baseUrl/library'),
@@ -101,7 +127,7 @@ class ApiService {
     throw Exception('Failed to create song: ${response.statusCode}');
   }
 
-  // PUT /library/{song_id}
+  /// PUT /library/{song_id} — update song name and URI.
   Future<void> updateSong(String songId, String name, String uri) async {
     final response = await http.put(
       Uri.parse('$baseUrl/library/$songId'),
@@ -113,7 +139,7 @@ class ApiService {
     }
   }
 
-  // DELETE /library/{song_id}
+  /// DELETE /library/{song_id} — remove song from the device library.
   Future<void> deleteSong(String songId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/library/$songId'),
@@ -123,7 +149,7 @@ class ApiService {
     }
   }
 
-  // POST /files (multipart/form-data)
+  /// POST /files — upload a file (multipart). Returns the URI the backend assigns.
   Future<String> uploadFile(File file) async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/files'));
     request.files.add(await http.MultipartFile.fromPath('file', file.path));
@@ -138,11 +164,11 @@ class ApiService {
     throw Exception('Failed to upload file: ${response.statusCode}');
   }
 
-  // ===========================================================================
-  // PARENTAL CONTROLS
-  // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // Parental controls (GET/PUT /settings/parental)
+  // ---------------------------------------------------------------------------
 
-  // GET /settings/parental
+  /// GET /settings/parental — returns full parental settings as a JSON map.
   Future<Map<String, dynamic>> getParentalSettings() async {
     final response = await http.get(Uri.parse('$baseUrl/settings/parental'));
     if (response.statusCode == 200) {
@@ -151,7 +177,7 @@ class ApiService {
     throw Exception('Failed to get parental settings: ${response.statusCode}');
   }
 
-  // PUT /settings/parental
+  /// PUT /settings/parental — update parental settings; body is the full settings map.
   Future<Map<String, dynamic>> updateParentalSettings(Map<String, dynamic> settings) async {
     final response = await http.put(
       Uri.parse('$baseUrl/settings/parental'),
@@ -164,11 +190,11 @@ class ApiService {
     throw Exception('Failed to update parental settings: ${response.statusCode}');
   }
 
-  // ===========================================================================
-  // DEBUG / DEVELOPER TOOLS
-  // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // Debug / developer tools (I2C, system, logs, git, speaker, WiFi)
+  // ---------------------------------------------------------------------------
 
-  // GET /debug/i2c
+  /// GET /debug/i2c — list I2C devices on the Pi.
   Future<Map<String, dynamic>> getI2cDevices() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/i2c'));
     if (response.statusCode == 200) {
@@ -177,7 +203,7 @@ class ApiService {
     throw Exception('Failed to get I2C devices: ${response.statusCode}');
   }
 
-  // GET /debug/system
+  /// GET /debug/system — system info (e.g. Pi model, OS).
   Future<Map<String, dynamic>> getSystemInfo() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/system'));
     if (response.statusCode == 200) {
@@ -186,7 +212,7 @@ class ApiService {
     throw Exception('Failed to get system info: ${response.statusCode}');
   }
 
-  // GET /debug/logs
+  /// GET /debug/logs — recent log output from the speaker process.
   Future<Map<String, dynamic>> getLogs() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/logs'));
     if (response.statusCode == 200) {
@@ -195,7 +221,7 @@ class ApiService {
     throw Exception('Failed to get logs: ${response.statusCode}');
   }
 
-  // GET /debug/git-status
+  /// GET /debug/git-status — git status of the repo on the device.
   Future<Map<String, dynamic>> getGitStatus() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/git-status'));
     if (response.statusCode == 200) {
@@ -204,7 +230,7 @@ class ApiService {
     throw Exception('Failed to get git status: ${response.statusCode}');
   }
 
-  // POST /debug/git-pull
+  /// POST /debug/git-pull — run git pull on the device.
   Future<Map<String, dynamic>> gitPull() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/git-pull'));
     if (response.statusCode == 200) {
@@ -213,7 +239,7 @@ class ApiService {
     throw Exception('Failed to git pull: ${response.statusCode}');
   }
 
-  // GET /debug/speaker/status
+  /// GET /debug/speaker/status — whether the speaker main process is running.
   Future<Map<String, dynamic>> getSpeakerStatus() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/speaker/status'));
     if (response.statusCode == 200) {
@@ -222,7 +248,7 @@ class ApiService {
     throw Exception('Failed to get speaker status: ${response.statusCode}');
   }
 
-  // POST /debug/speaker/start
+  /// POST /debug/speaker/start — start the speaker main process.
   Future<Map<String, dynamic>> startSpeaker() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/speaker/start'));
     if (response.statusCode == 200) {
@@ -231,7 +257,7 @@ class ApiService {
     throw Exception('Failed to start speaker: ${response.statusCode}');
   }
 
-  // POST /debug/speaker/stop
+  /// POST /debug/speaker/stop — stop the speaker main process.
   Future<Map<String, dynamic>> stopSpeaker() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/speaker/stop'));
     if (response.statusCode == 200) {
@@ -240,7 +266,7 @@ class ApiService {
     throw Exception('Failed to stop speaker: ${response.statusCode}');
   }
 
-  // POST /debug/speaker/restart
+  /// POST /debug/speaker/restart — restart the speaker main process.
   Future<Map<String, dynamic>> restartSpeaker() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/speaker/restart'));
     if (response.statusCode == 200) {
@@ -249,7 +275,7 @@ class ApiService {
     throw Exception('Failed to restart speaker: ${response.statusCode}');
   }
 
-  // POST /debug/daemon-reload
+  /// POST /debug/daemon-reload — systemd daemon-reload (for service config changes).
   Future<Map<String, dynamic>> daemonReload() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/daemon-reload'));
     if (response.statusCode == 200) {
@@ -258,7 +284,7 @@ class ApiService {
     throw Exception('Failed to daemon reload: ${response.statusCode}');
   }
 
-  // POST /debug/run-main
+  /// POST /debug/run-main — run the main speaker script on the device.
   Future<Map<String, dynamic>> runMain() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/run-main'));
     if (response.statusCode == 200) {
@@ -267,7 +293,7 @@ class ApiService {
     throw Exception('Failed to run main: ${response.statusCode}');
   }
 
-  // POST /debug/reboot
+  /// POST /debug/reboot — reboot the device (Raspberry Pi).
   Future<Map<String, dynamic>> rebootPi() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/reboot'));
     if (response.statusCode == 200) {
@@ -276,11 +302,11 @@ class ApiService {
     throw Exception('Failed to reboot: ${response.statusCode}');
   }
 
-  // ===========================================================================
-  // WIFI MANAGEMENT
-  // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // WiFi management (device WiFi: status, scan, connect, disconnect, AP mode)
+  // ---------------------------------------------------------------------------
 
-  // GET /debug/wifi/status
+  /// GET /debug/wifi/status — current WiFi connection status on the device.
   Future<Map<String, dynamic>> getWifiStatus() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/wifi/status'));
     if (response.statusCode == 200) {
@@ -289,7 +315,7 @@ class ApiService {
     throw Exception('Failed to get WiFi status: ${response.statusCode}');
   }
 
-  // GET /debug/wifi/connections
+  /// GET /debug/wifi/connections — saved WiFi networks on the device.
   Future<Map<String, dynamic>> getWifiConnections() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/wifi/connections'));
     if (response.statusCode == 200) {
@@ -298,7 +324,7 @@ class ApiService {
     throw Exception('Failed to get WiFi connections: ${response.statusCode}');
   }
 
-  // GET /debug/wifi/scan
+  /// GET /debug/wifi/scan — scan for visible WiFi networks.
   Future<Map<String, dynamic>> scanWifiNetworks() async {
     final response = await http.get(Uri.parse('$baseUrl/debug/wifi/scan'));
     if (response.statusCode == 200) {
@@ -307,7 +333,7 @@ class ApiService {
     throw Exception('Failed to scan WiFi networks: ${response.statusCode}');
   }
 
-  // POST /debug/wifi/connect
+  /// POST /debug/wifi/connect — connect to a network by SSID; optional password.
   Future<Map<String, dynamic>> connectWifi(String ssid, {String? password}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/debug/wifi/connect'),
@@ -320,7 +346,7 @@ class ApiService {
     throw Exception('Failed to connect to WiFi: ${response.statusCode}');
   }
 
-  // POST /debug/wifi/disconnect
+  /// POST /debug/wifi/disconnect — disconnect from current WiFi.
   Future<Map<String, dynamic>> disconnectWifi() async {
     final response = await http.post(Uri.parse('$baseUrl/debug/wifi/disconnect'));
     if (response.statusCode == 200) {
@@ -329,7 +355,7 @@ class ApiService {
     throw Exception('Failed to disconnect WiFi: ${response.statusCode}');
   }
 
-  // POST /debug/wifi/forget
+  /// POST /debug/wifi/forget — remove a saved network by name.
   Future<Map<String, dynamic>> forgetWifi(String name) async {
     final response = await http.post(
       Uri.parse('$baseUrl/debug/wifi/forget'),
@@ -342,7 +368,7 @@ class ApiService {
     throw Exception('Failed to forget WiFi: ${response.statusCode}');
   }
 
-  // POST /debug/wifi/priority
+  /// POST /debug/wifi/priority — set priority for a saved network (higher = preferred).
   Future<Map<String, dynamic>> setWifiPriority(String name, int priority) async {
     final response = await http.post(
       Uri.parse('$baseUrl/debug/wifi/priority'),
@@ -355,7 +381,7 @@ class ApiService {
     throw Exception('Failed to set WiFi priority: ${response.statusCode}');
   }
 
-  // POST /debug/wifi/ap-mode
+  /// POST /debug/wifi/ap-mode — enable/disable the device's WiFi access point (for provisioning).
   Future<Map<String, dynamic>> setApMode(bool enable) async {
     final response = await http.post(
       Uri.parse('$baseUrl/debug/wifi/ap-mode'),

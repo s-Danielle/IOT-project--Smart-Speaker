@@ -1,7 +1,22 @@
+// =============================================================================
+// DEVELOPER TOOLS SCREEN
+// =============================================================================
+//
+// Advanced tools for the device: system info, I2C devices, git status, speaker
+// process start/stop/restart, daemon reload, run main, WiFi status/scan/connect/
+// forget/AP mode, logs, reboot Pi. All data comes from ApiService debug endpoints.
+//
+// initState loads system info, git status, speaker status, WiFi status. Other
+// sections load on demand (I2C scan, logs when expanded). Actions show
+// SnackBar via _showActionStatus(); destructive actions use _confirmAction().
+//
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../services/api_service.dart';
 
+/// Screen for system info, I2C, git, speaker controls, WiFi management, logs, reboot.
 class DeveloperToolsScreen extends StatefulWidget {
   const DeveloperToolsScreen({super.key});
 
@@ -22,8 +37,7 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
   bool _loadingSpeaker = false;
   bool _showLogs = false;
   String? _actionStatus;
-  
-  // WiFi state
+
   Map<String, dynamic>? _wifiStatus;
   List<dynamic>? _wifiNetworks;
   List<dynamic>? _savedConnections;
@@ -39,6 +53,7 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     _loadWifiStatus();
   }
 
+  /// Returns ApiService with current base URL from SettingsService.
   Future<ApiService> _getApi() async {
     final baseUrl = await SettingsService.getBaseUrl();
     return ApiService(baseUrl);

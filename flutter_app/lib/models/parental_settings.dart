@@ -1,3 +1,17 @@
+// =============================================================================
+// PARENTAL SETTINGS MODELS
+// =============================================================================
+//
+// Data structures for parental controls on the Smart Speaker: volume limit,
+// quiet hours, daily time limit, and chip allow/block lists. Stored on the
+// device and synced via the API (GET/PUT /settings/parental).
+//
+// =============================================================================
+
+/// Time window during which playback may be restricted (e.g. 21:00–07:00).
+///
+/// [enabled] turns the restriction on/off. [start] and [end] are time strings
+/// (e.g. "21:00", "07:00") in 24h format. Used inside [ParentalSettings].
 class QuietHours {
   final bool enabled;
   final String start;
@@ -25,6 +39,8 @@ class QuietHours {
     };
   }
 
+  /// Returns a copy with the given fields replaced; other fields stay the same.
+  /// Used when updating one field without rebuilding the whole object.
   QuietHours copyWith({
     bool? enabled,
     String? start,
@@ -38,6 +54,12 @@ class QuietHours {
   }
 }
 
+/// Full parental control settings: limits and chip allow/block lists.
+///
+/// [enabled] turns parental controls on/off. [volumeLimit] caps volume (0–100).
+/// [quietHours] defines a time window when playback may be blocked. [dailyLimitMinutes]
+/// can cap total play time per day. [chipBlacklist] / [chipWhitelist] and
+/// [chipWhitelistMode] control which chips are allowed (see backend docs).
 class ParentalSettings {
   final bool enabled;
   final int volumeLimit;
@@ -101,7 +123,7 @@ class ParentalSettings {
     );
   }
 
-  /// Factory for default settings
+  /// Factory for default settings (parental controls off, no limits).
   factory ParentalSettings.defaults() {
     return ParentalSettings(
       enabled: false,

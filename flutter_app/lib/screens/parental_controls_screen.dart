@@ -1,9 +1,24 @@
+// =============================================================================
+// PARENTAL CONTROLS SCREEN
+// =============================================================================
+//
+// Edit parental settings on the device: GET /settings/parental on load,
+// PUT /settings/parental on Save. Uses [ParentalSettings] and [QuietHours]
+// models; UI: enable toggle, volume limit slider, quiet hours (start/end time
+// pickers), daily limit slider, chip whitelist/blacklist (checkboxes per chip).
+//
+// _settings is the in-memory copy; _saveSettings() sends toJson() to the API.
+// _chips loaded for the chip access list (whitelist/blacklist by chip uid).
+//
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../services/api_service.dart';
 import '../models/parental_settings.dart';
 import '../models/chip.dart';
 
+/// Screen to view and edit parental controls (volume, quiet hours, limits, chip access).
 class ParentalControlsScreen extends StatefulWidget {
   const ParentalControlsScreen({super.key});
 
@@ -24,6 +39,7 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
     _loadSettings();
   }
 
+  /// Fetches GET /settings/parental and GET /chips; updates _settings, _chips, _loading, _error.
   Future<void> _loadSettings() async {
     setState(() {
       _loading = true;

@@ -1,3 +1,18 @@
+// =============================================================================
+// SCAN CHIP SCREEN
+// =============================================================================
+//
+// NFC scan flow: user taps "Start Scanning", holds phone near NFC chip;
+// we read the tag UID (Android: NfcTagAndroid.id), stop the session, then
+// _syncChip(uid) to match against GET /chips (by uid). If matched: show name
+// and song, and buttons Rename / Assign / Reset. If new: show "Setup Chip"
+// (POST /chips to register). Rename/Assign/Reset call API then _syncChip again.
+//
+// _scannedId = raw UID from NFC. _matchedChip = chip from API with same uid (or null).
+// dispose() stops NfcManager session.
+//
+// =============================================================================
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
@@ -7,6 +22,7 @@ import '../services/settings_service.dart';
 import '../models/chip.dart';
 import '../models/song.dart';
 
+/// Screen to scan NFC chip, register or match it, and rename/assign song.
 class ScanChipScreen extends StatefulWidget {
   const ScanChipScreen({super.key});
 
@@ -17,7 +33,9 @@ class ScanChipScreen extends StatefulWidget {
 class _ScanChipScreenState extends State<ScanChipScreen> {
   bool _isNfcAvailable = false;
   bool _isScanning = false;
+  /// Raw NFC tag UID (hex string) after a successful scan.
   String? _scannedId;
+  /// Chip from GET /chips whose uid matches _scannedId; null if new chip.
   SpeakerChip? _matchedChip;
   List<Song> _songs = [];
   String? _error;
@@ -28,6 +46,7 @@ class _ScanChipScreenState extends State<ScanChipScreen> {
     _checkNfcAvailability();
   }
 
+  /// Checks NFC availability; if enabled, loads library for "Assign Song" dialog.
   Future<void> _checkNfcAvailability() async {
     final availability = await NfcManager.instance.checkAvailability();
     setState(() {

@@ -1,3 +1,13 @@
+// =============================================================================
+// SPOTIFY UTILS
+// =============================================================================
+//
+// Helpers for Spotify links. The backend and library expect URIs (e.g.
+// spotify:track:abc123). Users often paste URLs (e.g. https://open.spotify.com/
+// track/abc123). These functions convert URLs to URIs and detect URL/URI format.
+//
+// =============================================================================
+
 /// Converts a Spotify URL to a Spotify URI.
 /// 
 /// Examples:

@@ -1,9 +1,23 @@
+// =============================================================================
+// CHIPS SCREEN
+// =============================================================================
+//
+// Lists all NFC chips registered on the device (GET /chips). For each chip:
+// - Show name, assigned song (or "No song assigned")
+// - Popup menu: Rename, Assign Song, Reset Assignment, Delete Chip
+//
+// Rename/Assign/Reset/Delete call the API then _loadData() to refresh the list.
+// After async work we check [mounted] before using [context] (e.g. SnackBar).
+//
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/settings_service.dart';
 import '../models/chip.dart';
 import '../models/song.dart';
 
+/// Screen that lists registered chips and allows rename, assign song, reset, delete.
 class ChipsScreen extends StatefulWidget {
   const ChipsScreen({super.key});
 
@@ -13,7 +27,7 @@ class ChipsScreen extends StatefulWidget {
 
 class _ChipsScreenState extends State<ChipsScreen> {
   List<SpeakerChip> _chips = [];
-  List<Song> _songs = [];
+  List<Song> _songs = [];  // Used in "Assign Song" dialog
   bool _loading = false;
   String? _error;
 
@@ -23,6 +37,7 @@ class _ChipsScreenState extends State<ChipsScreen> {
     _loadData();
   }
 
+  /// Fetches GET /chips and GET /library; updates _chips, _songs, _loading, _error.
   Future<void> _loadData() async {
     setState(() {
       _loading = true;
@@ -49,6 +64,8 @@ class _ChipsScreenState extends State<ChipsScreen> {
     }
   }
 
+  /// Opens a dialog to pick a new name; on Save calls PUT /chips/{id} with name then _loadData().
+  /// Shows SnackBar on error (if mounted).
   Future<void> _renameChip(SpeakerChip chip) async {
     final controller = TextEditingController(text: chip.name);
     final result = await showDialog<String>(

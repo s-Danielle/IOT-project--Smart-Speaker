@@ -1,3 +1,18 @@
+// =============================================================================
+// LIBRARY SCREEN
+// =============================================================================
+//
+// Lists all songs in the device library (GET /library). User can:
+// - Add song manually: name + Spotify URL or URI (convertSpotifyUrlToUri used)
+// - Add from file: pick file → upload via POST /files → create library entry
+// - Edit: name + URI (Spotify URL converted to URI on save)
+// - Delete: confirm then DELETE /library/{id}
+//
+// FAB: small "upload file" and main "add" (manual Spotify entry).
+// After async work we check [mounted] before using [context].
+//
+// =============================================================================
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -6,6 +21,7 @@ import '../services/settings_service.dart';
 import '../services/spotify_utils.dart';
 import '../models/song.dart';
 
+/// Screen that lists library songs and allows add (manual or file), edit, delete.
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -24,6 +40,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _loadSongs();
   }
 
+  /// Fetches GET /library; updates _songs, _loading, _error.
   Future<void> _loadSongs() async {
     setState(() {
       _loading = true;

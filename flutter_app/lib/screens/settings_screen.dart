@@ -1,9 +1,27 @@
+// =============================================================================
+// SETTINGS SCREEN
+// =============================================================================
+//
+// App settings: speaker base URL (stored via SettingsService), test connection,
+// parental controls entry, developer tools entry.
+//
+// - Speaker connection: shows current base URL, "Test Connection" (GET /status),
+//   and advanced section to edit URL, Reset, Save.
+// - Parental Controls: navigates to ParentalControlsScreen.
+// - Developer Tools: navigates to DeveloperToolsScreen.
+//
+// _controller holds the base URL text; _loadBaseUrl() loads it on init.
+// dispose() disposes _controller.
+//
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../services/api_service.dart';
 import 'parental_controls_screen.dart';
 import 'developer_tools_screen.dart';
 
+/// Screen for speaker URL, test connection, parental controls, developer tools.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -24,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadBaseUrl();
   }
 
+  /// Loads stored base URL into _controller; sets _isCustomUrl and _showAdvanced.
   Future<void> _loadBaseUrl() async {
     final url = await SettingsService.getBaseUrl();
     _controller.text = url;

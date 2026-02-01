@@ -1,3 +1,19 @@
+// =============================================================================
+// HOME SCREEN
+// =============================================================================
+//
+// The first screen the user sees. Shows:
+// - Connection status to the Smart Speaker backend (GET /status)
+// - Current chip ID if one is loaded on the device
+// - Primary action: "Scan Chip" (opens ScanChipScreen)
+// - Navigation cards: Chips, Library, Settings
+//
+// State: _status (from API), _error (if request fails), _loading (during refresh).
+// On init we call _refresh(); the app bar has a refresh button that calls it again.
+// After returning from Settings we call _refresh() so the connection status is updated.
+//
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/settings_service.dart';
@@ -7,6 +23,7 @@ import 'library_screen.dart';
 import 'settings_screen.dart';
 import 'scan_chip_screen.dart';
 
+/// Root home screen: connection status, Scan Chip button, and nav to Chips / Library / Settings.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -15,8 +32,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  /// Last successful status from GET /status; null until loaded or on error.
   Status? _status;
+  /// Error message if the status request failed (e.g. network error).
   String? _error;
+  /// True while _refresh() is in progress (disables refresh button, shows spinner).
   bool _loading = false;
 
   @override
@@ -25,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _refresh();
   }
 
+  /// Fetches GET /status and updates _status / _error / _loading. Called on init and from app bar refresh.
   Future<void> _refresh() async {
     setState(() {
       _loading = true;
@@ -262,6 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Builds one of the navigation cards (Chips, Library, Settings). Tapping pushes the corresponding screen.
   Widget _buildNavCard(
     BuildContext context, {
     required IconData icon,
