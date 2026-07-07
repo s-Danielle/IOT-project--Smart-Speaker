@@ -13,6 +13,8 @@ dependencies:
   shared_preferences: ^2.2.2
   file_picker: ^8.0.0
   nfc_manager: ^4.1.1
+  wifi_iot: ^0.3.19+2
+  permission_handler: ^11.0.0
 
 dev_dependencies:
   flutter_test:

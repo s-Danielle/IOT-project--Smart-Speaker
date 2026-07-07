@@ -1,0 +1,12 @@
+{
+    "name": "Smart Speaker",
+    "short_name": "Smart Speaker",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0175C2",
+    "theme_color": "#0175C2",
+    "description": "Smart Speaker companion app for managing NFC chips and music library.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": []
+}

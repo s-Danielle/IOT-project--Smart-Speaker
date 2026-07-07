@@ -203,7 +203,9 @@ IOT-project--Smart-Speaker/
 │   ├── smart_speaker_server.service    # REST API server
 │   ├── smart_speaker_health.service    # Health monitor
 │   ├── smart_speaker_wifi.service      # WiFi provisioner
-│   └── copy-and-enable-service.sh      # Installation script
+│   ├── nm-dnsmasq-captive.conf         # Captive-portal DNS catch-all
+│   ├── copy-and-enable-service.sh      # Installs & enables everything
+│   └── install-wifi-provisioner.sh     # WiFi provisioner setup (invoked by the above)
 │
 ├── Unit-tests/                  # Hardware component tests
 │   ├── test_pn532.py            # NFC reader test
@@ -215,6 +217,7 @@ IOT-project--Smart-Speaker/
 │
 ├── scripts/                     # Utility scripts
 │   ├── install-ptt-deps.sh      # PTT dependencies installer
+│   ├── deploy_web.sh            # Build & deploy Flutter web app to the Pi
 │   └── test-ptt.py              # PTT functionality test
 │
 ├── README.md                    # This file
@@ -296,7 +299,8 @@ cd Main && python3 main.py
 ### Service Installation
 
 ```bash
-# Install all services
+# Install and enable all services (server, hardware, health, WiFi provisioner)
+# Also configures nmcli sudoers and the captive-portal DNS catch-all.
 cd services
 sudo ./copy-and-enable-service.sh
 
@@ -305,6 +309,8 @@ sudo cp smart_speaker*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable smart_speaker_server smart_speaker smart_speaker_health
 sudo systemctl start smart_speaker_server smart_speaker smart_speaker_health
+# WiFi provisioner (service + sudoers + DNS catch-all):
+sudo bash install-wifi-provisioner.sh
 ```
 
 ### Sudoers Configuration
@@ -397,7 +403,8 @@ All LEDs use only Red, Green, Blue (no mixed colors).
 |--------|----------|-------------|
 | GET | `/debug/wifi/status` | Current connection |
 | GET | `/debug/wifi/scan` | Available networks |
-| POST | `/debug/wifi/connect` | Connect to network |
+| POST | `/debug/wifi/connect` | Start connecting (async, returns immediately) |
+| GET | `/debug/wifi/connect-status` | Poll outcome of a connection attempt |
 | POST | `/debug/wifi/forget` | Remove saved network |
 | POST | `/debug/wifi/ap-mode` | Force AP mode |
 
@@ -405,21 +412,32 @@ All LEDs use only Red, Green, Blue (no mixed colors).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/parental/settings` | Get parental settings |
-| PUT | `/parental/settings` | Update settings |
+| GET | `/settings/parental` | Get parental settings |
+| PUT | `/settings/parental` | Update settings |
 
 ---
 
 ## Mobile App
 
-The Flutter app connects to the speaker's REST API (port 5000) to:
+The Flutter app connects to the speaker's REST API (port 8080) to:
 - View and rename NFC chips
 - Assign songs to chips
 - Manage the music library
 - Configure parental controls
 - Access developer tools (logs, services, WiFi)
 
-Connect via: `http://<raspberry-pi-ip>:5000`
+Connect via: `http://<raspberry-pi-ip>:8080` (or `http://smart-speaker-iot.local:8080`)
+
+### Web App
+
+The Flutter app also runs in the browser, served directly by the Pi's API server. To deploy the latest build:
+
+```bash
+./scripts/deploy_web.sh            # default target: iot-proj@smart-speaker-iot.local
+./scripts/deploy_web.sh user@host  # custom target
+```
+
+Then open `http://smart-speaker-iot.local:8080` in a browser on the same network.
 
 ---
 
@@ -428,12 +446,14 @@ Connect via: `http://<raspberry-pi-ip>:5000`
 ### First-Time Setup (No WiFi Configured)
 
 1. Power on the Smart Speaker
-2. Wait 30 seconds - if no known WiFi is found, it creates a hotspot
-3. LED 1 will pulse blue when in AP mode
-4. Connect your phone to **"SmartSpeaker-Setup"** WiFi network
-5. Open browser - captive portal appears automatically (or go to `192.168.4.1`)
-6. Select your WiFi network and enter password
-7. Device reboots and connects to your network
+2. It waits ~30 seconds for a known WiFi network; if none connects, it creates the **"SmartSpeaker-Setup"** hotspot (192.168.4.1)
+3. LED 1 pulses blue while in AP mode
+4. Connect your phone to **"SmartSpeaker-Setup"** — the setup portal opens automatically as a captive-portal popup (or browse to `http://192.168.4.1:8080/wifi-setup`)
+5. Pick your WiFi network, enter the password, and watch the progress page
+6. The speaker joins your network directly — **no reboot needed**. If the password was wrong, the hotspot comes back and you can retry
+7. Alternatively, use the mobile app's **WiFi Setup wizard**, which guides you through joining the hotspot and configuring the network from inside the app
+
+The hotspot is open by default. To protect it with WPA2, set `AP_PASSWORD` in the `SECRETS` file (minimum 8 characters; leave empty for an open network).
 
 ### Managing WiFi from the App
 
@@ -463,6 +483,7 @@ Once connected, use the mobile app's Developer Tools to:
 - Server: `/var/log/smart_speaker_server.log`
 - Hardware: `/var/log/smart_speaker.log`
 - Health: `/var/log/smart_speaker_health.log`
+- WiFi provisioner: `/var/log/smart_speaker_wifi.log`
 
 ### Verify I2C Devices
 
@@ -483,6 +504,7 @@ i2cdetect -y 1
 - **[PARAMETERS.md](PARAMETERS.md)** - All hardcoded parameters with descriptions
 - **[SECRETS.template](SECRETS.template)** - Template for credentials and API keys
 - **[USER_STORIES.md](USER_STORIES.md)** - User stories and requirements
+- **[TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md)** - Manual test checklist for WiFi provisioning & web app
 
 ---
 

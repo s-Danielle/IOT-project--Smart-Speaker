@@ -1,13 +1,14 @@
 [Unit]
+# Boot-time connectivity check with AP-mode fallback. Binds no ports;
+# the setup portal is served by the main server (smart_speaker_server).
 Description=Smart Speaker WiFi Provisioner
 After=NetworkManager.service
-Before=smart_speaker_server.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
-ExecStart=/usr/bin/python3 wifi_provisioner.py
+ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python wifi_provisioner.py
 Restart=on-failure
 RestartSec=10
 

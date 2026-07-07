@@ -5,14 +5,94 @@ This module provides a unified WiFiManager class for WiFi operations
 used by both the main server and the wifi_provisioner service.
 """
 
+import html
+import os
 import subprocess
 import time
+
+from hardware import captive_responder
+from utils.logger import log
 
 
 # Shared constant for AP mode SSID
 AP_SSID = "SmartSpeaker-Setup"
 AP_IP = "192.168.4.1"
 WEB_PORT = 8080
+
+# Repo-root SECRETS file (shell-style KEY="value" lines, see SECRETS.template)
+_SECRETS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    'SECRETS'
+)
+
+
+def _get_secret(key: str) -> str:
+    """Read a single value from the SECRETS file. Returns '' if missing."""
+    try:
+        with open(_SECRETS_PATH, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, _, v = line.partition('=')
+                if k.strip() == key:
+                    v = v.strip()
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
+                        v = v[1:-1]
+                    return v
+    except OSError:
+        pass
+    return ''
+
+
+def split_terse_line(line: str) -> list[str]:
+    """Split one line of `nmcli -t` output on unescaped colons.
+
+    nmcli terse mode escapes literal ':' as '\\:' and '\\' as '\\\\';
+    this unescapes both while splitting.
+    """
+    fields = []
+    current = []
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '\\' and i + 1 < len(line):
+            current.append(line[i + 1])
+            i += 2
+        elif ch == ':':
+            fields.append(''.join(current))
+            current = []
+            i += 1
+        else:
+            current.append(ch)
+            i += 1
+    fields.append(''.join(current))
+    return fields
+
+
+_wifi_interface = None
+
+
+def get_wifi_interface() -> str:
+    """Detect the WiFi interface name via nmcli (cached, falls back to wlan0)."""
+    global _wifi_interface
+    if _wifi_interface is None:
+        try:
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'DEVICE,TYPE', 'device'],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    parts = split_terse_line(line)
+                    if len(parts) >= 2 and parts[1] == 'wifi' and parts[0]:
+                        _wifi_interface = parts[0]
+                        break
+        except Exception:
+            pass
+        if not _wifi_interface:
+            _wifi_interface = 'wlan0'
+    return _wifi_interface
 
 
 class WiFiManager:
@@ -33,15 +113,16 @@ class WiFiManager:
     
     @staticmethod
     def get_ip_address() -> str | None:
-        """Get current IP address on wlan0"""
+        """Get current IP address on the WiFi interface"""
         try:
             result = subprocess.run(
-                ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'device', 'show', 'wlan0'],
+                ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'device', 'show', get_wifi_interface()],
                 capture_output=True, text=True
             )
             for line in result.stdout.split('\n'):
                 if 'IP4.ADDRESS' in line:
-                    return line.split(':')[1].split('/')[0] if ':' in line else None
+                    parts = split_terse_line(line)
+                    return parts[1].split('/')[0] if len(parts) > 1 and parts[1] else None
         except Exception:
             pass
         return None
@@ -55,8 +136,8 @@ class WiFiManager:
                 capture_output=True, text=True
             )
             for line in result.stdout.split('\n'):
-                if line.startswith('*:'):
-                    parts = line.split(':')
+                parts = split_terse_line(line)
+                if parts and parts[0] == '*':
                     return int(parts[1]) if len(parts) > 1 and parts[1] else None
         except Exception:
             pass
@@ -77,11 +158,10 @@ class WiFiManager:
     @staticmethod
     def scan_networks() -> list[dict]:
         """Scan for available networks using nmcli"""
-        subprocess.run(['nmcli', 'device', 'wifi', 'rescan'], capture_output=True)
-        time.sleep(2)
-        
+        # --rescan yes triggers a fresh scan and blocks until results are ready
         result = subprocess.run(
-            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'device', 'wifi', 'list'],
+            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY',
+             'device', 'wifi', 'list', '--rescan', 'yes'],
             capture_output=True, text=True
         )
         
@@ -90,7 +170,7 @@ class WiFiManager:
         for line in result.stdout.strip().split('\n'):
             if not line:
                 continue
-            parts = line.split(':')
+            parts = split_terse_line(line)
             ssid = parts[0]
             if ssid and ssid not in seen and ssid != AP_SSID:
                 seen.add(ssid)
@@ -106,11 +186,9 @@ class WiFiManager:
     @staticmethod
     def scan_networks_extended() -> list[dict]:
         """Scan for networks with extended info (including connected status)"""
-        subprocess.run(['nmcli', 'device', 'wifi', 'rescan'], capture_output=True)
-        time.sleep(2)
-        
         result = subprocess.run(
-            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY,IN-USE', 'device', 'wifi', 'list'],
+            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY,IN-USE',
+             'device', 'wifi', 'list', '--rescan', 'yes'],
             capture_output=True, text=True
         )
         
@@ -119,7 +197,7 @@ class WiFiManager:
         for line in result.stdout.strip().split('\n'):
             if not line:
                 continue
-            parts = line.split(':')
+            parts = split_terse_line(line)
             ssid = parts[0] if parts else ''
             if ssid and ssid not in seen:
                 seen.add(ssid)
@@ -145,7 +223,7 @@ class WiFiManager:
         for line in result.stdout.strip().split('\n'):
             if not line:
                 continue
-            parts = line.split(':')
+            parts = split_terse_line(line)
             if len(parts) >= 2 and parts[1] == '802-11-wireless':
                 connections.append({
                     "name": parts[0],
@@ -171,7 +249,7 @@ class WiFiManager:
         
         if existing.returncode != 0:
             # Create hotspot
-            subprocess.run([
+            cmd = [
                 'sudo', 'nmcli', 'connection', 'add',
                 'type', 'wifi',
                 'con-name', AP_SSID,
@@ -180,21 +258,42 @@ class WiFiManager:
                 'wifi.ssid', AP_SSID,
                 'ipv4.method', 'shared',
                 'ipv4.addresses', f'{AP_IP}/24'
-            ])
+            ]
+            ap_password = _get_secret('AP_PASSWORD')
+            if ap_password:
+                if len(ap_password) >= 8:
+                    cmd += ['wifi-sec.key-mgmt', 'wpa-psk',
+                            'wifi-sec.psk', ap_password]
+                else:
+                    log("AP_PASSWORD is shorter than 8 chars (WPA2 minimum); "
+                        "starting open AP instead", "WARN")
+            subprocess.run(cmd)
         
         # Disconnect current WiFi and start AP
-        subprocess.run(['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'], 
+        subprocess.run(['sudo', 'nmcli', 'device', 'disconnect', get_wifi_interface()], 
                       check=False, capture_output=True)
         time.sleep(1)
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'up', AP_SSID], 
                                capture_output=True)
         time.sleep(2)
         
+        if result.returncode == 0:
+            # Answer OS captive-portal probes on port 80 so devices show
+            # the "sign in to network" sheet. Never fatal for AP mode.
+            try:
+                captive_responder.start(WiFiManager.get_setup_url())
+            except Exception as e:
+                log(f"Captive responder failed to start: {e}", "WARN")
+        
         return result.returncode == 0
     
     @staticmethod
     def stop_ap() -> bool:
         """Stop AP mode. Returns True on success."""
+        try:
+            captive_responder.stop()
+        except Exception as e:
+            log(f"Captive responder failed to stop: {e}", "WARN")
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
                                check=False, capture_output=True)
         return result.returncode == 0
@@ -221,29 +320,41 @@ class WiFiManager:
                 ['sudo', 'nmcli', 'connection', 'up', ssid],
                 capture_output=True, text=True, timeout=30
             )
-        else:
-            # New connection - need password
-            if not password:
-                return False
-            
-            result = subprocess.run(
-                ['sudo', 'nmcli', 'device', 'wifi', 'connect', ssid, 'password', password],
-                capture_output=True, text=True, timeout=30
-            )
+            if result.returncode == 0:
+                return WiFiManager._wait_for_connection()
+            return False
         
-        if result.returncode == 0:
-            # Wait for connection to stabilize
-            for _ in range(10):
-                time.sleep(1)
-                if WiFiManager.is_connected():
-                    return True
+        # New connection - password optional (open networks)
+        cmd = ['sudo', 'nmcli', 'device', 'wifi', 'connect', ssid]
+        if password:
+            cmd += ['password', password]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0 and WiFiManager._wait_for_connection():
+            return True
+        
+        # A failed `nmcli device wifi connect` can leave a broken profile
+        # behind; clean it up since it wasn't previously saved.
+        subprocess.run(
+            ['sudo', 'nmcli', 'connection', 'delete', ssid],
+            check=False, capture_output=True
+        )
+        return False
+    
+    @staticmethod
+    def _wait_for_connection(timeout: int = 10) -> bool:
+        """Poll until connected to a real network, up to `timeout` seconds."""
+        for _ in range(timeout):
+            time.sleep(1)
+            if WiFiManager.is_connected():
+                return True
         return False
     
     @staticmethod
     def disconnect() -> bool:
         """Disconnect from current WiFi (but keep saved). Returns True on success."""
         result = subprocess.run(
-            ['sudo', 'nmcli', 'device', 'disconnect', 'wlan0'],
+            ['sudo', 'nmcli', 'device', 'disconnect', get_wifi_interface()],
             capture_output=True, text=True
         )
         return result.returncode == 0
@@ -277,7 +388,7 @@ class WiFiManager:
     def reconnect() -> bool:
         """Let NetworkManager auto-connect to best available network."""
         result = subprocess.run(
-            ['sudo', 'nmcli', 'device', 'connect', 'wlan0'],
+            ['sudo', 'nmcli', 'device', 'connect', get_wifi_interface()],
             capture_output=True, check=False
         )
         return result.returncode == 0
@@ -325,7 +436,8 @@ CAPTIVE_PORTAL_HTML = '''<!DOCTYPE html>
                 <h3 id="selected-ssid"></h3>
                 <form method="POST" action="{connect_action}">
                     <input type="hidden" name="ssid" id="ssid-input">
-                    <input type="password" name="password" placeholder="WiFi Password" required>
+                    <input type="password" name="password" id="password-input"
+                           placeholder="WiFi Password" required>
                     <button type="submit">Connect</button>
                 </form>
                 <button class="back" onclick="showNetworks()">← Back</button>
@@ -333,52 +445,56 @@ CAPTIVE_PORTAL_HTML = '''<!DOCTYPE html>
         </div>
     </div>
     <script>
-        function selectNetwork(ssid) {{
+        function selectNetwork(ssid, isOpen) {{
             document.getElementById('networks').classList.add('hidden');
             document.getElementById('password-form').classList.remove('hidden');
             document.getElementById('selected-ssid').textContent = ssid;
             document.getElementById('ssid-input').value = ssid;
+            var pw = document.getElementById('password-input');
+            pw.value = '';
+            pw.required = !isOpen;
+            pw.placeholder = isOpen ? 'No password (open network)' : 'WiFi Password';
         }}
         function showNetworks() {{
             document.getElementById('networks').classList.remove('hidden');
             document.getElementById('password-form').classList.add('hidden');
         }}
+        document.getElementById('networks').addEventListener('click', function(e) {{
+            var el = e.target.closest('.network');
+            if (el && el.dataset.ssid !== undefined) {{
+                selectNetwork(el.dataset.ssid, el.dataset.open === '1');
+            }}
+        }});
     </script>
 </body>
 </html>'''
 
 
+def _is_open_network(network: dict) -> bool:
+    """True if a scan result represents an open (passwordless) network."""
+    security = (network.get('security') or '').strip()
+    return security in ('', '--', 'Open')
+
+
 def render_network_list_html(networks: list[dict], connect_action: str = "/connect") -> str:
-    """Render the network list HTML content"""
+    """Render the network list HTML content.
+    
+    SSIDs are attacker-controlled (anyone can broadcast any SSID), so they
+    are HTML-escaped and passed to JS via data attributes rather than
+    inline handlers.
+    """
     content = '<h3>Select Network</h3>'
     for n in networks:
         bars = '▂▄▆█'[:max(1, n['signal']//25)]
-        lock = '🔒' if n.get('security') else ''
-        content += f'''<div class="network" onclick="selectNetwork('{n["ssid"]}')">
-            <span>{n["ssid"]} {lock}</span>
+        is_open = _is_open_network(n)
+        lock = '' if is_open else '🔒'
+        ssid_escaped = html.escape(n["ssid"], quote=True)
+        content += f'''<div class="network" data-ssid="{ssid_escaped}" data-open="{1 if is_open else 0}">
+            <span>{ssid_escaped} {lock}</span>
             <span class="signal">{bars} {n["signal"]}%</span>
         </div>'''
     
     if not networks:
         content += '<p>No networks found. <a href="/" style="color:white">Refresh</a></p>'
-    
-    return CAPTIVE_PORTAL_HTML.format(content=content, connect_action=connect_action)
-
-
-def render_status_html(success: bool, ssid: str, connect_action: str = "/connect") -> str:
-    """Render the connection status HTML content"""
-    if success:
-        content = f'''<div class="status success">
-            <h2>✅ Connected!</h2>
-            <p>Connected to <strong>{ssid}</strong></p>
-            <p>Restarting in 5 seconds...</p>
-        </div>'''
-    else:
-        content = f'''<div class="status error">
-            <h2>❌ Failed</h2>
-            <p>Could not connect to <strong>{ssid}</strong></p>
-            <p>Check password and try again.</p>
-            <button onclick="location.href='/'">Try Again</button>
-        </div>'''
     
     return CAPTIVE_PORTAL_HTML.format(content=content, connect_action=connect_action)

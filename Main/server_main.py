@@ -13,7 +13,7 @@ hardware controller. The server handles:
 Usage:
     python server_main.py
 
-The server listens on the port specified in config/settings.py (default: 5050).
+The server listens on the port specified in config/settings.py (default: 8080).
 """
 
 from server import run_server_blocking

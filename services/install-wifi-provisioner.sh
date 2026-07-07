@@ -51,7 +51,15 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$LOG_FILE"
 echo -e "${GREEN}Log file created: $LOG_FILE${NC}"
 
 echo ""
-echo "Step 4: Installing systemd service..."
+echo "Step 4: Installing captive-portal DNS catch-all..."
+DNSMASQ_SHARED_DIR="/etc/NetworkManager/dnsmasq-shared.d"
+mkdir -p "$DNSMASQ_SHARED_DIR"
+cp "$(dirname "$0")/nm-dnsmasq-captive.conf" "$DNSMASQ_SHARED_DIR/"
+chmod 644 "$DNSMASQ_SHARED_DIR/nm-dnsmasq-captive.conf"
+echo -e "${GREEN}DNS catch-all installed (only active while the setup AP is up)${NC}"
+
+echo ""
+echo "Step 5: Installing systemd service..."
 SERVICE_FILE="smart_speaker_wifi.service"
 SOURCE_DIR="$(dirname "$0")"
 
@@ -66,7 +74,7 @@ else
 fi
 
 echo ""
-echo "Step 5: Reloading systemd and enabling service..."
+echo "Step 6: Reloading systemd and enabling service..."
 systemctl daemon-reload
 systemctl enable smart_speaker_wifi.service
 echo -e "${GREEN}Service enabled${NC}"
