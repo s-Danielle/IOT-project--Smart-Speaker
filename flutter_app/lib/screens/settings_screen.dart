@@ -3,6 +3,7 @@ import '../services/settings_service.dart';
 import '../services/api_service.dart';
 import 'parental_controls_screen.dart';
 import 'developer_tools_screen.dart';
+import 'wifi_setup_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -306,6 +307,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           const SizedBox(height: 16),
+
+          // WiFi Setup
+          Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.wifi_tethering,
+                color: theme.colorScheme.secondary,
+              ),
+              title: const Text('WiFi Setup'),
+              subtitle: const Text('Connect the speaker to a WiFi network'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const WifiSetupScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 8),
 
           // Parental Controls
           Card(

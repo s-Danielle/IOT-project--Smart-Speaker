@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
 WiFi Provisioning Service (NetworkManager-based)
-- Waits for NetworkManager to connect on boot
-- If no connection after timeout, starts AP mode
+
+Boot-time state machine (no HTTP server, binds no ports):
+- Waits for NetworkManager to auto-connect on boot
+- If no connection after timeout, starts AP mode (SmartSpeaker-Setup)
+  and monitors until the Pi is connected to a real network
+- Credential intake and AP teardown are handled by the main server's
+  captive portal (Main/server.py, /wifi-setup on port 8080)
 - LED feedback via Light 1
 
 This service uses the shared WiFiManager from hardware/wifi_manager.py
@@ -10,19 +15,14 @@ This service uses the shared WiFiManager from hardware/wifi_manager.py
 import os
 import sys
 import time
-import subprocess
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hardware.wifi_manager import (
-    WiFiManager, AP_SSID, AP_IP, WEB_PORT,
-    render_network_list_html, render_status_html
-)
+from hardware.wifi_manager import WiFiManager, AP_SSID, AP_IP, WEB_PORT
 
 CONNECT_TIMEOUT = 30  # Seconds to wait for auto-connect
+AP_POLL_INTERVAL = 3  # Seconds between connection checks while in AP mode
 
 
 class LEDController:
@@ -83,53 +83,6 @@ class LEDController:
         time.sleep(0.1)
 
 
-class CaptivePortalHandler(BaseHTTPRequestHandler):
-    """HTTP handler for captive portal - uses shared WiFiManager and HTML templates"""
-    
-    def log_message(self, format, *args):
-        """Log requests for debugging"""
-        print(f"[HTTP] WIFI-PROVISIONER: {self.address_string()} - {format % args}")
-    
-    def do_GET(self):
-        """Handle GET requests - show network list"""
-        networks = WiFiManager.scan_networks()
-        html = render_network_list_html(networks, connect_action="/connect")
-        
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
-    
-    def do_POST(self):
-        """Handle POST requests - connect to network"""
-        length = int(self.headers['Content-Length'])
-        data = parse_qs(self.rfile.read(length).decode())
-        ssid = data.get('ssid', [''])[0]
-        password = data.get('password', [''])[0]
-        
-        if self.server.led:
-            self.server.led.connecting()
-        
-        success = WiFiManager.connect(ssid, password)
-        
-        if success:
-            if self.server.led:
-                self.server.led.connected()
-            threading.Timer(5, lambda: subprocess.run(['sudo', 'reboot'])).start()
-        else:
-            if self.server.led:
-                self.server.led.failed()
-                time.sleep(1)
-                self.server.led.ap_mode()
-            WiFiManager.start_ap()
-        
-        html = render_status_html(success, ssid, connect_action="/connect")
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
-
-
 class WiFiProvisioner:
     """Main WiFi provisioning orchestrator"""
     
@@ -152,17 +105,36 @@ class WiFiProvisioner:
             if i % 5 == 0:
                 print(f"[WiFi] Waiting... ({CONNECT_TIMEOUT - i}s remaining)")
         
-        # No connection after timeout - start AP mode
+        # No connection after timeout - start AP mode and wait for the
+        # main server's captive portal to provision credentials
         print("[WiFi] No connection, starting AP mode...")
         self.led.ap_mode()
         WiFiManager.start_ap()
+        print(f"[WiFi] AP '{AP_SSID}' active")
+        print(f"[WiFi] Setup portal at http://{AP_IP}:{WEB_PORT}/wifi-setup "
+              "(served by the main server)")
+        self._wait_for_provisioning()
+    
+    def _wait_for_provisioning(self):
+        """Monitor until the Pi is connected to a real network (not the AP).
         
-        # Start captive portal
-        server = HTTPServer(('0.0.0.0', WEB_PORT), CaptivePortalHandler)
-        server.led = self.led
-        print(f"[WiFi] Captive portal running at http://{AP_IP}:{WEB_PORT}")
-        print(f"[WiFi] Connect to '{AP_SSID}' WiFi to configure")
-        server.serve_forever()
+        The main server handles credential intake and AP teardown; this loop
+        just watches for the result. Requires two consecutive positive checks
+        so a transient state mid-connection-attempt isn't mistaken for success.
+        """
+        consecutive = 0
+        while True:
+            # is_connected() is False while the AP profile is the active connection
+            if WiFiManager.is_connected():
+                consecutive += 1
+                if consecutive >= 2:
+                    ssid = WiFiManager.get_current_ssid()
+                    print(f"[WiFi] Provisioned - connected to {ssid}")
+                    self.led.connected()
+                    return
+            else:
+                consecutive = 0
+            time.sleep(AP_POLL_INTERVAL)
 
 
 if __name__ == '__main__':

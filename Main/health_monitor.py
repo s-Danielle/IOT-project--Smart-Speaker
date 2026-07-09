@@ -4,7 +4,7 @@ Health Monitor Service - Controls Light 1 (Health LED)
 
 Monitors:
 - Internet connectivity (ping 8.8.8.8)
-- Server status (GET localhost:5000/health)
+- Server status (GET localhost:8080/health)
 - Hardware controller status (GET /debug/speaker/status)
 
 Long Press Actions:

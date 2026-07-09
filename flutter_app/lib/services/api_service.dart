@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/status.dart';
 import '../models/chip.dart';
@@ -124,13 +124,16 @@ class ApiService {
   }
 
   // POST /files (multipart/form-data)
-  Future<String> uploadFile(File file) async {
+  // Takes raw bytes so it works on both native and web builds.
+  Future<String> uploadFileBytes(Uint8List bytes, String filename) async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/files'));
-    request.files.add(await http.MultipartFile.fromPath('file', file.path));
-    
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: filename),
+    );
+
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
-    
+
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = jsonDecode(response.body);
       return data['uri'];
@@ -353,6 +356,30 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
     throw Exception('Failed to set WiFi priority: ${response.statusCode}');
+  }
+
+  // GET /debug/wifi/connect-status — poll after POST /debug/wifi/connect
+  // state: "idle" | "connecting" | "connected" | "failed"
+  Future<Map<String, dynamic>> getWifiConnectStatus() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/debug/wifi/connect-status'))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get connect status: ${response.statusCode}');
+  }
+
+  // Probe whether the server is reachable (short timeout).
+  Future<bool> isReachable({int timeoutSeconds = 3}) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/status'))
+          .timeout(Duration(seconds: timeoutSeconds));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   // POST /debug/wifi/ap-mode

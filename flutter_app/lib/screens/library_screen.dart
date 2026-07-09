@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
@@ -71,12 +70,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _addFromFile() async {
-    final result = await FilePicker.platform.pickFiles();
+    // withData loads file bytes into memory, which works on web too
+    final result = await FilePicker.platform.pickFiles(withData: true);
     if (result == null || result.files.isEmpty) return;
     if (!mounted) return;
 
     final file = result.files.first;
-    if (file.path == null) return;
+    if (file.bytes == null) return;
 
     final nameController = TextEditingController(
       text: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
@@ -110,7 +110,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final api = ApiService(baseUrl);
 
       // Upload file and get URI
-      final uri = await api.uploadFile(File(file.path!));
+      final uri = await api.uploadFileBytes(file.bytes!, file.name);
 
       // Create library entry
       await api.createSong(nameController.text, uri);

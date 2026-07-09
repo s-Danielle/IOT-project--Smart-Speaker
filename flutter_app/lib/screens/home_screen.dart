@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/settings_service.dart';
@@ -5,7 +6,10 @@ import '../models/status.dart';
 import 'chips_screen.dart';
 import 'library_screen.dart';
 import 'settings_screen.dart';
-import 'scan_chip_screen.dart';
+import 'wifi_setup_screen.dart';
+// The real scan screen needs dart:io + nfc_manager, which don't exist on
+// web, so the web build gets a stub instead.
+import 'scan_chip_screen_stub.dart' if (dart.library.io) 'scan_chip_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -179,34 +183,60 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            const SizedBox(height: 24),
-
-            // Scan Chip - Primary Action
-            SizedBox(
-              height: 64,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ScanChipScreen()),
-                  );
-                },
-                icon: const Icon(Icons.nfc, size: 28),
-                label: const Text(
-                  'Scan Chip',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+            // WiFi setup prompt when speaker is unreachable
+            if (_error != null && !_loading) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const WifiSetupScreen()),
+                    );
+                    _refresh();
+                  },
+                  icon: const Icon(Icons.wifi_tethering),
+                  label: const Text('Set up WiFi'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ),
-            ),
+            ],
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+
+            // Scan Chip - Primary Action (phone NFC; not available on web)
+            if (!kIsWeb) ...[
+              SizedBox(
+                height: 64,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ScanChipScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.nfc, size: 28),
+                  label: const Text(
+                    'Scan Chip',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Navigation Grid
             Expanded(

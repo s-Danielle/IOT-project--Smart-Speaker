@@ -9,8 +9,9 @@ ChipStore reads from this same data file.
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, unquote
 import json
+import mimetypes
 import uuid
 import os
 import cgi
@@ -20,7 +21,7 @@ import time
 from utils.logger import log, log_success
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT,
-    render_network_list_html, render_status_html
+    render_network_list_html, CAPTIVE_PORTAL_HTML
 )
 
 
@@ -52,9 +53,74 @@ LOCAL_FILES_DIR = os.path.join(SCRIPT_DIR, 'local_files')
 UPLOADS_DIR = os.path.join(LOCAL_FILES_DIR, 'uploads')
 RECORDINGS_DIR = os.path.join(LOCAL_FILES_DIR, 'recordings')
 
+# Built Flutter web app bundle (deployed via scripts/deploy_web.sh)
+WEB_APP_DIR = os.path.join(SCRIPT_DIR, 'web_app')
+
 # Ensure directories exist
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
+os.makedirs(WEB_APP_DIR, exist_ok=True)
+
+# Some platforms guess these wrong (or not at all); Flutter web needs them
+mimetypes.add_type('text/javascript', '.js')
+mimetypes.add_type('application/wasm', '.wasm')
+mimetypes.add_type('application/json', '.json')
+
+# Files that must never be cached so deploys take effect immediately
+_NO_CACHE_FILES = {'index.html', 'flutter_bootstrap.js'}
+
+
+def resolve_static_file(url_path: str, web_root: str):
+    """Map a request path to a file inside web_root (path-traversal safe).
+
+    Returns the absolute path of the file to serve, or None if nothing
+    matches. Paths with no extension that don't exist fall back to
+    index.html (SPA routing). Traversal attempts resolve to None.
+    """
+    rel = unquote(url_path).lstrip('/')
+    if not rel:
+        rel = 'index.html'
+
+    root = os.path.realpath(web_root)
+    candidate = os.path.realpath(os.path.join(root, rel))
+    # Reject anything that resolves outside the web root
+    if candidate != root and not candidate.startswith(root + os.sep):
+        return None
+
+    if os.path.isdir(candidate):
+        candidate = os.path.join(candidate, 'index.html')
+    if os.path.isfile(candidate):
+        return candidate
+
+    # SPA routing: extension-less virtual routes serve the app shell
+    if not os.path.splitext(rel)[1]:
+        index_path = os.path.join(root, 'index.html')
+        if os.path.isfile(index_path):
+            return index_path
+    return None
+
+
+# AP-mode check shells out (iwgetid/nmcli), so cache it briefly to avoid
+# running it on every static asset request.
+_AP_MODE_CACHE_TTL = 5.0
+_ap_mode_lock = threading.Lock()
+_ap_mode_cache = {"value": False, "checked_at": 0.0}
+
+
+def is_ap_mode() -> bool:
+    """True if the Pi is currently running the setup access point (cached ~5s)."""
+    now = time.monotonic()
+    with _ap_mode_lock:
+        if now - _ap_mode_cache["checked_at"] < _AP_MODE_CACHE_TTL:
+            return _ap_mode_cache["value"]
+    try:
+        value = WiFiManager.get_current_ssid() == AP_SSID
+    except Exception:
+        value = False
+    with _ap_mode_lock:
+        _ap_mode_cache["value"] = value
+        _ap_mode_cache["checked_at"] = time.monotonic()
+    return value
 
 # Default data - chips now have uid field for NFC matching
 DEFAULT_DATA = {
@@ -582,6 +648,93 @@ def debug_reboot() -> dict:
 # ============== WiFi Management Functions ==============
 # These functions wrap the shared WiFiManager class for API responses
 
+# Connection-attempt state, shared between the HTML captive portal and the
+# JSON debug endpoints. Only one attempt may run at a time. The attempt runs
+# in a background thread so HTTP responses return immediately (important:
+# tearing down the AP kills the client's network mid-request otherwise).
+_wifi_connect_lock = threading.Lock()
+_wifi_connect_state = {
+    "state": "idle",  # idle | connecting | connected | failed
+    "ssid": None,
+    "error": None,
+    "timestamp": None,
+}
+
+
+def wifi_get_connect_status() -> dict:
+    """Snapshot of the current/last connection attempt (thread-safe)."""
+    with _wifi_connect_lock:
+        return dict(_wifi_connect_state)
+
+
+def _set_wifi_connect_state(state: str, ssid: str = None, error: str = None):
+    with _wifi_connect_lock:
+        _wifi_connect_state.update({
+            "state": state,
+            "ssid": ssid,
+            "error": error,
+            "timestamp": time.time(),
+        })
+
+
+def _wifi_connect_worker(ssid: str, password: str):
+    """Background worker: tear down AP (if active), connect, restore AP on failure."""
+    was_ap_active = WiFiManager.get_current_ssid() == AP_SSID
+    success = False
+    error = None
+    try:
+        # WiFiManager.connect() brings down the AP profile before connecting
+        success = WiFiManager.connect(ssid, password)
+        if not success:
+            error = "Connection failed (check password and signal)"
+    except subprocess.TimeoutExpired:
+        error = "Connection timed out"
+    except Exception as e:
+        error = str(e)
+    
+    if success:
+        _set_wifi_connect_state("connected", ssid)
+        log_success(f"WiFi setup: connected to {ssid}")
+    else:
+        _set_wifi_connect_state("failed", ssid, error)
+        log(f"WiFi setup: failed to connect to {ssid}: {error}")
+        if was_ap_active:
+            # Restore the setup AP so the user can try again
+            try:
+                WiFiManager.start_ap()
+            except Exception as e:
+                log(f"WiFi setup: failed to restore AP mode: {e}")
+
+
+def start_wifi_connect(ssid: str, password: str = None) -> dict:
+    """Start a background connection attempt. Returns immediately.
+    
+    Rejects the request if another attempt is already in progress.
+    """
+    if not ssid:
+        return {"error": "SSID required"}
+    
+    with _wifi_connect_lock:
+        if _wifi_connect_state["state"] == "connecting":
+            return {
+                "error": "Another connection attempt is in progress",
+                "state": "connecting",
+                "ssid": _wifi_connect_state["ssid"],
+            }
+        _wifi_connect_state.update({
+            "state": "connecting",
+            "ssid": ssid,
+            "error": None,
+            "timestamp": time.time(),
+        })
+    
+    log(f"WiFi setup: attempting connection to {ssid}")
+    threading.Thread(
+        target=_wifi_connect_worker, args=(ssid, password), daemon=True
+    ).start()
+    return {"status": "connecting", "ssid": ssid}
+
+
 def wifi_get_status() -> dict:
     """Get current WiFi connection status."""
     try:
@@ -607,17 +760,13 @@ def wifi_scan() -> dict:
 
 
 def wifi_connect(ssid: str, password: str = None) -> dict:
-    """Connect to a WiFi network (new or existing)."""
+    """Start connecting to a WiFi network (new or existing).
+    
+    Runs asynchronously: returns {"status": "connecting"} immediately.
+    Poll GET /debug/wifi/connect-status for the outcome.
+    """
     try:
-        if not ssid:
-            return {"error": "SSID required"}
-        
-        if WiFiManager.connect(ssid, password):
-            return {"status": "connected", "ssid": ssid}
-        else:
-            return {"error": "Connection failed"}
-    except subprocess.TimeoutExpired:
-        return {"error": "Connection timeout"}
+        return start_wifi_connect(ssid, password)
     except Exception as e:
         return {"error": str(e)}
 
@@ -681,6 +830,94 @@ def wifi_ap_mode(enable: bool = True) -> dict:
         return {"error": str(e)}
 
 
+def _render_connecting_html(ssid: str) -> str:
+    """Render the captive-portal "connecting..." page.
+    
+    The page polls GET /debug/wifi/connect-status and updates itself with
+    the outcome. If the speaker switches networks the AP disappears and
+    polling starts failing; after enough failed polls the page assumes
+    success and tells the user how to reach the speaker on their LAN.
+    """
+    # Embed the SSID as a JS string (escape "</" so it can't close the script tag)
+    ssid_js = json.dumps(ssid).replace('</', '<\\/')
+    content = f'''<div class="status" id="connect-status">
+        <h2>⏳ Connecting...</h2>
+        <p>Connecting to <strong id="connect-ssid"></strong>&hellip;</p>
+        <p style="opacity:0.7">This can take up to a minute. The setup network
+        may disappear while the speaker switches networks.</p>
+    </div>
+    <script>
+        (function() {{
+            var ssid = {ssid_js};
+            document.getElementById('connect-ssid').textContent = ssid;
+            var box = document.getElementById('connect-status');
+            var missedPolls = 0;
+            
+            function show(title, lines, extraHtml) {{
+                box.innerHTML = '';
+                var h = document.createElement('h2');
+                h.textContent = title;
+                box.appendChild(h);
+                lines.forEach(function(t) {{
+                    var p = document.createElement('p');
+                    p.textContent = t;
+                    box.appendChild(p);
+                }});
+                if (extraHtml) {{
+                    var d = document.createElement('div');
+                    d.innerHTML = extraHtml;
+                    box.appendChild(d);
+                }}
+            }}
+            
+            function showSuccess() {{
+                box.className = 'status success';
+                show('\\u2705 Connected!', [
+                    'The speaker joined "' + ssid + '".',
+                    'Reconnect this device to your normal WiFi, then reach the ' +
+                    'speaker at http://smart-speaker-iot.local:{WEB_PORT}'
+                ]);
+            }}
+            
+            function showFailure(error) {{
+                box.className = 'status error';
+                show('\\u274C Failed', [
+                    'Could not connect to "' + ssid + '".',
+                    error || 'Check the password and try again.'
+                ], '<button onclick="location.href=\\'/wifi-setup\\'">Try Again</button>');
+            }}
+            
+            function poll() {{
+                fetch('/debug/wifi/connect-status')
+                    .then(function(r) {{ return r.json(); }})
+                    .then(function(s) {{
+                        missedPolls = 0;
+                        if (s.state === 'connected') {{
+                            showSuccess();
+                        }} else if (s.state === 'failed') {{
+                            showFailure(s.error);
+                        }} else {{
+                            setTimeout(poll, 2000);
+                        }}
+                    }})
+                    .catch(function() {{
+                        // AP likely went down mid-switch; keep trying a while
+                        missedPolls++;
+                        if (missedPolls >= 15) {{
+                            showSuccess();
+                        }} else {{
+                            setTimeout(poll, 2000);
+                        }}
+                    }});
+            }}
+            setTimeout(poll, 2000);
+        }})();
+    </script>'''
+    return CAPTIVE_PORTAL_HTML.format(
+        content=content, connect_action="/wifi-setup/connect"
+    )
+
+
 class SpeakerHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override to use our logger instead of default logging"""
@@ -719,10 +956,14 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         captive_portal_paths = [
             '/generate_204', '/gen_204', '/ncsi.txt',  # Android/Chrome
             '/canonical.html', '/success.txt',  # Various
+            '/hotspot-detect.html', '/library/test/success.html',  # Apple
+            '/connecttest.txt', '/redirect',  # Windows
+            '/kindle-wifi/wifistub.html',  # Kindle
         ]
         
-        if path in captive_portal_paths or path == '':
-            # Redirect to WiFi setup page
+        # Only hijack these paths while the setup AP is active; on a normal
+        # network '/' (and any unmatched path) serves the Flutter web app.
+        if (path in captive_portal_paths or path == '') and is_ap_mode():
             self.send_response(302)
             self.send_header('Location', '/wifi-setup')
             self.end_headers()
@@ -771,11 +1012,53 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(wifi_get_connections())
         elif path == '/debug/wifi/scan':
             self._send_json(wifi_scan())
+        elif path == '/debug/wifi/connect-status':
+            self._send_json(wifi_get_connect_status())
         # Captive portal WiFi setup page
         elif path == '/wifi-setup':
             self._serve_wifi_setup_page()
         else:
+            # Anything else: try the deployed Flutter web app bundle
+            self._serve_web_app(path)
+    
+    def _serve_web_app(self, path):
+        """Serve a static file from the built Flutter web app (WEB_APP_DIR)."""
+        filepath = resolve_static_file(path, WEB_APP_DIR)
+        if filepath is None:
+            if not os.path.isfile(os.path.join(WEB_APP_DIR, 'index.html')):
+                body = (
+                    "Web app not deployed.\n"
+                    "Run scripts/deploy_web.sh from the development machine "
+                    "to build and deploy the Flutter web app.\n"
+                )
+                self.send_response(503)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body.encode('utf-8'))
+            else:
+                self.send_error(404)
+            return
+        
+        try:
+            with open(filepath, 'rb') as f:
+                content = f.read()
+        except OSError:
             self.send_error(404)
+            return
+        
+        content_type = mimetypes.guess_type(filepath)[0] or 'application/octet-stream'
+        if os.path.basename(filepath) in _NO_CACHE_FILES:
+            cache_control = 'no-cache'
+        else:
+            cache_control = 'max-age=3600'
+        
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(content)))
+        self.send_header('Cache-Control', cache_control)
+        self.end_headers()
+        self.wfile.write(content)
     
     def _serve_wifi_setup_page(self):
         """Serve the WiFi setup captive portal page"""
@@ -1048,30 +1331,35 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self.send_error(404)
     
     def _handle_wifi_setup_connect(self):
-        """Handle WiFi connection from captive portal form"""
+        """Handle WiFi connection from captive portal form.
+        
+        Responds immediately with a "connecting..." page that polls
+        /debug/wifi/connect-status; the actual connection attempt (AP
+        teardown + nmcli connect) runs in a background thread.
+        """
         try:
             length = int(self.headers.get('Content-Length', 0))
             data = parse_qs(self.rfile.read(length).decode())
             ssid = data.get('ssid', [''])[0]
             password = data.get('password', [''])[0]
             
-            log(f"WiFi setup: attempting connection to {ssid}")
-            success = WiFiManager.connect(ssid, password)
+            result = start_wifi_connect(ssid, password)
             
-            html = render_status_html(success, ssid, connect_action="/wifi-setup/connect")
+            if result.get('error') and result.get('state') != 'connecting':
+                # Bad request (e.g. missing SSID) - send back to the setup page
+                self.send_response(302)
+                self.send_header('Location', '/wifi-setup')
+                self.end_headers()
+                return
+            
+            # If another attempt is already in progress, the polling page
+            # still shows its outcome, so serve it in that case too.
+            shown_ssid = result.get('ssid') or ssid
+            html = _render_connecting_html(shown_ssid)
             self.send_response(200)
             self.send_header('Content-type', 'text/html; charset=utf-8')
             self.end_headers()
             self.wfile.write(html.encode('utf-8'))
-            
-            if success:
-                log_success(f"WiFi setup: connected to {ssid}")
-                # Schedule a reboot after successful connection (like the provisioner does)
-                threading.Timer(5, lambda: subprocess.run(['sudo', 'reboot'])).start()
-            else:
-                log(f"WiFi setup: failed to connect to {ssid}")
-                # Re-enable AP mode so user can try again
-                WiFiManager.start_ap()
         except Exception as e:
             log(f"WiFi setup error: {e}")
             self.send_error(500, str(e))

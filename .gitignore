@@ -54,3 +54,8 @@ Main/recordings/*.mp3
 # Uploads from server
 tmp-server/uploads/
 tmp-server/data.json
+
+# Deployed Flutter web bundle (rsync'd to the Pi by scripts/deploy_web.sh,
+# never committed). Keep only the placeholder page.
+Main/web_app/*
+!Main/web_app/index.html
