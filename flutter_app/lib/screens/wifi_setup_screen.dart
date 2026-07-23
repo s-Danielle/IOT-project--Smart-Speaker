@@ -317,7 +317,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
 
   void _startHomeProbe() {
     final homeUrls = [
-      'http://smart-speaker-iot.local:8080',
+      'http://rpi2.local:8080',
       if (_wizardBase != _apBase) _wizardBase,
     ];
 
@@ -767,7 +767,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'Reach your speaker from any browser at:\nhttp://smart-speaker-iot.local:8080',
+                  'Reach your speaker from any browser at:\nhttp://rpi2.local:8080',
                   style: TextStyle(fontFamily: 'monospace', fontSize: 13),
                 ),
               ),

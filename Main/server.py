@@ -875,7 +875,7 @@ def _render_connecting_html(ssid: str) -> str:
                 show('\\u2705 Connected!', [
                     'The speaker joined "' + ssid + '".',
                     'Reconnect this device to your normal WiFi, then reach the ' +
-                    'speaker at http://smart-speaker-iot.local:{WEB_PORT}'
+                    'speaker at http://rpi2.local:{WEB_PORT}'
                 ]);
             }}
             

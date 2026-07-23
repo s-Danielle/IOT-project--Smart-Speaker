@@ -393,7 +393,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Default hostname: smart-speaker-iot\nMake sure your phone is on the same network as the speaker.',
+                    'Default hostname: rpi2\nMake sure your phone is on the same network as the speaker.',
                     style: TextStyle(
                       color: theme.colorScheme.onSurfaceVariant,
                       fontSize: 13,

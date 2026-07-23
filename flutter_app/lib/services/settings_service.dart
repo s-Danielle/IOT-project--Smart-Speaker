@@ -8,7 +8,7 @@ class SettingsService {
   /// origin is the API base URL and no configuration is needed.
   /// On mobile we rely on mDNS resolution of the speaker's hostname.
   static String get defaultBaseUrl =>
-      kIsWeb ? Uri.base.origin : 'http://smart-speaker-iot.local:8080';
+      kIsWeb ? Uri.base.origin : 'http://rpi2.local:8080';
 
   static Future<String> getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
