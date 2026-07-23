@@ -46,7 +46,7 @@ Setup: remove all saved WiFi profiles on the Pi
 - [ ] Portal shows a "connecting…" progress page that updates on its own
 - [ ] Speaker joins the LAN (AP disappears; the progress page eventually reports success or tells you how to reach the speaker on the LAN)
 - [ ] Light 1 turns green solid
-- [ ] From a device on the LAN: `http://smart-speaker-iot.local:8080` loads the web app and `/health` returns OK
+- [ ] From a device on the LAN: `http://rpi2.local:8080` loads the web app and `/health` returns OK
 - [ ] **No reboot happened** at any point (check `uptime`)
 
 ## 2. Wrong-password path
@@ -73,8 +73,8 @@ With the speaker in AP mode and the Flutter app installed on a phone:
 
 From a dev machine with Flutter installed:
 
-- [ ] `./scripts/deploy_web.sh` builds and rsyncs to the Pi (default target `iot-proj@smart-speaker-iot.local`) with no service restart
-- [ ] From a laptop browser on the same LAN, open `http://smart-speaker-iot.local:8080`
+- [ ] `./scripts/deploy_web.sh` builds and rsyncs to the Pi (default target `iot-proj@rpi2.local`) with no service restart
+- [ ] From a laptop browser on the same LAN, open `http://rpi2.local:8080`
 - [ ] App loads; chips list, library, and settings/parental controls all read and save correctly
 - [ ] NFC chip scanning UI is **absent** on web (hidden on this platform)
 - [ ] REST endpoints still respond normally (e.g. `/health`, `/chips`) — the web app does not shadow the API

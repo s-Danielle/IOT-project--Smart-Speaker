@@ -426,18 +426,18 @@ The Flutter app connects to the speaker's REST API (port 8080) to:
 - Configure parental controls
 - Access developer tools (logs, services, WiFi)
 
-Connect via: `http://<raspberry-pi-ip>:8080` (or `http://smart-speaker-iot.local:8080`)
+Connect via: `http://<raspberry-pi-ip>:8080` (or `http://rpi2.local:8080`)
 
 ### Web App
 
 The Flutter app also runs in the browser, served directly by the Pi's API server. To deploy the latest build:
 
 ```bash
-./scripts/deploy_web.sh            # default target: iot-proj@smart-speaker-iot.local
+./scripts/deploy_web.sh            # default target: iot-proj@rpi2.local
 ./scripts/deploy_web.sh user@host  # custom target
 ```
 
-Then open `http://smart-speaker-iot.local:8080` in a browser on the same network.
+Then open `http://rpi2.local:8080` in a browser on the same network.
 
 ---
 
