@@ -59,3 +59,7 @@ tmp-server/data.json
 # never committed). Keep only the placeholder page.
 Main/web_app/*
 !Main/web_app/index.html
+
+*.mp4
+*.pdf
+

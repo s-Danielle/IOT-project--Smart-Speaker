@@ -14,7 +14,8 @@ import json
 import mimetypes
 import uuid
 import os
-import cgi
+from email.parser import BytesParser
+from email.policy import default as email_policy
 import threading
 import subprocess
 import time
@@ -939,6 +940,30 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         return json.loads(self.rfile.read(length)) if length else {}
 
+    def _parse_multipart_file(self, content_type, field_name='file'):
+        """Extract a single uploaded file from a multipart/form-data body.
+
+        Replaces the stdlib `cgi.FieldStorage` (removed in Python 3.13) with
+        the `email` package, which parses MIME multipart messages the same
+        way. Returns (filename, data) for the given field, or (None, None)
+        if it isn't present.
+        """
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length) if length else b''
+
+        # email.parser expects headers followed by a blank line, then the body
+        header_bytes = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode('utf-8')
+        message = BytesParser(policy=email_policy).parsebytes(header_bytes + body)
+
+        if not message.is_multipart():
+            return None, None
+
+        for part in message.iter_parts():
+            if part.get_param('name', header='Content-Disposition') == field_name:
+                return part.get_filename(), part.get_payload(decode=True)
+
+        return None, None
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -1254,37 +1279,30 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             # Handle multipart file upload
             content_type = self.headers.get('Content-Type', '')
             if 'multipart/form-data' in content_type:
-                form = cgi.FieldStorage(
-                    fp=self.rfile,
-                    headers=self.headers,
-                    environ={'REQUEST_METHOD': 'POST',
-                             'CONTENT_TYPE': content_type}
-                )
-                
-                if 'file' in form:
-                    file_item = form['file']
-                    if file_item.filename:
-                        # Generate unique filename
-                        file_ext = os.path.splitext(file_item.filename)[1] or '.mp3'
-                        file_id = uuid.uuid4().hex[:8]
-                        filename = f"{file_id}{file_ext}"
-                        filepath = os.path.join(UPLOADS_DIR, filename)
-                        
-                        # Save the file
-                        with open(filepath, 'wb') as f:
-                            f.write(file_item.file.read())
-                        
-                        uri = f"file://{filepath}"
-                        # Extract original filename for display name
-                        original_name = os.path.splitext(file_item.filename)[0]
-                        display_name = f"[UPLOAD] {original_name}"
-                        
-                        # Add to library automatically
-                        add_to_library(uri, display_name)
-                        
-                        log(f"Uploaded file: {filepath} (added to library as '{display_name}')")
-                        self._send_json({"uri": uri, "name": display_name}, 201)
-                        return
+                upload_filename, file_data = self._parse_multipart_file(content_type)
+
+                if upload_filename:
+                    # Generate unique filename
+                    file_ext = os.path.splitext(upload_filename)[1] or '.mp3'
+                    file_id = uuid.uuid4().hex[:8]
+                    filename = f"{file_id}{file_ext}"
+                    filepath = os.path.join(UPLOADS_DIR, filename)
+
+                    # Save the file
+                    with open(filepath, 'wb') as f:
+                        f.write(file_data or b'')
+
+                    uri = f"file://{filepath}"
+                    # Extract original filename for display name
+                    original_name = os.path.splitext(upload_filename)[0]
+                    display_name = f"[UPLOAD] {original_name}"
+
+                    # Add to library automatically
+                    add_to_library(uri, display_name)
+
+                    log(f"Uploaded file: {filepath} (added to library as '{display_name}')")
+                    self._send_json({"uri": uri, "name": display_name}, 201)
+                    return
             
             # Fallback for non-multipart
             file_id = uuid.uuid4().hex[:8]
