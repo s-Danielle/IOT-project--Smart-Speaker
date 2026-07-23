@@ -11,7 +11,7 @@ from datetime import datetime
 
 from core.state import DeviceState, State
 from core import actions
-from hardware.nfc_scanner import NFCScanner
+from hardware.nfc_service import NFCService
 from hardware.chip_store import ChipStore
 from hardware.buttons import Buttons, ButtonID
 from hardware.audio_player import AudioPlayer
@@ -49,7 +49,8 @@ class Controller:
         
         # Initialize hardware components
         log("Initializing components...")
-        self._nfc = NFCScanner()
+        self._nfc = NFCService()
+        self._nfc.start()
         self._chip_store = ChipStore()
         self._buttons = Buttons()
         self._audio = AudioPlayer()
@@ -553,7 +554,7 @@ class Controller:
     
     def _handle_nfc(self):
         """Handle NFC chip scans based on current state"""
-        uid = self._nfc.read_uid()
+        uid = self._nfc.get_current_uid()
         
         # Detect chip arrival/departure (edge detection)
         chip_now_present = (uid is not None)
