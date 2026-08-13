@@ -1,5 +1,5 @@
 """
-Play WAVs (chip-loaded beep, error beep…) through Mopidy
+Play WAVs (chip-loaded beep, error beep…) through ALSA
 """
 
 import os
@@ -7,28 +7,28 @@ import time
 
 from config import paths
 from utils.logger import log_sound, log_error
-from hardware.audio_player import AudioPlayer
+from hardware.feedback_player import FeedbackPlayer
 
 
 class Sounds:
-    """WAV sound playback for UI feedback using Mopidy"""
+    """WAV sound playback for UI feedback using aplay"""
     
-    def __init__(self, sounds_dir: str = None, cooldown: float = 0.1, audio_player: AudioPlayer = None):
+    def __init__(self, sounds_dir: str = None, cooldown: float = 0.1, player: FeedbackPlayer = None):
         """Initialize sound player
         
         Args:
             sounds_dir: Directory containing sound files
             cooldown: Minimum time between sounds (seconds)
-            audio_player: AudioPlayer instance (creates new one if not provided)
+            player: FeedbackPlayer instance (creates new one if not provided)
         """
         self._sounds_dir = sounds_dir or paths.SOUNDS_DIR
         self._cooldown = cooldown
         self._last_sound_time = 0.0
-        self._audio_player = audio_player or AudioPlayer()
+        self._player = player or FeedbackPlayer()
         log_sound(f"Sounds initialized (dir: {self._sounds_dir}, cooldown: {cooldown}s)")
     
     def _play_file(self, filepath: str, name: str):
-        """Play a WAV file through Mopidy"""
+        """Play a WAV file through ALSA"""
         current_time = time.monotonic()
         
         # Check cooldown
@@ -43,15 +43,10 @@ class Sounds:
         log_sound(f"Playing: {name}")
         
         try:
-            # Convert filepath to file:// URI for Mopidy
-            abs_path = os.path.abspath(filepath)
-            uri = f"file://{abs_path}"
-            
-            # Play through Mopidy
-            self._audio_player.play_uri(uri)
+            self._player.play(filepath)
             self._last_sound_time = current_time
         except Exception as e:
-            log_error(f"Failed to play sound through Mopidy: {e}")
+            log_error(f"Failed to play sound: {e}")
     
     def play(self, sound_name: str):
         """Play a sound by filename"""
@@ -105,7 +100,7 @@ class Sounds:
     def stop(self):
         """Stop any currently playing sound"""
         try:
-            self._audio_player.stop()
+            self._player.stop()
             log_sound("[STOPPED] Current sound")
         except Exception as e:
             log_error(f"Error stopping sound: {e}")

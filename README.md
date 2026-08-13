@@ -170,6 +170,7 @@ IOT-project--Smart-Speaker/
 │   │   ├── buttons.py           # PCF8574 button handler
 │   │   ├── leds.py              # PCF8574 LED controller
 │   │   ├── audio_player.py      # Mopidy MPD client
+│   │   ├── feedback_player.py   # UI WAV playback via aplay
 │   │   ├── recorder.py          # Audio recording
 │   │   └── voice_command.py     # PTT speech recognition
 │   ├── ui/                      # User feedback

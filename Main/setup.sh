@@ -51,6 +51,12 @@ else
     echo "❌ arecord not found (required for recording)"
     echo "   Install with: sudo apt-get install alsa-utils"
 fi
+if command -v aplay &> /dev/null; then
+    echo "✅ aplay found (for UI feedback sounds)"
+else
+    echo "❌ aplay not found (required for UI feedback sounds)"
+    echo "   Install with: sudo apt-get install alsa-utils"
+fi
 echo ""
 
 # Check Mopidy connection (REQUIRED)

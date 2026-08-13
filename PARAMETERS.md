@@ -79,6 +79,7 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 | `SAMPLE_RATE` | 44100 | Audio sample rate in Hz |
 | `CHANNELS` | 1 | Number of audio channels (mono) |
 | `AUDIO_FORMAT` | "S16_LE" | Audio format (16-bit signed, little-endian) |
+| `FEEDBACK_PCM` | "feedback" | ALSA PCM for UI WAVs (`aplay -D feedback`) |
 
 ---
 

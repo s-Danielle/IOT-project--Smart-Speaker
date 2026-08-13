@@ -46,6 +46,9 @@ MOPIDY_HOST = "localhost"
 MPD_PORT = 6600  # MPD protocol port (used by python-mpd2)
 STATUS_POLL_INTERVAL = 0.5  # Minimum seconds between Mopidy status polls (caching optimization)
 
+# ALSA feedback playback (UI WAVs, not the music transport)
+FEEDBACK_PCM = "feedback"  # pcm.feedback in /etc/asound.conf
+
 # NFC settings
 # read_passive_target blocks up to this long waiting for a card, so with no card
 # present this doubles as the NFC service thread's poll cadence (~3 reads/sec).
