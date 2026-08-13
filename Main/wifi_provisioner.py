@@ -20,9 +20,15 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from hardware.wifi_manager import WiFiManager, AP_SSID, AP_IP, WEB_PORT
+from utils.logger import log
 
 CONNECT_TIMEOUT = 30  # Seconds to wait for auto-connect
 AP_POLL_INTERVAL = 3  # Seconds between connection checks while in AP mode
+
+
+def log_wifi(message: str):
+    """Log with the WIFI category"""
+    log(message, "WIFI")
 
 
 class LEDController:
@@ -91,28 +97,28 @@ class WiFiProvisioner:
     
     def run(self):
         """Main provisioning flow - wait for WiFi, fallback to AP mode"""
-        print("[WiFi] Waiting for NetworkManager to connect...")
+        log_wifi("Waiting for NetworkManager to connect...")
         self.led.connecting()
         
         # Give NetworkManager time to auto-connect to known networks
         for i in range(CONNECT_TIMEOUT):
             if WiFiManager.is_connected():
                 ssid = WiFiManager.get_current_ssid()
-                print(f"[WiFi] Connected to {ssid}")
+                log_wifi(f"Connected to {ssid}")
                 self.led.connected()
                 return  # Exit - normal operation can proceed
             time.sleep(1)
             if i % 5 == 0:
-                print(f"[WiFi] Waiting... ({CONNECT_TIMEOUT - i}s remaining)")
+                log_wifi(f"Waiting... ({CONNECT_TIMEOUT - i}s remaining)")
         
         # No connection after timeout - start AP mode and wait for the
         # main server's captive portal to provision credentials
-        print("[WiFi] No connection, starting AP mode...")
+        log_wifi("No connection, starting AP mode...")
         self.led.ap_mode()
         WiFiManager.start_ap()
-        print(f"[WiFi] AP '{AP_SSID}' active")
-        print(f"[WiFi] Setup portal at http://{AP_IP}:{WEB_PORT}/wifi-setup "
-              "(served by the main server)")
+        log_wifi(f"AP '{AP_SSID}' active")
+        log_wifi(f"Setup portal at http://{AP_IP}:{WEB_PORT}/wifi-setup "
+                 "(served by the main server)")
         self._wait_for_provisioning()
     
     def _wait_for_provisioning(self):
@@ -129,7 +135,7 @@ class WiFiProvisioner:
                 consecutive += 1
                 if consecutive >= 2:
                     ssid = WiFiManager.get_current_ssid()
-                    print(f"[WiFi] Provisioned - connected to {ssid}")
+                    log_wifi(f"Provisioned - connected to {ssid}")
                     self.led.connected()
                     return
             else:

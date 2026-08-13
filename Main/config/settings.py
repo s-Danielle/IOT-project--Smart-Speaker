@@ -18,15 +18,12 @@ MIN_PLAYBACK_DURATION = 2.0   # Min seconds of confirmed playback before conside
 
 # I2C addresses
 PCF8574_ADDRESS = 0x20  # Button expander address
-PCF8574_RGB_ADDRESS = 0x21  # RGB LED expander address
 PN532_I2C_ADDRESS = 0x24  # NFC reader address
 
-# RGB LED pin mappings (B, G, R order - not R, G, B!)
+# RGB LED wiring (see hardware/leds.py for the pin mappings, B/G/R order):
 # Light 1 (Health):  P0=B, P1=G, P2=R on 0x21
 # Light 2 (PTT):     P3=B, P4=G, P5=R on 0x21
 # Light 3 (Speaker): P6=B, P7=G on 0x21, P6=R on 0x20 (divided LED)
-RGB_LIGHT1_PINS = (0, 1, 2)  # Health LED
-RGB_LIGHT2_PINS = (3, 4, 5)  # PTT LED
 
 # Button bit positions on PCF8574 (active-low)
 BUTTON_PLAY_PAUSE_BIT = 0  # P0
@@ -40,18 +37,12 @@ BUTTON_PTT_BIT = 5          # P5 (Button 6) - Push-to-Talk voice commands
 VOLUME_STEP = 10  # Volume change per button press (0-100 scale)
 VOLUME_DEFAULT = 50  # Default volume level
 
-# Audio settings
-SAMPLE_RATE = 44100
-CHANNELS = 1
-AUDIO_FORMAT = "S16_LE"
-
 # HTTP Server settings (local API server)
 SERVER_HOST = "localhost"
 SERVER_PORT = 8080
 
 # Mopidy settings
 MOPIDY_HOST = "localhost"
-MOPIDY_PORT = 6680  # HTTP JSON-RPC port (deprecated, kept for backward compatibility)
 MPD_PORT = 6600  # MPD protocol port (used by python-mpd2)
 STATUS_POLL_INTERVAL = 0.5  # Minimum seconds between Mopidy status polls (caching optimization)
 

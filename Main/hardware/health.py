@@ -95,7 +95,7 @@ class HealthChecker:
         print("=" * 50)
         
         for result in results:
-            status = "✅" if result.healthy else "❌"
+            status = "OK  " if result.healthy else "FAIL"
             print(f"{status} {result.component}: {result.message}")
         
         print("=" * 50 + "\n")

@@ -15,7 +15,7 @@ import urllib.error
 from typing import Optional, Dict, Any, List
 
 from config.settings import SERVER_HOST, SERVER_PORT
-from utils.logger import log_error, log
+from utils.logger import log_error
 
 
 # Server configuration
@@ -147,38 +147,6 @@ def get_chips() -> List[Dict[str, Any]]:
     """
     result = _http_get('/chips')
     return result if result is not None else []
-
-
-def get_chip_by_uid(uid: str) -> Optional[Dict[str, Any]]:
-    """Fetch chip data by UID from server.
-    
-    Args:
-        uid: NFC chip UID
-        
-    Returns:
-        Chip dict with resolved URI, or None if not found
-    """
-    chips = get_chips()
-    for chip in chips:
-        if chip.get('uid') == uid:
-            # Resolve URI from library if chip has song_id
-            uri = ''
-            song_id = chip.get('song_id')
-            if song_id:
-                library = get_library()
-                for song in library:
-                    if song.get('id') == song_id:
-                        uri = song.get('uri', '')
-                        break
-            
-            return {
-                'uid': uid,
-                'name': chip.get('name', 'Unknown'),
-                'uri': uri,
-                'song_id': song_id,
-                'song_name': chip.get('song_name', ''),
-            }
-    return None
 
 
 # =============================================================================

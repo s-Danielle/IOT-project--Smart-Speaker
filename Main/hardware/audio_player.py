@@ -5,7 +5,7 @@ Uses python-mpd2 library for MPD protocol communication
 
 import time
 from config.settings import MOPIDY_HOST, MPD_PORT, VOLUME_STEP, VOLUME_DEFAULT, STATUS_POLL_INTERVAL
-from utils.logger import log_audio, log_error, log_success
+from utils.logger import log_audio, log_error
 from utils.hardware_health import HardwareHealthManager
 
 # MPD client library
@@ -104,7 +104,7 @@ class AudioPlayer:
     
     def play_uri(self, uri: str):
         """Play audio from URI (Spotify, local file, etc.)"""
-        log_audio(f"▶️  Playing URI: {uri}")
+        log_audio(f"Playing URI: {uri}")
         self._current_uri = uri
         
         # Clear current tracklist and add new track
@@ -112,29 +112,25 @@ class AudioPlayer:
         self._execute(self._client.add, uri)
         self._execute(self._client.play)
         self._cached_state = "play"  # Update cache
-        log_success(f"Playback started: {uri}")
     
     def pause(self):
         """Pause current playback"""
-        log_audio("⏸️  Pausing playback")
+        log_audio("Pausing playback")
         self._execute(self._client.pause, 1)  # 1 = pause
         self._cached_state = "pause"  # Update cache
-        log_success("Playback paused")
     
     def resume(self):
         """Resume paused playback"""
-        log_audio("▶️  Resuming playback")
+        log_audio("Resuming playback")
         self._execute(self._client.pause, 0)  # 0 = resume
         self._cached_state = "play"  # Update cache
-        log_success("Playback resumed")
     
     def stop(self):
         """Stop playback"""
-        log_audio("⏹️  Stopping playback")
+        log_audio("Stopping playback")
         self._execute(self._client.stop)
         self._current_uri = None
         self._cached_state = "stop"  # Update cache
-        log_success("Playback stopped")
     
     def is_playing(self, force_refresh: bool = False) -> bool:
         """Check if audio is currently playing.
@@ -206,7 +202,6 @@ class AudioPlayer:
         """Set volume level (0-100). Returns True if successful."""
         # Clamp volume to valid range
         volume = max(0, min(100, volume))
-        log_audio(f"🔊 Setting volume to {volume}")
         
         # MPD setvol returns None on success, so request an explicit success value.
         result = self._execute(self._client.setvol, volume, _none_is_success=True)
@@ -214,7 +209,7 @@ class AudioPlayer:
             log_error(f"Failed to set volume to {volume}")
             return False
         self._cached_volume = volume
-        log_success(f"Volume set to {volume}")
+        log_audio(f"Volume set to {volume}")
         return True
     
     def volume_up(self) -> int:
@@ -225,7 +220,6 @@ class AudioPlayer:
         current = self.get_volume()
         new_volume = min(100, current + VOLUME_STEP)
         self.set_volume(new_volume)
-        log_audio(f"🔊 Volume UP: {current} → {new_volume}")
         return new_volume
     
     def volume_down(self) -> int:
@@ -236,7 +230,6 @@ class AudioPlayer:
         current = self.get_volume()
         new_volume = max(0, current - VOLUME_STEP)
         self.set_volume(new_volume)
-        log_audio(f"🔉 Volume DOWN: {current} → {new_volume}")
         return new_volume
     
     def refresh_status(self) -> dict:

@@ -21,7 +21,6 @@ import subprocess
 import tempfile
 import os
 import time
-import signal
 from typing import Optional
 
 from config.settings import (

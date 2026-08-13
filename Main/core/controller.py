@@ -1,6 +1,6 @@
 """
-Main loop: polls inputs, updates state
-Implements the full state machine from States.txt
+Main loop: polls inputs, updates state machine
+(states: IDLE_NO_CHIP, IDLE_CHIP_LOADED, PLAYING, PAUSED, RECORDING)
 """
 
 import time
@@ -25,7 +25,6 @@ from config.settings import (
     MAX_WAIT_FOR_PLAYBACK,
     MIN_PLAYBACK_DURATION,
     PTT_ENABLED,
-    BUTTON_PTT_BIT,
     MAX_RECORDING_DURATION,
     MIN_DISK_SPACE_MB,
 )
@@ -57,7 +56,7 @@ class Controller:
         self._recorder = Recorder()
         self._ui = UIController()
         
-        # Track record button arming (need to hold 3s then release)
+        # Track record button arming (hold RECORD_HOLD_DURATION to arm)
         self._record_armed = False
         self._countdown_played = False  # Track if countdown sound was played
         
@@ -165,106 +164,59 @@ class Controller:
             self._ui.on_blocked_action()
             return
         
-        log_event(f"[DEBUG] Looking for recordings in: {RECORDINGS_DIR}")
-        
         # Find all recording files
         if not os.path.exists(RECORDINGS_DIR):
-            log_event(f"[DEBUG] Recordings directory does not exist: {RECORDINGS_DIR}")
             log_event("No recordings directory found")
             self._ui.on_error()
             return
         
-        log_event(f"[DEBUG] Scanning directory: {RECORDINGS_DIR}")
-        all_files = os.listdir(RECORDINGS_DIR)
-        log_event(f"[DEBUG] Found {len(all_files)} files in directory")
-        
         recording_files = []
-        for filename in all_files:
-            log_event(f"[DEBUG] Checking file: {filename}")
+        for filename in os.listdir(RECORDINGS_DIR):
             if filename.endswith('.wav') and filename.startswith('recording_'):
                 filepath = os.path.join(RECORDINGS_DIR, filename)
                 if os.path.isfile(filepath):
-                    mtime = os.path.getmtime(filepath)
-                    size = os.path.getsize(filepath)
-                    recording_files.append((filepath, mtime))
-                    log_event(f"[DEBUG] Found recording: {filename} (size: {size} bytes, mtime: {mtime})")
-        
-        log_event(f"[DEBUG] Total recording files found: {len(recording_files)}")
+                    recording_files.append((filepath, os.path.getmtime(filepath)))
         
         if not recording_files:
             log_event("No recordings found")
-            log_event("[DEBUG] To create a recording:")
-            log_event("[DEBUG]   1. Load a chip")
-            log_event("[DEBUG]   2. Hold Record button for 3 seconds")
-            log_event("[DEBUG]   3. Release to start recording")
-            log_event("[DEBUG]   4. Press Record again to save")
             self._ui.on_error()
             return
         
         # Sort by modification time (newest first)
         recording_files.sort(key=lambda x: x[1], reverse=True)
         latest_recording = recording_files[0][0]
-        
-        # Get absolute path for Mopidy
         abs_path = os.path.abspath(latest_recording)
         
-        log_event(f"[DEBUG] Selected latest recording: {os.path.basename(latest_recording)}")
-        log_event(f"[DEBUG] Absolute path: {abs_path}")
         log_event(f"Playing latest recording: {os.path.basename(latest_recording)}")
         
-        # Convert to URI for Mopidy
-        # Mopidy supports multiple URI formats:
-        # 1. file:// URIs (if file backend is enabled)
-        # 2. local:file: URIs (if local backend is configured)
-        # 3. We'll try file:// first, then fall back to local:file: if needed
-        
-        # Try file:// URI format first (works if file backend is enabled)
-        if os.name == 'nt':  # Windows
-            # Windows: file:///C:/path/to/file
+        # Build a file:// URI for Mopidy (requires the file or local backend)
+        if os.name == 'nt':
             file_uri = f"file:///{abs_path.replace(os.sep, '/')}"
         else:
-            # Unix/Mac: file:///absolute/path (three slashes for absolute)
             file_uri = f"file://{abs_path}"
-        
-        # Alternative: Use local:file: URI if Mopidy-Local is configured
-        # This requires the recordings directory to be in Mopidy's media_dir
-        # For now, we'll use file:// and let Mopidy handle it
-        
-        log_event(f"[DEBUG] File URI: {file_uri}")
-        log_event(f"[DEBUG] Note: Mopidy needs file backend enabled or local backend configured")
         
         # Verify file exists and is readable
         if not os.path.exists(abs_path):
-            log_error(f"[DEBUG] File does not exist: {abs_path}")
+            log_error(f"Recording file does not exist: {abs_path}")
             self._ui.on_error()
             return
         
         if not os.access(abs_path, os.R_OK):
-            log_error(f"[DEBUG] File is not readable: {abs_path}")
+            log_error(f"Recording file is not readable: {abs_path}")
             self._ui.on_error()
             return
         
-        log_event(f"[DEBUG] Calling audio.play_uri() with: {file_uri}")
-        
-        # Try to play the file
-        # Note: Mopidy needs one of these configured:
-        # 1. File backend enabled (supports file:// URIs directly)
-        # 2. Local backend with recordings directory in media_dir
-        # 3. Stream backend (for HTTP-served files)
         try:
             # Track play initiation time and reset tracking state
             self._play_initiated_time = time.time()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self._audio.play_uri(file_uri)
-            log_event(f"[DEBUG] Playback command sent to Mopidy")
         except Exception as e:
-            log_error(f"[DEBUG] Failed to play recording: {e}")
-            log_error("[DEBUG] Mopidy may need file backend enabled or local backend configured")
+            log_error(f"Failed to play recording: {e}")
             self._ui.on_error()
             return
         
-        log_event(f"[DEBUG] Calling ui.on_play()")
         self._ui.on_play()
         
         # Track previous state so we can return to it on stop
@@ -672,7 +624,7 @@ class Controller:
                     self._ui.on_blocked_action()
                     return
                 
-                log_button(f"▶️ Play/Pause held {hold_time:.1f}s - PLAYING LATEST RECORDING")
+                log_button(f"Play/Pause held {hold_time:.1f}s - playing latest recording")
                 self._play_latest_recording()
                 return
         
@@ -759,7 +711,7 @@ class Controller:
     def _handle_record_button(self, state: State):
         """
         Handle Record button logic
-        - Hold 3s (countdown plays): Release after countdown to start recording
+        - Hold RECORD_HOLD_DURATION (countdown plays): recording starts automatically
         - Short press while recording: Save recording
         """
         # IDLE_NO_CHIP: No effect
@@ -780,20 +732,20 @@ class Controller:
                 )
             return
         
-        # Other states: Track hold duration - recording starts at 3s automatically
+        # Other states: Track hold duration - recording starts automatically at RECORD_HOLD_DURATION
         if self._buttons.is_pressed(ButtonID.RECORD):
             hold_time = self._buttons.hold_duration(ButtonID.RECORD)
             
             # Play countdown sound when button is first pressed and held
             if hold_time > 0.1 and not self._countdown_played:
-                log_button("🎙️ Playing countdown - hold for 3 seconds")
+                log_button(f"Playing countdown - hold for {RECORD_HOLD_DURATION:.0f} seconds")
                 self._ui._sounds.play_record_start()  # Play countdown.wav
                 self._countdown_played = True
             
-            # Start recording when 3s threshold is reached (whether button is still held or not)
+            # Start recording when the hold threshold is reached (whether button is still held or not)
             if hold_time >= RECORD_HOLD_DURATION and not self._record_armed:
                 self._record_armed = True
-                log_button(f"🎙️ Record ARMED (held {hold_time:.1f}s) - starting recording now")
+                log_button(f"Record armed (held {hold_time:.1f}s) - starting recording")
                 # Stop countdown sound
                 self._ui._sounds.stop()
                 self._countdown_played = False
@@ -815,7 +767,7 @@ class Controller:
             if not self._record_armed:
                 # Recording didn't start - stop countdown
                 if self._countdown_played:
-                    log_button("Stopping countdown sound (released before 3s)")
+                    log_button(f"Stopping countdown sound (released before {RECORD_HOLD_DURATION:.0f}s)")
                     self._ui._sounds.stop()
                 hold_time = self._buttons.get_release_duration(ButtonID.RECORD)
                 if hold_time < RECORD_HOLD_DURATION:
@@ -833,7 +785,7 @@ class Controller:
         """
         Handle Stop button logic
         - Short press: Stop playback OR cancel recording
-        - Long press (5s): Clear chip
+        - Long press (CLEAR_CHIP_HOLD_DURATION): Clear chip
         """
         # IDLE_NO_CHIP: No effect
         if state == State.IDLE_NO_CHIP:
@@ -842,7 +794,7 @@ class Controller:
                 self._ui.on_blocked_action()
             return
         
-        # Check for long press (3s) to clear chip
+        # Check for long press (CLEAR_CHIP_HOLD_DURATION) to clear chip
         # Exception: During RECORDING, long press just cancels (keeps chip loaded)
         if self._buttons.is_pressed(ButtonID.STOP):
             hold_time = self._buttons.hold_duration(ButtonID.STOP)
@@ -853,14 +805,14 @@ class Controller:
                 
                 if state == State.RECORDING:
                     # During recording: long press just cancels (keeps chip loaded)
-                    log_button(f"🔄 Stop held {hold_time:.1f}s - CANCELING RECORDING (keeping chip)")
+                    log_button(f"Stop held {hold_time:.1f}s - canceling recording (keeping chip)")
                     self._recording_start_time = None  # Reset recording time tracking
                     self.device_state = actions.action_cancel_recording(
                         self.device_state, self._recorder, self._audio, self._ui
                     )
                 else:
                     # All other states: long press clears chip
-                    log_button(f"🔄 Stop held {hold_time:.1f}s - CLEARING CHIP")
+                    log_button(f"Stop held {hold_time:.1f}s - clearing chip")
                     self._update_playback_usage()  # Update daily usage before clearing
                     self._reset_playback_tracking()  # Reset tracking on clear chip
                     self.device_state = actions.action_clear_chip(
@@ -927,14 +879,14 @@ class Controller:
                 log_event(f"[PARENTAL] Volume capped at {limit}% (limit enforced)")
                 self._audio.set_volume(limit)
                 new_vol = limit
-            log_button(f"🔊 Volume UP → {new_vol}")
+            log_button(f"Volume up -> {new_vol}")
             self._ui.on_volume_change(new_vol)
             return
         
         # Volume Down - trigger on button press (not release) for responsive feel
         if self._buttons.just_pressed(ButtonID.VOLUME_DOWN):
             new_vol = self._audio.volume_down()
-            log_button(f"🔉 Volume DOWN → {new_vol}")
+            log_button(f"Volume down -> {new_vol}")
             self._ui.on_volume_change(new_vol)
             return
     
@@ -969,7 +921,7 @@ class Controller:
         
         # Handle button press - START recording
         if self._buttons.just_pressed(ButtonID.PTT):
-            log_button("🎙️ PTT pressed - hold and speak, release when done")
+            log_button("PTT pressed - hold and speak, release when done")
             
             # Light 2 - BLUE (listening/recording)
             if self._ptt_leds:
@@ -985,7 +937,7 @@ class Controller:
             if not self._voice_command.is_recording():
                 return
             
-            log_button("🎙️ PTT released - processing command")
+            log_button("PTT released - processing command")
             
             # Keep BLUE while processing
             if self._ptt_leds:

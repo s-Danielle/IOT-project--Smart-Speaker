@@ -18,7 +18,7 @@ The server listens on the port specified in config/settings.py (default: 8080).
 
 from server import run_server_blocking
 from config.settings import SERVER_PORT
-from utils.logger import log, log_success
+from utils.logger import log
 
 if __name__ == "__main__":
     log("=" * 60)

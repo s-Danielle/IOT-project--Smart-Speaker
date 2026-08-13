@@ -14,6 +14,9 @@ SECRETS
 .env
 .env.local
 
+# Mopidy/Spotify auth artifacts (contains credentials.json)
+spotify-auth/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -36,6 +39,7 @@ flutter_app/android/gradle/wrapper/gradle-wrapper.jar
 flutter_app/*.iml
 flutter_app/.idea/
 flutter_app/devtools_options.yaml
+flutter_app/.flutter-plugins-dependencies
 *.lock
 !pubspec.lock
 
@@ -47,9 +51,9 @@ flutter_app/devtools_options.yaml
 node_modules/
 package-lock.json
 
-# Recordings (large audio files)
-Main/recordings/*.wav
-Main/recordings/*.mp3
+# Runtime media (recordings and uploads written by the app)
+Main/local_files/recordings/*
+Main/local_files/uploads/*
 
 # Uploads from server
 tmp-server/uploads/
@@ -60,6 +64,8 @@ tmp-server/data.json
 Main/web_app/*
 !Main/web_app/index.html
 
+# Local media clutter (demo videos, photos, course PDFs)
 *.mp4
 *.pdf
+*.jpg
 

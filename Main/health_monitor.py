@@ -4,7 +4,7 @@ Health Monitor Service - Controls Light 1 (Health LED)
 
 Monitors:
 - Internet connectivity (ping 8.8.8.8)
-- Server status (GET localhost:8080/health)
+- Server status (GET localhost:8080/status)
 - Hardware controller status (GET /debug/speaker/status)
 
 Long Press Actions:
@@ -42,6 +42,12 @@ from config.settings import (
     LONG_PRESS_RESTART_SERVICES_DURATION,
     LOOP_INTERVAL,
 )
+from utils.logger import log
+
+
+def log_health(message: str):
+    """Log with the HEALTH category"""
+    log(message, "HEALTH")
 
 
 class HealthMonitor:
@@ -77,7 +83,7 @@ class HealthMonitor:
         # Get reference to health manager for button health checks
         self._health_manager = HardwareHealthManager.get_instance()
         
-        print("[HEALTH] Health monitor initialized")
+        log_health("Health monitor initialized")
     
     def check_internet(self) -> bool:
         """Check internet connectivity by pinging Google DNS"""
@@ -103,7 +109,7 @@ class HealthMonitor:
             with urllib.request.urlopen(req, timeout=3) as response:
                 return response.status == 200
         except Exception as e:
-            print(f"[HEALTH] Server check failed: {e}")
+            log_health(f"Server check failed: {e}")
             return False
     
     def check_hardware(self) -> bool:
@@ -121,10 +127,10 @@ class HealthMonitor:
                     # Server returns {"status": "active", "running": true}
                     result = data.get('running', False) or data.get('status') == 'active'
                     if not result:
-                        print(f"[HEALTH] Hardware check got: {data}")
+                        log_health(f"Hardware check got: {data}")
                     return result
         except Exception as e:
-            print(f"[HEALTH] Hardware check failed: {e}")
+            log_health(f"Hardware check failed: {e}")
         return False
     
     def update_led(self):
@@ -138,7 +144,7 @@ class HealthMonitor:
         
         # Only log if state changed
         if state != self._last_state:
-            print(f"[HEALTH] Internet={internet}, Server={server}, Hardware={hardware}")
+            log_health(f"Internet={internet}, Server={server}, Hardware={hardware}")
             self._last_state = state
         
         # Set LED color based on state (R/G/B only)
@@ -164,7 +170,7 @@ class HealthMonitor:
     
     def boot_animation(self):
         """Blue blink animation during startup"""
-        print("[HEALTH] Boot animation...")
+        log_health("Boot animation...")
         for _ in range(3):
             self._leds.set_light(self.LIGHT, Colors.BLUE)
             time.sleep(0.3)
@@ -173,7 +179,7 @@ class HealthMonitor:
     
     def _do_reboot(self):
         """Reboot the system"""
-        print("[HEALTH] *** REBOOTING SYSTEM ***")
+        log_health("*** REBOOTING SYSTEM ***")
         # Visual feedback - rapid red blinks
         for _ in range(5):
             self._leds.set_light(self.LIGHT, Colors.RED)
@@ -184,13 +190,13 @@ class HealthMonitor:
         try:
             subprocess.run(['sudo', 'reboot'], check=True)
         except Exception as e:
-            print(f"[HEALTH] Reboot failed: {e}")
+            log_health(f"Reboot failed: {e}")
             # Error indication - solid red
             self._leds.set_light(self.LIGHT, Colors.RED)
     
     def _do_restart_services(self):
         """Restart all smart speaker services"""
-        print("[HEALTH] *** RESTARTING SERVICES ***")
+        log_health("*** RESTARTING SERVICES ***")
         # Visual feedback - rapid blue blinks
         for _ in range(5):
             self._leds.set_light(self.LIGHT, Colors.BLUE)
@@ -200,7 +206,7 @@ class HealthMonitor:
         
         for service in self.SERVICES_TO_RESTART:
             try:
-                print(f"[HEALTH] Restarting {service}...")
+                log_health(f"Restarting {service}...")
                 result = subprocess.run(
                     ['sudo', 'systemctl', 'restart', service],
                     capture_output=True,
@@ -208,17 +214,17 @@ class HealthMonitor:
                     timeout=30
                 )
                 if result.returncode == 0:
-                    print(f"[HEALTH] {service} restarted successfully")
+                    log_health(f"{service} restarted successfully")
                 else:
-                    print(f"[HEALTH] {service} restart failed: {result.stderr}")
+                    log_health(f"{service} restart failed: {result.stderr}")
             except Exception as e:
-                print(f"[HEALTH] Failed to restart {service}: {e}")
+                log_health(f"Failed to restart {service}: {e}")
         
-        print("[HEALTH] Service restart complete")
+        log_health("Service restart complete")
     
     def _do_restart_health_service(self):
         """Restart the health monitor service itself"""
-        print("[HEALTH] *** RESTARTING HEALTH SERVICE ***")
+        log_health("*** RESTARTING HEALTH SERVICE ***")
         try:
             # Use subprocess to restart ourselves - systemd will handle it
             subprocess.run(
@@ -226,7 +232,7 @@ class HealthMonitor:
                 check=True
             )
         except Exception as e:
-            print(f"[HEALTH] Failed to restart health service: {e}")
+            log_health(f"Failed to restart health service: {e}")
     
     def _handle_button_errors(self) -> bool:
         """
@@ -251,7 +257,7 @@ class HealthMonitor:
             return True
         
         self._button_error_handling = True
-        print("[HEALTH] Button hardware errors detected - starting recovery")
+        log_health("Button hardware errors detected - starting recovery")
         
         # Blink red LED for 10 seconds
         blink_start = time.time()
@@ -261,7 +267,7 @@ class HealthMonitor:
             self._leds.off(self.LIGHT)
             time.sleep(0.25)
         
-        print("[HEALTH] Red blink complete, restarting health service...")
+        log_health("Red blink complete, restarting health service...")
         
         # Restart health service to reinitialize buttons
         self._do_restart_health_service()
@@ -314,9 +320,9 @@ class HealthMonitor:
     
     def run(self):
         """Main loop"""
-        print("[HEALTH] Starting health monitor service")
-        print(f"[HEALTH] Long press Vol Up ({LONG_PRESS_REBOOT_DURATION}s) -> Reboot")
-        print(f"[HEALTH] Long press Vol Down ({LONG_PRESS_RESTART_SERVICES_DURATION}s) -> Restart services")
+        log_health("Starting health monitor service")
+        log_health(f"Long press Vol Up ({LONG_PRESS_REBOOT_DURATION}s) -> Reboot")
+        log_health(f"Long press Vol Down ({LONG_PRESS_RESTART_SERVICES_DURATION}s) -> Restart services")
         self._running = True
         
         # Boot animation
@@ -349,13 +355,13 @@ class HealthMonitor:
                         last_health_check = current_time
                 
             except Exception as e:
-                print(f"[HEALTH] Error: {e}")
+                log_health(f"Error: {e}")
                 self._leds.set_light(self.LIGHT, Colors.RED)
             
             # Fast polling interval for responsive button detection
             time.sleep(LOOP_INTERVAL)
         
-        print("[HEALTH] Health monitor stopped")
+        log_health("Health monitor stopped")
     
     def stop(self):
         """Stop the monitor"""
@@ -371,10 +377,10 @@ def main():
     try:
         monitor.run()
     except KeyboardInterrupt:
-        print("\n[HEALTH] Shutdown requested...")
+        log_health("Shutdown requested...")
     finally:
         monitor.stop()
-        print("[HEALTH] Goodbye!")
+        log_health("Goodbye!")
 
 
 if __name__ == '__main__':

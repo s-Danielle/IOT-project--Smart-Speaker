@@ -8,7 +8,7 @@ import time
 from typing import Optional
 from datetime import datetime
 from config.paths import RECORDINGS_DIR
-from config.settings import SAMPLE_RATE, CHANNELS, AUDIO_FORMAT, RECORDING_DEVICE
+from config.settings import RECORDING_DEVICE
 from utils.logger import log_recording, log_error, log_success
 
 
@@ -36,8 +36,6 @@ class Recorder:
         safe_name = "".join(c for c in chip_name if c.isalnum() or c in "._-")
         filename = f"recording_{safe_name}_{timestamp}.wav"
         self._current_file = os.path.join(RECORDINGS_DIR, filename)
-        
-        log_recording(f"🎙️  Starting recording: {filename}")
         
         # Check if arecord is available
         try:
@@ -97,7 +95,7 @@ class Recorder:
             log_error("Not currently recording!")
             return None
         
-        log_recording("⏹️  Stopping recording")
+        log_recording("Stopping recording")
         
         if self._process:
             # Send SIGTERM to arecord to stop recording gracefully
@@ -141,7 +139,7 @@ class Recorder:
         if not self._recording:
             return
         
-        log_recording("❌ Canceling recording")
+        log_recording("Canceling recording")
         
         if self._process:
             self._process.terminate()
@@ -161,7 +159,6 @@ class Recorder:
         
         self._recording = False
         self._current_file = None
-        log_success("Recording canceled")
     
     def is_recording(self) -> bool:
         """Check if currently recording"""

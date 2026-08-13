@@ -40,7 +40,7 @@ class Sounds:
             log_error(f"Sound file not found: {filepath}")
             return
         
-        log_sound(f"🔊 Playing: {name}")
+        log_sound(f"Playing: {name}")
         
         try:
             # Convert filepath to file:// URI for Mopidy

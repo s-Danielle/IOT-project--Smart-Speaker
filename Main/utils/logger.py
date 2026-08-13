@@ -26,9 +26,9 @@ def log_event(event: str):
     log(event, "EVENT")
 
 
-def log_sound(sound: str):
+def log_sound(message: str):
     """Log sound playback"""
-    log(f"🔊 Playing: {sound}", "SOUND")
+    log(message, "SOUND")
 
 
 def log_nfc(message: str):

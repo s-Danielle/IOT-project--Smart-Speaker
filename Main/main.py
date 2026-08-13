@@ -9,10 +9,10 @@ NOTE: This does NOT start the HTTP server. The server runs as a separate
 service (smart_speaker_server.service). This controller communicates with
 the server via HTTP to fetch chip data and parental controls.
 
-Controls:
-- Play/Pause button: Toggle playback
-- Record button: Hold 3s → release to start recording, short press to save
-- Stop button: Short press = stop/cancel, Long press (5s) = clear chip
+Controls (hold durations configured in config/settings.py):
+- Play/Pause button: Toggle playback; long press plays the latest recording
+- Record button: Hold (RECORD_HOLD_DURATION) to start recording, short press to save
+- Stop button: Short press = stop/cancel, long press (CLEAR_CHIP_HOLD_DURATION) = clear chip
 
 States:
 1. IDLE_NO_CHIP - No chip loaded
@@ -27,7 +27,7 @@ import time
 
 from core.controller import Controller
 from hardware.health import HealthChecker
-from utils.logger import log, log_success, log_error, log_event
+from utils.logger import log, log_success, log_error
 from utils.server_client import check_server_health
 
 
