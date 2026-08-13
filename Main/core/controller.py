@@ -17,6 +17,7 @@ from hardware.buttons import Buttons, ButtonID
 from hardware.audio_player import AudioPlayer
 from hardware.mixer import Mixer
 from hardware.recorder import Recorder
+from hardware.mic_session import MicSession
 from ui.ui_controller import UIController
 from config.settings import (
     LOOP_INTERVAL, 
@@ -55,8 +56,9 @@ class Controller:
         self._buttons = Buttons()
         self._audio = AudioPlayer()
         self._mixer = Mixer()
-        self._recorder = Recorder()
         self._ui = UIController()
+        self._mic = MicSession(self._audio, silence_feedback=self._ui._sounds.stop)
+        self._recorder = Recorder(mic_session=self._mic)
         
         # Track record button arming (hold RECORD_HOLD_DURATION to arm)
         self._record_armed = False
@@ -78,7 +80,7 @@ class Controller:
         if PTT_ENABLED:
             try:
                 from hardware.voice_command import VoiceCommand
-                self._voice_command = VoiceCommand()
+                self._voice_command = VoiceCommand(mic_session=self._mic)
                 self._ptt_leds = RGBLeds()  # Separate instance to control Light 2 (PTT LED)
                 log("[PTT] Voice command support enabled")
             except Exception as e:
@@ -147,10 +149,13 @@ class Controller:
         log("SHUTTING DOWN")
         log("=" * 60)
         self._running = False
+        if self._voice_command is not None:
+            self._voice_command.cancel_recording()
         self._nfc.close()
         self._buttons.close()
-        self._audio.close()
         self._recorder.close()
+        self._mic.release(restore=False)
+        self._audio.close()
         log("Goodbye!")
     
     def stop(self):
@@ -243,6 +248,11 @@ class Controller:
         """
         # Only check when we think we're playing
         if self.device_state.state != State.PLAYING:
+            return
+
+        # MicSession pauses Mopidy while the mic is live but leaves state
+        # as PLAYING; a poll here would look like the track ended.
+        if self._mic.is_held():
             return
         
         now = time.monotonic()
@@ -734,6 +744,16 @@ class Controller:
                 )
             return
         
+        # PTT and voice-memo recording share one arecord; the other owner
+        # already holds MicSession.
+        if state != State.RECORDING and self._mic.is_held():
+            if self._buttons.just_pressed(ButtonID.RECORD):
+                log_event("Record blocked - mic in use")
+                self._ui.on_blocked_action()
+            self._record_armed = False
+            self._countdown_played = False
+            return
+        
         # Other states: Track hold duration - recording starts automatically at RECORD_HOLD_DURATION
         if self._buttons.is_pressed(ButtonID.RECORD):
             hold_time = self._buttons.hold_duration(ButtonID.RECORD)
@@ -761,7 +781,7 @@ class Controller:
                 # Start recording immediately (no need to wait for release)
                 self._recording_start_time = time.monotonic()  # Track recording start
                 self.device_state = actions.action_start_recording(
-                    self.device_state, self._audio, self._recorder, self._ui
+                    self.device_state, self._recorder, self._ui
                 )
         
         # On release: only stop countdown if recording hasn't started yet
@@ -810,7 +830,7 @@ class Controller:
                     log_button(f"Stop held {hold_time:.1f}s - canceling recording (keeping chip)")
                     self._recording_start_time = None  # Reset recording time tracking
                     self.device_state = actions.action_cancel_recording(
-                        self.device_state, self._recorder, self._audio, self._ui
+                        self.device_state, self._recorder, self._ui
                     )
                 else:
                     # All other states: long press clears chip
@@ -837,9 +857,9 @@ class Controller:
             
             # RECORDING: Cancel recording (no save) - returns to previous state
             if state == State.RECORDING:
-                self._recording_start_time = None  # Reset recording time tracking
+                self._recording_start_time = None
                 self.device_state = actions.action_cancel_recording(
-                    self.device_state, self._recorder, self._audio, self._ui
+                    self.device_state, self._recorder, self._ui
                 )
                 return
             
@@ -912,25 +932,25 @@ class Controller:
         if self._voice_command is None:
             return
         
-        # Block PTT during audio recording (voice memo)
-        if state == State.RECORDING:
-            if self._buttons.just_pressed(ButtonID.PTT):
-                log_event("[PTT] Blocked - voice memo recording in progress")
-                self._ui.on_blocked_action()
-                # Blink red to show blocked
-                self._ptt_blink(Colors.RED)
-            return
-        
         # Handle button press - START recording
         if self._buttons.just_pressed(ButtonID.PTT):
+            if self._mic.is_held():
+                log_event("[PTT] Blocked - mic in use")
+                self._ui.on_blocked_action()
+                self._ptt_blink(Colors.RED)
+                return
+
             log_button("PTT pressed - hold and speak, release when done")
-            
+
+            if not self._voice_command.start_recording():
+                log_error("[PTT] Failed to start recording")
+                self._ui.on_error()
+                self._ptt_blink(Colors.RED)
+                return
+
             # Light 2 - BLUE (listening/recording)
             if self._ptt_leds:
                 self._ptt_leds.set_light(2, Colors.BLUE)
-            
-            # Start recording
-            self._voice_command.start_recording()
             return
         
         # Handle button release - STOP recording and process
@@ -945,10 +965,15 @@ class Controller:
             if self._ptt_leds:
                 self._ptt_leds.set_light(2, Colors.BLUE)
             
-            # Stop recording and get command
             command = self._voice_command.stop_and_parse()
-            
-            # Execute command
+            restore = self._should_restore_media_after_ptt(command)
+            self._mic.release(restore=restore)
+            if restore and self.device_state.state == State.PLAYING:
+                # Re-arm confirmation so a brief paused poll is not "track ended"
+                self._play_initiated_time = time.monotonic()
+                self._playback_confirmed = False
+                self._playback_confirmed_time = None
+
             self._execute_ptt_command(command, state)
             return
     
@@ -961,6 +986,16 @@ class Controller:
             time.sleep(0.1)
             self._ptt_leds.off(2)
             time.sleep(0.1)
+
+    def _should_restore_media_after_ptt(self, command: Optional[str]) -> bool:
+        """Resume paused media unless the command is about to change playback."""
+        if command is None:
+            return True
+        if command in ("pause", "stop", "clear"):
+            return False
+        if command.startswith("easter_"):
+            return command == "easter_shut_up"
+        return True
     
     def _execute_ptt_command(self, command: Optional[str], state: State):
         """Execute a PTT voice command. Uses Light 2 (PTT LED)."""

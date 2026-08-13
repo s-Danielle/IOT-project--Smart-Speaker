@@ -134,7 +134,7 @@ def action_clear_chip(device_state: DeviceState, audio_player, ui, long_press: b
     return device_state
 
 
-def action_start_recording(device_state: DeviceState, audio_player, recorder, ui) -> DeviceState:
+def action_start_recording(device_state: DeviceState, recorder, ui) -> DeviceState:
     """Start recording (chip must be loaded)"""
     if device_state.loaded_chip is None:
         log_action("Cannot record: no chip loaded")
@@ -143,27 +143,17 @@ def action_start_recording(device_state: DeviceState, audio_player, recorder, ui
     
     # Remember if we had active music context (PLAYING or PAUSED)
     # After recording, we return to PAUSED if music was active, else IDLE_CHIP_LOADED
-    was_playing = (device_state.state == State.PLAYING)
     device_state.was_playing_before_recording = (device_state.state in (State.PLAYING, State.PAUSED))
     device_state.previous_state = device_state.state
-    
-    # Pause music if playing
-    if was_playing:
-        log_action("Pausing music for recording")
-        audio_player.pause()
     
     log_action(f"Starting recording for chip: {device_state.loaded_chip.name}")
     success = recorder.start(device_state.loaded_chip.name)
     
     if not success:
-        # Recording failed - revert state changes
+        # Recording failed - MicSession already restored media if it paused it
         log_action("Recording failed to start")
         device_state.was_playing_before_recording = False
         device_state.previous_state = None
-        # Resume music if we paused it
-        if was_playing:
-            log_action("Resuming music after failed recording start")
-            audio_player.resume()
         ui.on_error()
         return device_state
     
@@ -251,7 +241,7 @@ def action_save_recording(device_state: DeviceState, recorder, ui) -> DeviceStat
     return device_state
 
 
-def action_cancel_recording(device_state: DeviceState, recorder, audio_player, ui) -> DeviceState:
+def action_cancel_recording(device_state: DeviceState, recorder, ui) -> DeviceState:
     """Cancel recording without saving - returns to exact previous state"""
     log_action("Canceling recording")
     recorder.cancel()
@@ -259,9 +249,7 @@ def action_cancel_recording(device_state: DeviceState, recorder, audio_player, u
     # Return to exact previous state (not just PAUSED like save does)
     previous = device_state.previous_state
     if previous == State.PLAYING:
-        # Resume playback since we paused it when recording started
-        log_action("Resuming playback after cancel")
-        audio_player.resume()
+        # MicSession already restored playback on recorder.cancel()
         device_state.state = State.PLAYING
     elif previous == State.PAUSED:
         device_state.state = State.PAUSED
@@ -279,7 +267,7 @@ def action_cancel_recording(device_state: DeviceState, recorder, audio_player, u
 def action_cancel_recording_and_clear(device_state: DeviceState, recorder, audio_player, ui) -> DeviceState:
     """Cancel recording and clear chip"""
     log_action("Canceling recording and clearing chip")
-    recorder.cancel()
+    recorder.cancel(restore=False)
     audio_player.stop()
     
     device_state.loaded_chip = None

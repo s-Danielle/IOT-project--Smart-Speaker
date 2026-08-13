@@ -76,11 +76,12 @@ class VoiceCommand:
         "easter_grade",
     }
     
-    def __init__(self):
+    def __init__(self, mic_session=None):
         """Initialize voice command processor."""
         self._enabled = PTT_ENABLED
         self._duration = PTT_LISTEN_DURATION
         self._wake_phrase = PTT_WAKE_PHRASE.lower()
+        self._mic = mic_session
         
         self._speech = SpeechRecognitionWrapper()
         
@@ -111,12 +112,16 @@ class VoiceCommand:
         if self._recording_process is not None:
             log("[VOICE] Already recording")
             return False
-        
-        # Create temp file for recording
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
-            self._recording_file = f.name
+
+        if self._mic is not None and not self._mic.acquire("ptt"):
+            log("[VOICE] Mic busy")
+            return False
         
         try:
+            # Create temp file for recording
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                self._recording_file = f.name
+
             # Build arecord command (no duration limit, we'll stop it manually)
             cmd = [
                 'arecord',
@@ -145,11 +150,15 @@ class VoiceCommand:
         except Exception as e:
             log(f"[VOICE] Failed to start recording: {e}")
             self._cleanup_recording()
+            self._release_mic(restore=True)
             return False
     
     def stop_and_parse(self) -> Optional[str]:
         """
         Stop recording and parse the command (for hold-to-talk mode).
+
+        Does not release MicSession — the caller decides whether to restore
+        media after it knows the command.
         
         Returns:
             Command string ("play", "pause", "stop", "clear") or None
@@ -236,6 +245,7 @@ class VoiceCommand:
             self._recording_process = None
             log("[VOICE] Recording cancelled")
         self._cleanup_recording()
+        self._release_mic(restore=True)
     
     def _cleanup_recording(self):
         """Clean up recording temp file."""
@@ -246,6 +256,10 @@ class VoiceCommand:
                 pass
             self._recording_file = None
         self._recording_start_time = None
+
+    def _release_mic(self, restore: bool):
+        if self._mic is not None:
+            self._mic.release(restore=restore)
     
     def listen_and_parse(self, duration: Optional[float] = None) -> Optional[str]:
         """
@@ -262,11 +276,18 @@ class VoiceCommand:
             log("[VOICE] PTT is disabled")
             return None
         
+        if self._mic is not None and not self._mic.acquire("ptt"):
+            log("[VOICE] Mic busy")
+            return None
+        
         duration = duration or self._duration
         
         # Step 1: Record audio
         log(f"[VOICE] Listening for {duration}s...")
-        audio_data = self._record_audio(duration)
+        try:
+            audio_data = self._record_audio(duration)
+        finally:
+            self._release_mic(restore=True)
         
         if audio_data is None:
             log("[VOICE] Recording failed")
