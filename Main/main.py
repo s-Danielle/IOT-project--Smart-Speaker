@@ -22,6 +22,7 @@ States:
 5. RECORDING - Recording in progress
 """
 
+import signal
 import sys
 import time
 
@@ -91,6 +92,12 @@ def main():
     log("Starting hardware controller...")
     try:
         controller = Controller()
+
+        def handle_sigterm(_signum, _frame):
+            log("SIGTERM received; stopping controller...")
+            controller.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
         controller.run()
     except Exception as e:
         log_error(f"Fatal error: {e}")

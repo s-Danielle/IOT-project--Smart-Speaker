@@ -433,7 +433,7 @@ def add_to_library(uri: str, name: str):
 # DEBUG / DEVELOPER TOOL FUNCTIONS
 # =============================================================================
 
-LOG_FILE = '/var/log/smart_speaker.log'
+LOG_FILE = '/var/log/smart_speaker/controller.log'
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)  # Parent of Main/
 
 

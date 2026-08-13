@@ -9,13 +9,14 @@ Type=simple
 User=iot-proj
 WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
 ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python main.py
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 # Logging
-# View with: journalctl -u smart_speaker -f  OR  tail -f /var/log/smart_speaker.log
-StandardOutput=append:/var/log/smart_speaker.log
-StandardError=append:/var/log/smart_speaker.log
+LogsDirectory=smart_speaker
+Environment=SMART_SPEAKER_LOG_FILE=/var/log/smart_speaker/controller.log
+StandardOutput=journal
+StandardError=journal
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
