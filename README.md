@@ -204,6 +204,9 @@ IOT-project--Smart-Speaker/
 │   ├── smart_speaker_health.service    # Health monitor
 │   ├── smart_speaker_wifi.service      # WiFi provisioner
 │   ├── nm-dnsmasq-captive.conf         # Captive-portal DNS catch-all
+│   ├── audio/                          # ALSA + Mopidy reference config (manual install)
+│   │   ├── asound.conf                 # dmix + feedback PCM (copy to /etc/asound.conf)
+│   │   └── mopidy.conf                 # Merge into /etc/mopidy/mopidy.conf
 │   ├── copy-and-enable-service.sh      # Installs & enables everything
 │   └── install-wifi-provisioner.sh     # WiFi provisioner setup (invoked by the above)
 │
@@ -324,6 +327,45 @@ iot-proj ALL=(ALL) NOPASSWD: /bin/systemctl start smart_speaker
 iot-proj ALL=(ALL) NOPASSWD: /sbin/reboot
 iot-proj ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 ```
+
+### Audio configuration
+
+Mopidy and the controller share the ReSpeaker card through ALSA dmix. The
+files in `services/audio/` are the source of truth; they are **not**
+installed by `copy-and-enable-service.sh`. Apply them by hand on the Pi.
+
+```bash
+# Confirm card 0 is seeed2micvoicec
+aplay -l
+
+# Both users must be in the audio group (dmix IPC is otherwise 0600)
+sudo usermod -aG audio iot-proj
+sudo usermod -aG audio mopidy
+
+# ALSA: backup the seeed-voicecard file, then install ours
+sudo cp /etc/asound.conf /etc/asound.conf.bak
+sudo cp services/audio/asound.conf /etc/asound.conf
+
+# Mopidy: backup, then merge the [audio], [mpd], and [file] sections from
+# services/audio/mopidy.conf into the live file. Do not overwrite it —
+# Spotify credentials live only on the device.
+sudo cp /etc/mopidy/mopidy.conf /etc/mopidy/mopidy.conf.bak
+sudo nano /etc/mopidy/mopidy.conf
+
+sudo systemctl restart mopidy
+```
+
+Rollback:
+
+```bash
+sudo mv /etc/asound.conf.bak /etc/asound.conf
+sudo cp /etc/mopidy/mopidy.conf.bak /etc/mopidy/mopidy.conf
+sudo systemctl restart mopidy
+```
+
+`mixer = none` means Mopidy applies no gain. Volume is the card's `PCM`
+control, so it survives reboots (ALSA saved state) and the parental cap
+persists across restarts.
 
 ---
 
