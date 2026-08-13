@@ -68,7 +68,9 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `VOLUME_STEP` | 10 | Volume change per button press (0-100 scale) |
-| `VOLUME_DEFAULT` | 50 | Default volume level on startup |
+| `VOLUME_DEFAULT` | 50 | Fallback if the ALSA mixer cannot be opened |
+| `ALSA_CARD` | 0 | ALSA card index for volume (`seeed2micvoicec`) |
+| `ALSA_VOLUME_CONTROL` | "PCM" | Mixer control written by the volume buttons |
 
 ---
 

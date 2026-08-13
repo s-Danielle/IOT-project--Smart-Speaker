@@ -4,7 +4,7 @@ Uses python-mpd2 library for MPD protocol communication
 """
 
 import time
-from config.settings import MOPIDY_HOST, MPD_PORT, VOLUME_STEP, VOLUME_DEFAULT, STATUS_POLL_INTERVAL
+from config.settings import MOPIDY_HOST, MPD_PORT, STATUS_POLL_INTERVAL
 from utils.logger import log_audio, log_error
 from utils.hardware_health import HardwareHealthManager
 
@@ -30,7 +30,6 @@ class AudioPlayer:
         
         # Local state cache to minimize Mopidy requests
         self._cached_state = "stop"      # "play", "pause", "stop"
-        self._cached_volume = VOLUME_DEFAULT
         self._last_status_check = 0.0    # Timestamp of last status poll
         
         # Register with health manager for connection error tracking
@@ -151,13 +150,6 @@ class AudioPlayer:
         status = self._execute(self._client.status)
         if status is not None:
             self._cached_state = status.get("state", "stop")
-            # Also update cached volume while we're at it
-            vol = status.get("volume")
-            if vol is not None:
-                try:
-                    self._cached_volume = int(vol)
-                except (ValueError, TypeError):
-                    pass
         
         return self._cached_state == "play"
     
@@ -169,68 +161,6 @@ class AudioPlayer:
             return song["file"]
         # Fall back to cached URI
         return self._current_uri
-    
-    # =========================================================================
-    # VOLUME CONTROL (works while playing, paused, or stopped)
-    # Uses MPD's volume commands: status() for get, setvol() for set
-    # =========================================================================
-    
-    def get_volume(self) -> int:
-        """Get current volume level from Mopidy (0-100)
-        
-        Always fetches fresh data to ensure accuracy for volume operations.
-        """
-        status = self._execute(self._client.status)
-        if status is None:
-            log_error("Failed to get volume, returning cached value")
-            return self._cached_volume
-        
-        volume_str = status.get("volume", None)
-        if volume_str is None:
-            log_error("Volume not available in status, returning cached value")
-            return self._cached_volume
-        
-        try:
-            volume = int(volume_str)
-            self._cached_volume = volume  # Update cache
-            return volume
-        except (ValueError, TypeError):
-            log_error(f"Invalid volume value: {volume_str}, returning cached value")
-            return self._cached_volume
-    
-    def set_volume(self, volume: int) -> bool:
-        """Set volume level (0-100). Returns True if successful."""
-        # Clamp volume to valid range
-        volume = max(0, min(100, volume))
-        
-        # MPD setvol returns None on success, so request an explicit success value.
-        result = self._execute(self._client.setvol, volume, _none_is_success=True)
-        if result is None:
-            log_error(f"Failed to set volume to {volume}")
-            return False
-        self._cached_volume = volume
-        log_audio(f"Volume set to {volume}")
-        return True
-    
-    def volume_up(self) -> int:
-        """Increase volume by VOLUME_STEP. Returns new volume level.
-        
-        Fetches current volume from Mopidy to ensure accuracy with rapid presses.
-        """
-        current = self.get_volume()
-        new_volume = min(100, current + VOLUME_STEP)
-        self.set_volume(new_volume)
-        return new_volume
-    
-    def volume_down(self) -> int:
-        """Decrease volume by VOLUME_STEP. Returns new volume level.
-        
-        Fetches current volume from Mopidy to ensure accuracy with rapid presses.
-        """
-        current = self.get_volume()
-        new_volume = max(0, current - VOLUME_STEP)
-        self.set_volume(new_volume)
-        return new_volume
     
     def refresh_status(self) -> dict:
         """Force refresh status from Mopidy, bypassing cache.
@@ -244,12 +174,6 @@ class AudioPlayer:
         status = self._execute(self._client.status)
         if status is not None:
             self._cached_state = status.get("state", "stop")
-            vol = status.get("volume")
-            if vol is not None:
-                try:
-                    self._cached_volume = int(vol)
-                except (ValueError, TypeError):
-                    pass
         return status
     
     def close(self):

@@ -15,6 +15,7 @@ from hardware.nfc_service import NFCService
 from hardware.chip_store import ChipStore
 from hardware.buttons import Buttons, ButtonID
 from hardware.audio_player import AudioPlayer
+from hardware.mixer import Mixer
 from hardware.recorder import Recorder
 from ui.ui_controller import UIController
 from config.settings import (
@@ -53,6 +54,7 @@ class Controller:
         self._chip_store = ChipStore()
         self._buttons = Buttons()
         self._audio = AudioPlayer()
+        self._mixer = Mixer()
         self._recorder = Recorder()
         self._ui = UIController()
         
@@ -413,10 +415,10 @@ class Controller:
             if limit >= 100:
                 return  # No limit active
             
-            current_vol = self._audio.get_volume()
+            current_vol = self._mixer.get_volume()
             if current_vol > limit:
                 log_event(f"[PARENTAL] Current volume {current_vol}% exceeds limit {limit}% - reducing")
-                self._audio.set_volume(limit)
+                self._mixer.set_volume(limit)
                 self._ui.on_volume_change(limit)
         except Exception as e:
             log_error(f"[PARENTAL] Error checking volume limit: {e}")
@@ -861,7 +863,7 @@ class Controller:
         """
         Handle Volume Up/Down buttons
         - Volume can be adjusted in any state except RECORDING
-        - Works while playing, paused, or idle (via Mopidy's mixer API)
+        - Works while playing, paused, or idle (card PCM control)
         """
         # RECORDING: Volume buttons are blocked
         if state == State.RECORDING:
@@ -872,12 +874,12 @@ class Controller:
         
         # Volume Up - trigger on button press (not release) for responsive feel
         if self._buttons.just_pressed(ButtonID.VOLUME_UP):
-            new_vol = self._audio.volume_up()
+            new_vol = self._mixer.volume_up()
             # Enforce parental volume limit
             limit = self._get_volume_limit()
             if new_vol > limit:
                 log_event(f"[PARENTAL] Volume capped at {limit}% (limit enforced)")
-                self._audio.set_volume(limit)
+                self._mixer.set_volume(limit)
                 new_vol = limit
             log_button(f"Volume up -> {new_vol}")
             self._ui.on_volume_change(new_vol)
@@ -885,7 +887,7 @@ class Controller:
         
         # Volume Down - trigger on button press (not release) for responsive feel
         if self._buttons.just_pressed(ButtonID.VOLUME_DOWN):
-            new_vol = self._audio.volume_down()
+            new_vol = self._mixer.volume_down()
             log_button(f"Volume down -> {new_vol}")
             self._ui.on_volume_change(new_vol)
             return
@@ -1073,7 +1075,7 @@ class Controller:
         if command == "easter_shut_up":
             # Set volume to 0 (mute)
             log_event("[EASTER EGG] Shut up! Setting volume to 0")
-            self._audio.set_volume(0)
+            self._mixer.set_volume(0)
             self._ui.on_volume_change(0)
             self._ptt_blink(Colors.GREEN)
         

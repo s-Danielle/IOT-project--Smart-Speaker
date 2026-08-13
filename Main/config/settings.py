@@ -33,9 +33,11 @@ BUTTON_VOLUME_UP_BIT = 3    # P3 (Button 4)
 BUTTON_VOLUME_DOWN_BIT = 4  # P4 (Button 5)
 BUTTON_PTT_BIT = 5          # P5 (Button 6) - Push-to-Talk voice commands
 
-# Volume settings
+# Volume settings (card PCM control, not Mopidy)
 VOLUME_STEP = 10  # Volume change per button press (0-100 scale)
-VOLUME_DEFAULT = 50  # Default volume level
+VOLUME_DEFAULT = 50  # Fallback if the ALSA mixer cannot be opened
+ALSA_CARD = 0  # seeed2micvoicec; confirm with `aplay -l`
+ALSA_VOLUME_CONTROL = "PCM"
 
 # HTTP Server settings (local API server)
 SERVER_HOST = "localhost"

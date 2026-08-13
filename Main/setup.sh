@@ -41,6 +41,12 @@ else
     echo "❌ Button hardware libraries not found (required for button input)"
     echo "   Install with: pip3 install smbus2"
 fi
+if python3 -c "import alsaaudio" 2>/dev/null; then
+    echo "✅ pyalsaaudio available"
+else
+    echo "❌ pyalsaaudio not found (required for volume control)"
+    echo "   Install with: sudo apt-get install libasound2-dev && pip3 install pyalsaaudio"
+fi
 echo ""
 
 # Check for system tools

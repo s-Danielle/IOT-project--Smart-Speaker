@@ -86,8 +86,9 @@ class UIController:
     def on_volume_change(self, volume: int):
         """Feedback when volume changes
         
-        Note: We don't play a sound here because that would interrupt music playback.
-        Volume control works while music is playing via Mopidy's mixer API.
+        Note: Volume is the card PCM control, so a beep here would layer
+        over music rather than replace it. We still skip it — volume
+        changes are frequent and a chime on every step would be noisy.
         """
         log_event(f"VOLUME: {volume}")
         self._lights.show_volume(volume)

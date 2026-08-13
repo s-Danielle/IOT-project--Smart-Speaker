@@ -171,6 +171,7 @@ IOT-project--Smart-Speaker/
 │   │   ├── leds.py              # PCF8574 LED controller
 │   │   ├── audio_player.py      # Mopidy MPD client
 │   │   ├── feedback_player.py   # UI WAV playback via aplay
+│   │   ├── mixer.py             # Card PCM volume via pyalsaaudio
 │   │   ├── recorder.py          # Audio recording
 │   │   └── voice_command.py     # PTT speech recognition
 │   ├── ui/                      # User feedback
@@ -244,6 +245,7 @@ All dependencies are listed in `requirements.txt`. Key libraries:
 | adafruit-circuitpython-pn532 | 2.4.6 | PN532 NFC reader driver |
 | smbus2 | 0.5.0 | I2C communication |
 | python-mpd2 | 3.1.1 | Mopidy MPD client |
+| pyalsaaudio | 0.11.0 | ALSA mixer (card volume) |
 | RPi.GPIO | 0.7.1 | GPIO access |
 | SpeechRecognition | 3.10.0+ | PTT voice commands |
 | requests | 2.32.5 | HTTP client |
