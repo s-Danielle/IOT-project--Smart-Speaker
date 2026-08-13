@@ -33,17 +33,17 @@ class UIController:
     
     def on_play(self):
         """Feedback when playback starts/resumes"""
-        log_event("PLAY")
+        log_event("▶️  PLAY")
         self._lights.show_playing()
     
     def on_pause(self):
         """Feedback when playback pauses"""
-        log_event("PAUSE")
+        log_event("⏸️  PAUSE")
         self._lights.show_paused()
     
     def on_stop(self):
         """Feedback when playback stops"""
-        log_event("STOP")
+        log_event("⏹️  STOP")
         self._sounds.play_stop()
         self._lights.show_chip_loaded()
     
@@ -55,13 +55,13 @@ class UIController:
     
     def on_record_start(self):
         """Feedback when recording starts"""
-        log_event("RECORDING STARTED")
+        log_event("🎙️  RECORDING STARTED")
         self._sounds.play_record_start()
         self._lights.show_recording()
     
     def on_record_saved(self):
         """Feedback when recording is saved"""
-        log_event("RECORDING SAVED")
+        log_event("💾 RECORDING SAVED")
         self._sounds.play_record_saved()
         self._lights.show_success()
     
@@ -79,7 +79,7 @@ class UIController:
     
     def on_error(self):
         """Feedback for errors"""
-        log_event("ERROR")
+        log_event("❌ ERROR")
         self._sounds.play_error()
         self._lights.show_error()
     

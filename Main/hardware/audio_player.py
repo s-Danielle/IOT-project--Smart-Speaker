@@ -140,7 +140,7 @@ class AudioPlayer:
                           Use this when you need guaranteed fresh data, e.g.,
                           when confirming playback has actually started.
         """
-        now = time.time()
+        now = time.monotonic()
         
         # Use cache if recent enough (unless force_refresh requested)
         if not force_refresh and now - self._last_status_check < STATUS_POLL_INTERVAL:
@@ -240,7 +240,7 @@ class AudioPlayer:
         
         Returns the raw status dict from Mopidy, or None on error.
         """
-        self._last_status_check = time.time()
+        self._last_status_check = time.monotonic()
         status = self._execute(self._client.status)
         if status is not None:
             self._cached_state = status.get("state", "stop")

@@ -137,7 +137,7 @@ class VoiceCommand:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE
             )
-            self._recording_start_time = time.time()
+            self._recording_start_time = time.monotonic()
             
             log("[VOICE] Recording started (hold button, release when done)")
             return True
@@ -159,7 +159,7 @@ class VoiceCommand:
             return None
         
         # Calculate recording duration
-        duration = time.time() - self._recording_start_time if self._recording_start_time else 0
+        duration = time.monotonic() - self._recording_start_time if self._recording_start_time else 0
         log(f"[VOICE] Stopping recording (duration: {duration:.1f}s)")
         
         # Stop the recording process

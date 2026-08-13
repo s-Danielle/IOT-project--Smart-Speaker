@@ -29,7 +29,7 @@ class Sounds:
     
     def _play_file(self, filepath: str, name: str):
         """Play a WAV file through Mopidy"""
-        current_time = time.time()
+        current_time = time.monotonic()
         
         # Check cooldown
         if current_time - self._last_sound_time < self._cooldown:

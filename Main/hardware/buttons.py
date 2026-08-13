@@ -103,7 +103,7 @@ class Buttons:
     def update(self):
         """Update button states - call this every loop iteration"""
         raw = self._read_raw()
-        current_time = time.time()
+        current_time = time.monotonic()
         
         for button, bit in self.BUTTON_BITS.items():
             state = self._states[button]
@@ -140,14 +140,14 @@ class Buttons:
         """Get how long button has been held (0 if not pressed)"""
         state = self._states[button]
         if state.is_pressed:
-            return time.time() - state.press_start_time
+            return time.monotonic() - state.press_start_time
         return 0.0
     
     def get_release_duration(self, button: ButtonID) -> float:
         """Get how long button was held when released (only valid on release frame)"""
         state = self._states[button]
         if self.just_released(button):
-            return time.time() - state.press_start_time
+            return time.monotonic() - state.press_start_time
         return 0.0
     
     def close(self):

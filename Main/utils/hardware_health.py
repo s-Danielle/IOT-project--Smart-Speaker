@@ -122,7 +122,7 @@ class ComponentTracker:
                 return False
             
             # Rate-limit logging
-            current_time = time.time()
+            current_time = time.monotonic()
             if current_time - self._last_error_log_time < self._log_interval:
                 return False
             

@@ -163,7 +163,7 @@ class HealthMonitor:
     
     def _blink(self, color: tuple):
         """Single blink for status indication"""
-        if int(time.time() * 2) % 2 == 0:
+        if int(time.monotonic() * 2) % 2 == 0:
             self._leds.set_light(self.LIGHT, color)
         else:
             self._leds.off(self.LIGHT)
@@ -260,8 +260,8 @@ class HealthMonitor:
         log_health("Button hardware errors detected - starting recovery")
         
         # Blink red LED for 10 seconds
-        blink_start = time.time()
-        while time.time() - blink_start < self.BUTTON_ERROR_BLINK_DURATION:
+        blink_start = time.monotonic()
+        while time.monotonic() - blink_start < self.BUTTON_ERROR_BLINK_DURATION:
             self._leds.set_light(self.LIGHT, Colors.RED)
             time.sleep(0.25)
             self._leds.off(self.LIGHT)
@@ -291,7 +291,7 @@ class HealthMonitor:
             progress = vol_up_duration / LONG_PRESS_REBOOT_DURATION
             if progress > 0.5:
                 # Blink to indicate long press is being detected
-                if int(time.time() * 4) % 2 == 0:
+                if int(time.monotonic() * 4) % 2 == 0:
                     self._leds.set_light(self.LIGHT, Colors.BLUE)
                 else:
                     self._leds.off(self.LIGHT)
@@ -310,7 +310,7 @@ class HealthMonitor:
             progress = vol_down_duration / LONG_PRESS_RESTART_SERVICES_DURATION
             if progress > 0.5:
                 # Blink to indicate long press is being detected
-                if int(time.time() * 4) % 2 == 0:
+                if int(time.monotonic() * 4) % 2 == 0:
                     self._leds.set_light(self.LIGHT, Colors.BLUE)
                 else:
                     self._leds.off(self.LIGHT)
@@ -334,7 +334,7 @@ class HealthMonitor:
         # Main monitoring loop - fast polling for buttons
         while self._running:
             try:
-                current_time = time.time()
+                current_time = time.monotonic()
                 
                 # Check for button hardware errors first
                 # If errors detected, handle recovery (blink red, restart service)
