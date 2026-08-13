@@ -66,7 +66,7 @@ class AudioPlayer:
                     log_error(f"MPD connection error: {e}")
                 self._connected = False
     
-    def _execute(self, func, *args, **kwargs):
+    def _execute(self, func, *args, _none_is_success=False, **kwargs):
         """Execute MPD command with automatic reconnection on failure"""
         self._ensure_connected()
         if not self._connected:
@@ -75,7 +75,7 @@ class AudioPlayer:
         try:
             result = func(*args, **kwargs)
             self._health.report_success()
-            return result
+            return True if _none_is_success and result is None else result
         except (MPDConnectionError, OSError, IOError) as e:
             # Connection-related errors - try to reconnect once
             if self._health.report_error(e):
@@ -86,7 +86,7 @@ class AudioPlayer:
                 try:
                     result = func(*args, **kwargs)
                     self._health.report_success()
-                    return result
+                    return True if _none_is_success and result is None else result
                 except Exception as e:
                     if self._health.report_error(e):
                         log_error(f"MPD command error after reconnect: {e}")
@@ -208,13 +208,12 @@ class AudioPlayer:
         volume = max(0, min(100, volume))
         log_audio(f"🔊 Setting volume to {volume}")
         
-        # Update cache immediately (optimistic update)
-        self._cached_volume = volume
-        
-        result = self._execute(self._client.setvol, volume)
+        # MPD setvol returns None on success, so request an explicit success value.
+        result = self._execute(self._client.setvol, volume, _none_is_success=True)
         if result is None:
             log_error(f"Failed to set volume to {volume}")
             return False
+        self._cached_volume = volume
         log_success(f"Volume set to {volume}")
         return True
     
