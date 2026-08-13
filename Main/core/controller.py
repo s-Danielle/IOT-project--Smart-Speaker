@@ -126,7 +126,7 @@ class Controller:
                 
                 # Periodically check volume limit (every 2 seconds)
                 # This ensures volume is reduced if a new lower limit is set
-                now = time.time()
+                now = time.monotonic()
                 if now - self._last_volume_limit_check >= 2.0:
                     self._check_and_enforce_volume_limit()
                     self._last_volume_limit_check = now
@@ -208,7 +208,7 @@ class Controller:
         
         try:
             # Track play initiation time and reset tracking state
-            self._play_initiated_time = time.time()
+            self._play_initiated_time = time.monotonic()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self._audio.play_uri(file_uri)
@@ -243,7 +243,7 @@ class Controller:
         if self.device_state.state != State.PLAYING:
             return
         
-        now = time.time()
+        now = time.monotonic()
         
         # Phase 1: Wait for playback to be confirmed
         if not self._playback_confirmed:
@@ -449,7 +449,7 @@ class Controller:
     def _update_playback_usage(self):
         """Update daily usage when playback stops/pauses."""
         if self._playback_time_start is not None:
-            elapsed = time.time() - self._playback_time_start
+            elapsed = time.monotonic() - self._playback_time_start
             if elapsed > 0:
                 add_daily_usage(int(elapsed))
                 log_event(f"[USAGE] Added {int(elapsed)} seconds to daily usage")
@@ -457,7 +457,7 @@ class Controller:
     
     def _start_playback_tracking(self):
         """Start tracking playback time for daily usage."""
-        self._playback_time_start = time.time()
+        self._playback_time_start = time.monotonic()
     
     # =========================================================================
     # RECORDING LIMITS
@@ -492,7 +492,7 @@ class Controller:
         if self._recording_start_time is None:
             return
         
-        elapsed = time.time() - self._recording_start_time
+        elapsed = time.monotonic() - self._recording_start_time
         if elapsed >= MAX_RECORDING_DURATION:
             log_event(f"[RECORDING] Max duration reached ({MAX_RECORDING_DURATION}s) - auto-saving")
             self._recording_start_time = None
@@ -670,7 +670,7 @@ class Controller:
             self._check_and_enforce_volume_limit()
             
             # Track play initiation time and reset tracking state
-            self._play_initiated_time = time.time()
+            self._play_initiated_time = time.monotonic()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self._start_playback_tracking()  # Start tracking for daily usage
@@ -699,7 +699,7 @@ class Controller:
             self._check_and_enforce_volume_limit()
             
             # Track resume time - resuming may also need buffering for Spotify
-            self._play_initiated_time = time.time()
+            self._play_initiated_time = time.monotonic()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self._start_playback_tracking()  # Resume tracking for daily usage
@@ -757,7 +757,7 @@ class Controller:
                     return
                 
                 # Start recording immediately (no need to wait for release)
-                self._recording_start_time = time.time()  # Track recording start
+                self._recording_start_time = time.monotonic()  # Track recording start
                 self.device_state = actions.action_start_recording(
                     self.device_state, self._audio, self._recorder, self._ui
                 )
@@ -986,7 +986,7 @@ class Controller:
             
             if state == State.PAUSED:
                 # Resume paused playback
-                self._play_initiated_time = time.time()
+                self._play_initiated_time = time.monotonic()
                 self._playback_confirmed = False
                 self._playback_confirmed_time = None
                 self._start_playback_tracking()  # Resume tracking for daily usage
@@ -995,7 +995,7 @@ class Controller:
                 )
             elif state == State.IDLE_CHIP_LOADED:
                 # Start playback
-                self._play_initiated_time = time.time()
+                self._play_initiated_time = time.monotonic()
                 self._playback_confirmed = False
                 self._playback_confirmed_time = None
                 self._start_playback_tracking()  # Start tracking for daily usage
@@ -1085,7 +1085,7 @@ class Controller:
             # Stop any current playback and play the easter egg
             self._audio.stop()
             self._reset_playback_tracking()
-            self._play_initiated_time = time.time()
+            self._play_initiated_time = time.monotonic()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self._audio.play_uri(uri)
@@ -1119,7 +1119,7 @@ class Controller:
             # Stop any current playback and play the easter egg
             self._audio.stop()
             self._reset_playback_tracking()
-            self._play_initiated_time = time.time()
+            self._play_initiated_time = time.monotonic()
             self._playback_confirmed = False
             self._playback_confirmed_time = None
             self._audio.play_uri(uri)
@@ -1157,7 +1157,7 @@ class Controller:
                 
                 # Convert to file:// URI
                 uri = f"file://{os.path.abspath(sound_path)}"
-                self._play_initiated_time = time.time()
+                self._play_initiated_time = time.monotonic()
                 self._playback_confirmed = False
                 self._playback_confirmed_time = None
                 self._audio.play_uri(uri)
