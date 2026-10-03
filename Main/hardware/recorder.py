@@ -15,11 +15,12 @@ from utils.logger import log_recording, log_error, log_success
 class Recorder:
     """Audio recorder using arecord"""
     
-    def __init__(self):
+    def __init__(self, mic_session=None):
         """Initialize recorder"""
         self._process: Optional[subprocess.Popen] = None
         self._current_file: Optional[str] = None
         self._recording = False
+        self._mic = mic_session
         
         # Ensure recordings directory exists
         os.makedirs(RECORDINGS_DIR, exist_ok=True)
@@ -29,6 +30,10 @@ class Recorder:
         """Start recording to file. Returns True if recording started successfully."""
         if self._recording:
             log_error("Already recording!")
+            return False
+
+        if self._mic is not None and not self._mic.acquire("record"):
+            log_error("Cannot record: mic is in use")
             return False
         
         # Generate filename with timestamp and chip name
@@ -43,6 +48,7 @@ class Recorder:
         except (FileNotFoundError, subprocess.CalledProcessError):
             log_error("arecord command not found in PATH")
             log_error("On Raspberry Pi, install with: sudo apt-get install alsa-utils")
+            self._release_mic(restore=True)
             return False
         
         try:
@@ -74,6 +80,7 @@ class Recorder:
                 log_error(f"Check recording device: {RECORDING_DEVICE}")
                 log_error("List available devices with: arecord -l")
                 self._process = None
+                self._release_mic(restore=True)
                 return False
             
             self._recording = True
@@ -82,11 +89,13 @@ class Recorder:
         except FileNotFoundError:
             log_error("arecord executable not found")
             log_error("On Raspberry Pi, install with: sudo apt-get install alsa-utils")
+            self._release_mic(restore=True)
             return False
         except Exception as e:
             log_error(f"Failed to start recording: {e}")
             self._current_file = None
             self._recording = False
+            self._release_mic(restore=True)
             return False
     
     def stop(self) -> Optional[str]:
@@ -118,6 +127,7 @@ class Recorder:
         self._recording = False
         saved_file = self._current_file
         self._current_file = None
+        self._release_mic(restore=False)
         
         if saved_file:
             if os.path.exists(saved_file):
@@ -134,7 +144,7 @@ class Recorder:
         
         return saved_file
     
-    def cancel(self):
+    def cancel(self, restore: bool = True):
         """Cancel recording (delete file)"""
         if not self._recording:
             return
@@ -159,11 +169,16 @@ class Recorder:
         
         self._recording = False
         self._current_file = None
+        self._release_mic(restore=restore)
     
     def is_recording(self) -> bool:
         """Check if currently recording"""
         return self._recording
     
+    def _release_mic(self, restore: bool):
+        if self._mic is not None:
+            self._mic.release(restore=restore)
+
     def close(self):
         """Clean up recorder resources"""
         if self._recording:
