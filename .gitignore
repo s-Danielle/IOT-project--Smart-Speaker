@@ -77,3 +77,6 @@ Main/web_app/*
 *.pdf
 *.jpg
 
+
+# pytest
+.pytest_cache/

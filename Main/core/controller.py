@@ -40,7 +40,13 @@ import shutil
 class Controller:
     """Main controller that handles the event loop and state machine"""
     
-    def __init__(self):
+    def __init__(self, **parts):
+        """Build the controller.
+
+        The speaker passes nothing and gets the real hardware. Tests pass fake
+        parts (nfc, chip_store, buttons, audio, mixer, ui, mic, recorder,
+        voice_command, ptt_leds) so the logic can run without any hardware.
+        """
         log("=" * 60)
         log("SMART SPEAKER CONTROLLER STARTING")
         log("=" * 60)
@@ -50,19 +56,29 @@ class Controller:
         
         # Initialize hardware components
         log("Initializing components...")
-        self._nfc = NFCService()
-        self._nfc.start()
-        self._chip_store = ChipStore()
-        self._buttons = Buttons()
-        self._audio = AudioPlayer()
-        self._mixer = Mixer()
-        self._ui = UIController()
-        self._mic = MicSession(self._audio, silence_feedback=self._ui._sounds.stop)
-        self._recorder = Recorder(mic_session=self._mic)
+        def part(name, make):
+            return parts[name] if name in parts else make()
+
+        if "nfc" in parts:
+            self._nfc = parts["nfc"]
+        else:
+            self._nfc = NFCService()
+            self._nfc.start()
+        self._chip_store = part("chip_store", ChipStore)
+        self._buttons = part("buttons", Buttons)
+        self._audio = part("audio", AudioPlayer)
+        self._mixer = part("mixer", Mixer)
+        self._ui = part("ui", UIController)
+        self._mic = part("mic", lambda: MicSession(self._audio, silence_feedback=self._ui._sounds.stop))
+        self._recorder = part("recorder", lambda: Recorder(mic_session=self._mic))
         
         # Track record button arming (hold RECORD_HOLD_DURATION to arm)
         self._record_armed = False
         self._countdown_played = False  # Track if countdown sound was played
+
+        # The Record press that saved a recording is still down for a moment; it must
+        # not start a new countdown (that cut the "saved" chime off)
+        self._record_press_consumed = False
         
         # Track stop button long-press to prevent repeated execution
         self._stop_long_press_triggered = False
@@ -77,7 +93,10 @@ class Controller:
         # PTT (Push-to-Talk) voice command support
         self._voice_command = None
         self._ptt_leds = None
-        if PTT_ENABLED:
+        if "voice_command" in parts:
+            self._voice_command = parts["voice_command"]
+            self._ptt_leds = parts.get("ptt_leds")
+        elif PTT_ENABLED:
             try:
                 from hardware.voice_command import VoiceCommand
                 self._voice_command = VoiceCommand(mic_session=self._mic)
@@ -115,25 +134,7 @@ class Controller:
         
         try:
             while self._running:
-                # Update button states
-                self._buttons.update()
-                
-                # Process inputs based on current state
-                self._handle_nfc()
-                self._handle_buttons()
-                
-                # Check if playback finished naturally
-                self._check_playback_finished()
-                
-                # Check if recording exceeded max duration
-                self._check_recording_time_limit()
-                
-                # Periodically check volume limit (every 2 seconds)
-                # This ensures volume is reduced if a new lower limit is set
-                now = time.monotonic()
-                if now - self._last_volume_limit_check >= 2.0:
-                    self._check_and_enforce_volume_limit()
-                    self._last_volume_limit_check = now
+                self.step()
                 
                 # Sleep for loop interval
                 time.sleep(LOOP_INTERVAL)
@@ -143,6 +144,28 @@ class Controller:
         finally:
             self.shutdown()
     
+    def step(self):
+        """One pass of the main loop, without the sleep. The tests call this directly."""
+        # Update button states
+        self._buttons.update()
+
+        # Process inputs based on current state
+        self._handle_nfc()
+        self._handle_buttons()
+
+        # Check if playback finished naturally
+        self._check_playback_finished()
+
+        # Check if recording exceeded max duration
+        self._check_recording_time_limit()
+
+        # Periodically check volume limit (every 2 seconds)
+        # This ensures volume is reduced if a new lower limit is set
+        now = time.monotonic()
+        if now - self._last_volume_limit_check >= 2.0:
+            self._check_and_enforce_volume_limit()
+            self._last_volume_limit_check = now
+
     def shutdown(self):
         """Clean shutdown"""
         log("=" * 60)
@@ -738,12 +761,21 @@ class Controller:
         if state == State.RECORDING:
             if self._buttons.just_pressed(ButtonID.RECORD):
                 log_button("Record button pressed - saving recording")
+                self._record_press_consumed = True  # this press must not start a countdown
                 self._recording_start_time = None  # Reset recording time tracking
                 self.device_state = actions.action_save_recording(
                     self.device_state, self._recorder, self._ui
                 )
             return
         
+        # The press that saved the recording is still down: ignore it until it is released
+        if self._record_press_consumed:
+            if not self._buttons.is_pressed(ButtonID.RECORD):
+                self._record_press_consumed = False
+                self._record_armed = False
+                self._countdown_played = False
+            return
+
         # PTT and voice-memo recording share one arecord; the other owner
         # already holds MicSession.
         if state != State.RECORDING and self._mic.is_held():
@@ -809,6 +841,15 @@ class Controller:
         - Short press: Stop playback OR cancel recording
         - Long press (CLEAR_CHIP_HOLD_DURATION): Clear chip
         """
+        # Settle the long-press flag first, in every state. A long press can change
+        # the state (it clears the chip), so the flag must not wait for a state that
+        # never comes back, or the next press of Stop would be swallowed.
+        if not self._buttons.is_pressed(ButtonID.STOP):
+            was_long_press = self._stop_long_press_triggered
+            self._stop_long_press_triggered = False
+            if was_long_press and self._buttons.just_released(ButtonID.STOP):
+                return  # letting go of a long press: it already did its job
+
         # IDLE_NO_CHIP: No effect
         if state == State.IDLE_NO_CHIP:
             if self._buttons.just_released(ButtonID.STOP):
@@ -842,15 +883,8 @@ class Controller:
                     )
                 return
         
-        # Reset long-press flag when button is released
+        # Short press: released before the long-press time (a released long press returned above)
         if self._buttons.just_released(ButtonID.STOP):
-            was_long_press = self._stop_long_press_triggered
-            self._stop_long_press_triggered = False
-            
-            # If it was a long press, we already handled it above
-            if was_long_press:
-                return
-            
             hold_time = self._buttons.get_release_duration(ButtonID.STOP)
             
             log_button(f"Stop short press ({hold_time:.2f}s)")
