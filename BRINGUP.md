@@ -25,7 +25,8 @@ Nothing has been pushed to GitHub. Step 3 needs the branch `pi/audio-stack` on G
   - [ ] the I2C cable chain is intact
   - [ ] the NFC reader is on 5 V as drawn, with a common ground for buttons, LEDs and Pi
   - [ ] no stray wire strands or shorts
-- [ ] **1.5** LEDs: how many RGB LEDs are installed? The diagram says 2 (Connectivity on P0-2, Speaker on P3-5). The code drives 3 (Health, PTT and a split Speaker LED). Label each with tape and tell me. Note whether they're common-cathode and whether they have resistors.
+- [x] **1.5** LEDs: how many RGB LEDs are installed? The diagram says 2 (Connectivity on P0-2, Speaker on P3-5). The code drives 3 (Health, PTT and a split Speaker LED). Label each with tape and tell me. Note whether they're common-cathode and whether they have resistors.
+  - **Answer (Oct 3): 3 LEDs are installed**, so the code is right and the wiring diagram is out of date. Which LED is which, and the colour order, are checked in 4.3.
 - [ ] **1.6** Buttons: 6 buttons to ground, in this order: Play/Pause, Record, Stop, Vol+, Vol-, PTT. None stuck.
 - [ ] **1.7** The speaker is on the HAT's 3.5 mm jack and powered over USB. The mic holes are uncovered.
 - [ ] **1.8** Logistics: 4 NFC tags and the demo phone nearby. Tell me which **2.4 GHz** WiFi the Pi should join (the Zero 2 W can't use 5 GHz). If its old network is gone, we use the `SmartSpeaker-Setup` hotspot, which is itself test 1 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md).
@@ -37,6 +38,7 @@ Nothing has been pushed to GitHub. Step 3 needs the branch `pi/audio-stack` on G
   - Did the Aug 13 `credentials.json` ever get copied to the Pi, and did playback work afterwards?
   - What kinds of Spotify links are in the library (tracks, albums, playlists, and whose playlists)?
   - Does anything else play on that account while the speaker does? Spotify allows one active stream per account.
+  - **Update (Oct 3):** the old logs answer the first question (every Spotify tap on Sep 5 failed at the first step and the speaker sat silent for a minute; see [docs/SPOTIFY.md](docs/SPOTIFY.md)). The library holds only track links (seventh question: nothing to answer). The Aug 13 question is probably "yes, and it worked": `pi_report.sh` will confirm it from the date of the credentials file. The rest are still open.
 - [ ] **1.10** Make sure one chip plays a **local file** (upload an MP3 in the app and assign it). It's the control for every Spotify test, and the backup for the demo.
 
 ---
@@ -44,6 +46,8 @@ Nothing has been pushed to GitHub. Step 3 needs the branch `pi/audio-stack` on G
 ## Step 2: power on and test the Pi as it is today (about 60 minutes)
 
 The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind GitHub's `main` (a read-only look on Oct 3 showed this). We want to know what works before we change anything.
+
+**Where we are (Oct 3):** the Pi is on, on the same WiFi as this computer, and a Spotify song played fine on the old code. So 2.5 is now about measuring (how long a song takes to start, which kinds of link work) rather than finding a failure.
 
 - [ ] **2.1** Power on and watch Light 1 for about 90 seconds (yellow pulse, then blue or green). Tell me anything odd, especially lights flickering or going dark every few seconds.
 - [ ] **2.2** *On this computer*, in the repo folder, copy the helper scripts to the Pi (it only writes `/tmp/pi` on the Pi). Use `rpi2.local`: plain `rpi2` does not resolve from this computer.
@@ -198,6 +202,6 @@ sudo systemctl stop smart_speaker smart_speaker_health
 | undo the last code switch | `bash /tmp/pi/pi_update.sh --undo` |
 | undo the sound and Mopidy settings | `bash /tmp/pi/pi_install_audio.sh --rollback` |
 | back up / list / restore | `bash /tmp/pi/pi_backup.sh`, `--list`, `--restore <folder> --dry-run` |
-| read the logs | `journalctl -u smart_speaker -u mopidy -n 100`, `/var/log/smart_speaker/controller.log` |
+| read the logs | `journalctl -u smart_speaker -u mopidy -n 100`; the controller's own log is `/var/log/smart_speaker.log` on the old code and `/var/log/smart_speaker/controller.log` on newer code |
 
 If `/tmp/pi` is gone after a reboot, run `scripts/pi/push_to_pi.sh iot-proj@rpi2.local` again on this computer.
