@@ -71,6 +71,8 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
   sudo python3 /tmp/pi/spotify_check.py --label "baseline at 45a4eae" > /tmp/spotify.txt
   ```
   It asks for an album link and two playlist links (one you own, one you don't). Press Enter to skip any of them. It counts down 5 seconds, then plays about 5 seconds from each link. The progress shows on screen and the results go to the file.
+
+  **Oct 3:** the first version said "PLAYBACK FAILED" because it didn't wait for Spotify to load, and it was run without `sudo`. It's fixed. Copy the scripts again (2.2), then run it with `sudo`. A Spotify song takes a few seconds to start, so each Spotify link now takes about 10 seconds. If there's no local song it plays a quiet test tone as the control.
 - [ ] **2.6** Back everything up (it asks for your sudo password for a few root-only files):
   ```
   bash /tmp/pi/pi_backup.sh

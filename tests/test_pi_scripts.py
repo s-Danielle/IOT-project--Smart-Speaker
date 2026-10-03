@@ -247,10 +247,17 @@ def test_classify_log_finds_the_known_spotify_problems():
 
 
 class FakeMopidy:
-    """behaviour: good | add_fails | stops | stuck"""
+    """behaviour: good | add_fails | stops | stuck | never_plays
 
-    def __init__(self, behaviour):
+    Like the real Mopidy with a Spotify link: after `play` it keeps saying
+    "state: stop" for `start_delay` seconds while the stream loads (3.4 s on the
+    Pi), and `add` takes `add_delay` seconds (a real lookup, about 2 s).
+    """
+
+    def __init__(self, behaviour, start_delay=0.0, add_delay=0.0):
         self.behaviour = behaviour
+        self.start_delay = start_delay
+        self.add_delay = add_delay
         self.server = socket.socket()
         self.server.bind(("127.0.0.1", 0))
         self.server.listen(1)
@@ -279,6 +286,7 @@ class FakeMopidy:
                 if self.behaviour == "add_fails":
                     conn.sendall(b"ACK [50@0] {add} No such song\n")
                 else:
+                    time.sleep(self.add_delay)
                     queue.append(line)
                     conn.sendall(b"OK\n")
             elif name == "play":
@@ -292,8 +300,10 @@ class FakeMopidy:
                 if played_at is None:
                     reply = "state: stop\n"
                 else:
-                    age = time.monotonic() - played_at
-                    if self.behaviour == "stops" and age > 1.2:
+                    age = time.monotonic() - played_at - self.start_delay  # time since the audio really started
+                    if age < 0 or self.behaviour == "never_plays":
+                        reply = "state: stop\n"  # still loading, or never loads
+                    elif self.behaviour == "stops" and age > 1.2:
                         reply = "state: stop\n"
                     elif self.behaviour == "stuck":
                         reply = "state: play\nelapsed: 0.000\n"
@@ -309,14 +319,21 @@ def no_journal(monkeypatch):
     monkeypatch.setattr(spotify_check, "read_mopidy_log", lambda since=None, max_lines=4000: (False, "", "test"))
 
 
-def run_with(behaviour, **kwargs):
-    fake = FakeMopidy(behaviour)
+def run_with(behaviour, timeout=6, start_delay=0.0, add_delay=0.0):
+    fake = FakeMopidy(behaviour, start_delay=start_delay, add_delay=add_delay)
     mpd = pi_common.MPDSocket("127.0.0.1", fake.port, timeout=3)
     try:
-        return spotify_check.run_case(mpd, "t", "spotify:track:abc", timeout=kwargs.get("timeout", 6),
-                                      play_seconds=1.0), fake
+        return spotify_check.run_case(mpd, "t", "spotify:track:abc", timeout=timeout, play_seconds=1.0), fake
     finally:
         mpd.close()
+
+
+def result_row(label, outcome, **extra):
+    row = {"label": label, "uri": "x", "expect_failure": False, "outcome": outcome, "lookup_s": None,
+           "first_sound_s": None, "progress_s": 0.0, "needed_s": 4.0, "mpd_message": "", "state_trace": "",
+           "causes": [], "log_note": "", "fail_after_s": 2.0}
+    row.update(extra)
+    return row
 
 
 def test_mpd_client_quotes_and_reads_replies():
@@ -347,6 +364,39 @@ def test_run_case_add_failed():
 def test_run_case_playback_stops_by_itself():
     result, _ = run_with("stops")
     assert result["outcome"] == "PLAYBACK_FAILED"
+    assert result["state_trace"].endswith("play>stop")
+    assert "stopped by itself" in spotify_check.explain(result)
+
+
+def test_run_case_waits_for_a_slow_spotify_start():
+    # Real Mopidy says "stop" for a few seconds while a Spotify song loads. The first version of the
+    # script gave up after 1 s of that, then stopped the music itself (a split second of sound).
+    result, fake = run_with("good", start_delay=1.6, add_delay=0.5)
+    assert result["outcome"] == "PASS"
+    assert result["lookup_s"] >= 0.5
+    assert result["first_sound_s"] >= 2.0
+    assert result["state_trace"] == "stop>play"
+    assert fake.commands.count("stop") == 1  # only the script's own stop, after the pass
+
+
+def test_run_case_gives_up_when_the_music_never_starts():
+    result, _ = run_with("never_plays", timeout=1.5)
+    assert result["outcome"] == "NO_PROGRESS"
+    assert result["state_trace"] == "stop"
+    assert "never said 'play'" in spotify_check.explain(result)
+
+
+def test_explain_says_something_for_every_outcome():
+    add = result_row("t", "ADD_FAILED", mpd_message="ACK [50@0] {add} directory or file not found")
+    assert "refused to add" in spotify_check.explain(add)
+    assert "directory or file not found" in spotify_check.explain(add)
+    assert "broke" in spotify_check.explain(result_row("t", "CONNECT_FAILED"))
+    stuck = result_row("t", "NO_PROGRESS", state_trace="stop>play")
+    assert "never moved" in spotify_check.explain(stuck)
+    errored = result_row("t", "PLAYBACK_FAILED", mpd_message="some error")
+    assert "some error" in spotify_check.explain(errored)
+    short = result_row("t", "PLAYBACK_FAILED", state_trace="play", progress_s=1.5)
+    assert "only 1.5s" in spotify_check.explain(short)
 
 
 def test_run_case_no_progress():
@@ -356,16 +406,61 @@ def test_run_case_no_progress():
 
 
 def test_overall_verdicts():
-    def row(label, outcome):
-        return {"label": label, "outcome": outcome, "expect_failure": False, "causes": [], "mpd_message": "",
-                "first_sound_s": None, "progress_s": 0.0, "uri": "x", "log_note": ""}
-
-    ok = [row("local file (control)", "PASS"), row("known Spotify track", "PASS")]
+    ok = [result_row("local file (control)", "PASS"), result_row("known Spotify track", "PASS")]
     assert spotify_check.overall(ok)[0] == 0
-    spotify_down = [row("local file (control)", "PASS"), row("known Spotify track", "PLAYBACK_FAILED")]
+    spotify_down = [result_row("local file (control)", "PASS"), result_row("known Spotify track", "PLAYBACK_FAILED")]
     assert spotify_check.overall(spotify_down)[0] == 1
-    audio_down = [row("local file (control)", "NO_PROGRESS"), row("known Spotify track", "NO_PROGRESS")]
+    audio_down = [result_row("local file (control)", "NO_PROGRESS"), result_row("known Spotify track", "NO_PROGRESS")]
     assert spotify_check.overall(audio_down)[0] == 2
+
+
+def test_overall_does_not_claim_a_local_song_played_when_none_was_tested():
+    code, text = spotify_check.overall([result_row("known Spotify track", "PLAYBACK_FAILED")])
+    assert code == 1
+    assert "A local file plays" not in text
+    assert "control" in text
+    code, text = spotify_check.overall([result_row("known Spotify track", "PASS")])
+    assert code == 0
+    assert "control" in text
+
+
+def test_control_tone_is_a_readable_wav(tmp_path):
+    import wave
+
+    path = tmp_path / "tone.wav"
+    spotify_check.write_control_tone(str(path), seconds=0.5)
+    with wave.open(str(path), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert abs(handle.getnframes() / handle.getframerate() - 0.5) < 0.01
+
+
+def test_control_tone_can_be_read_by_the_mopidy_user():
+    uri = spotify_check.make_control_tone()
+    try:
+        assert uri.startswith("file:///")
+        mode = os.stat(uri[len("file://"):]).st_mode
+        assert mode & 0o044 == 0o044  # Mopidy runs as another user and must be able to read it
+    finally:
+        for path in spotify_check.TEMP_FILES:
+            os.remove(path)
+        spotify_check.TEMP_FILES.clear()
+
+
+def test_smoke_test_waits_for_slow_music():
+    fake = FakeMopidy("good", start_delay=1.0)
+    mpd = pi_common.MPDSocket("127.0.0.1", fake.port, timeout=3)
+    mpd.command("add", "x")
+    mpd.command("play")
+    assert pi_smoke_test.wait_for_music(mpd, seconds=8) is True
+    mpd.close()
+
+
+def test_smoke_test_gives_up_when_the_music_never_starts():
+    fake = FakeMopidy("never_plays")
+    mpd = pi_common.MPDSocket("127.0.0.1", fake.port, timeout=3)
+    mpd.command("play")
+    assert pi_smoke_test.wait_for_music(mpd, seconds=1.0) is False
+    mpd.close()
 
 
 def test_to_spotify_uri():

@@ -85,6 +85,21 @@ Never paste `credentials.json` anywhere. The Mopidy-Spotify README also says a m
 
 Newest entry first. Each entry says what we saw, what we tried and what happened. `spotify_check.py` prints a ready-made entry to paste here.
 
+### 2026-10-03: first report and first run of spotify_check.py
+
+**From the report (`pi_report.sh`, run with sudo at 13:03):**
+- The streaming login file is on the Pi: `/var/lib/mopidy/spotify/credentials-cache/credentials.json`, 321 bytes, modified 2026-08-13, owner `mopidy`, mode 600 (never read). So the `credentials.json` we made on Aug 13 was copied there that day, and plays have worked since 14:22 that day. That settles the Aug 13 question.
+- Mopidy's settings have a `[spotify]` section with `enabled`, `client_id`, `client_secret` and `bitrate`. The sound output is `autoaudiosink` with the software mixer.
+- Mopidy's log has no Spotify lines at all (only its start lines), as before.
+- Mopidy keeps the sound card open (`fuser` shows it), so nothing else can play on the card at the same time. Step 3, part A fixes that.
+
+**The first run of `spotify_check.py` (13:07) said "PLAYBACK FAILED" for the known Spotify track, but a split second of the song played. The script was wrong, not Spotify.**
+- **Most likely cause** (from the code and the controller log; the re-run will confirm it): while a Spotify song loads, Mopidy reports "stop". The controller log of the play at 12:30 shows the gap: Play was sent at 12:30:55.4 and "Playback confirmed by Mopidy" came at 12:30:58.8, 3.4 seconds later, after the 2-second lookup. The script counted its 1-second limit from before the lookup, so it gave up at its first look, then sent `stop` itself and cut the song off just as it started. That is the split second.
+- **Two more things the script got wrong:** its verdict said "A local file plays but the Spotify track does not" when no local file had been tested (the library holds none), and the credentials line said "none found" because it was run without sudo.
+- **Fixed:** the script now waits up to 30 seconds after the lookup, only counts "stop" as a failure after Mopidy has said "play", shows the lookup time, says in plain words why a test failed, and plays a quiet test tone as the control when there is no local song. The beep-over-music test in `pi_smoke_test.py` had the same flaw (it waited a fixed 4 seconds), and is fixed too. The tests now include a fake Mopidy that starts slowly, like Spotify does.
+- **The made-up link failed as it should,** with `ACK [50@0] {add} directory or file not found`. That is the same message as the Sep 5 failures. The new "Lookup" column shows how long Mopidy took to refuse it. On Sep 5 it took milliseconds.
+- **Next:** copy the fixed scripts to the Pi (`scripts/pi/push_to_pi.sh`) and run it again with sudo.
+
 ### 2026-10-03: what the old logs say about Sep 5 (and Aug 13)
 
 A short read-only look at the Pi's old logs, over SSH with no sudo. Nothing was changed. The evidence is in the controller's log (`/var/log/smart_speaker.log`). Mopidy's own log from those days doesn't exist: the Pi keeps the system log in memory, so only today's boot is there, and even that holds just the start lines.

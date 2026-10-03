@@ -257,13 +257,30 @@ def check_audio(report, beep_uri=None):
         mpd.close()
 
 
+def wait_for_music(mpd, seconds=25.0):
+    """Wait until Mopidy says 'play' and the position moves.
+
+    A Spotify song takes several seconds to start, and Mopidy says 'stop' all that time.
+    """
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        status = mpd.status()
+        if status.get("state") == "play" and to_float(status.get("elapsed")) >= 1.0:
+            return True
+        time.sleep(0.25)
+    return False
+
+
 def beep_over_music(report, mpd, uri):
     sound = os.path.join(REPO, "Main", "assets", "sounds", "swipe.wav")
     try:
         mpd.command("clear")
         mpd.command("add", uri)
         mpd.command("play")
-        time.sleep(4)
+        if not wait_for_music(mpd):
+            mpd.command("stop")
+            report.add("FAIL", "beep over music", "the music did not start within 25 seconds, so the beep test could not run")
+            return
         before = to_float(mpd.status().get("elapsed"))
         rc, out = sh(["aplay", "-q", "-D", "feedback", sound], timeout=15)
         time.sleep(1)
