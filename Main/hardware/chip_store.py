@@ -100,6 +100,7 @@ class ChipStore:
             
             # Return chip data with empty uri (no song assigned yet)
             return {
+                'id': new_chip.get('id'),
                 'uid': uid,
                 'name': new_chip.get('name', 'New Chip'),
                 'uri': '',  # No song assigned
@@ -118,6 +119,7 @@ class ChipStore:
                         break
         
         result = {
+            'id': chip_data.get('id'),  # the server's chip id (voice "clear" needs it)
             'uid': uid,
             'name': chip_data.get('name', 'Unknown'),
             'uri': uri,

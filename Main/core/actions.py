@@ -294,10 +294,6 @@ def action_voice_clear_assignment(device_state: DeviceState, audio_player, ui) -
         ui.on_blocked_action()
         return device_state
     
-    # Stop any playback
-    if device_state.state in (State.PLAYING, State.PAUSED):
-        audio_player.stop()
-    
     # Get chip ID from metadata
     chip_id = device_state.loaded_chip.metadata.get('id')
     if not chip_id:
@@ -310,7 +306,7 @@ def action_voice_clear_assignment(device_state: DeviceState, audio_player, ui) -
         url = f'http://{SERVER_HOST}:{SERVER_PORT}/chips/{chip_id}/assignment'
         req = urllib.request.Request(url, method='DELETE')
         with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
+            if response.status in (200, 204):  # the server answers 204 No Content
                 log_action(f"[VOICE] Cleared song assignment for chip '{device_state.loaded_chip.name}'")
             else:
                 log_error(f"[VOICE] Failed to clear assignment: HTTP {response.status}")
@@ -321,6 +317,11 @@ def action_voice_clear_assignment(device_state: DeviceState, audio_player, ui) -
         ui.on_error()
         return device_state
     
+    # The server accepted it, so only now is it safe to stop the music. (Stopping first left
+    # the speaker silent while it still showed PLAYING whenever the request failed.)
+    if device_state.state in (State.PLAYING, State.PAUSED):
+        audio_player.stop()
+
     # Update local state - chip still loaded but no song
     device_state.loaded_chip.uri = ''
     device_state.state = State.IDLE_CHIP_LOADED
