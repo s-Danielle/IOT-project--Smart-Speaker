@@ -4,42 +4,130 @@ import 'package:http/http.dart' as http;
 import '../models/status.dart';
 import '../models/chip.dart';
 import '../models/song.dart';
+import 'settings_service.dart';
+
+/// An answer from the speaker that was not a success.
+///
+/// [toString] is a sentence that can be shown to the user as it is.
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+
+  ApiException(this.statusCode, this.message);
+
+  /// True when the speaker refused because the token is missing or wrong.
+  bool get isTokenProblem => statusCode == 401;
+
+  @override
+  String toString() => message;
+}
 
 class ApiService {
   final String baseUrl;
 
   ApiService(this.baseUrl);
 
+  /// The header that carries the speaker's token.
+  static const tokenHeader = 'X-Speaker-Token';
+
+  // ===========================================================================
+  // THE ONE PLACE THAT TALKS HTTP
+  // Every request goes through these helpers, so the token is added here and
+  // nowhere else.
+  // ===========================================================================
+
+  Future<Map<String, String>> _headers({bool json = false}) async {
+    final headers = <String, String>{};
+    if (json) {
+      headers['Content-Type'] = 'application/json';
+    }
+    // Only the speaker's own address gets the token. The setup hotspot
+    // (192.168.4.1) is open to anyone nearby and must never see it.
+    final token = await SettingsService.getToken();
+    if (token.isNotEmpty && baseUrl == await SettingsService.getBaseUrl()) {
+      headers[tokenHeader] = token;
+    }
+    return headers;
+  }
+
+  Future<http.Response> _get(String path) async {
+    return http.get(Uri.parse('$baseUrl$path'), headers: await _headers());
+  }
+
+  Future<http.Response> _post(String path, [Map<String, dynamic>? body]) async {
+    return http.post(
+      Uri.parse('$baseUrl$path'),
+      headers: await _headers(json: body != null),
+      body: body == null ? null : jsonEncode(body),
+    );
+  }
+
+  Future<http.Response> _put(String path, Map<String, dynamic> body) async {
+    return http.put(
+      Uri.parse('$baseUrl$path'),
+      headers: await _headers(json: true),
+      body: jsonEncode(body),
+    );
+  }
+
+  Future<http.Response> _delete(String path) async {
+    return http.delete(Uri.parse('$baseUrl$path'), headers: await _headers());
+  }
+
+  /// The error to throw for an answer that was not a success.
+  ApiException _failure(String what, http.Response response) {
+    if (response.statusCode == 401) {
+      return ApiException(
+        401,
+        'The speaker needs its token for this. Enter it in Settings.',
+      );
+    }
+    var detail = '';
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['error'] is String) {
+        detail = ': ${body['error']}';
+      }
+    } on FormatException {
+      // the answer was not JSON: say only the number
+    }
+    return ApiException(
+      response.statusCode,
+      'Failed to $what (${response.statusCode})$detail',
+    );
+  }
+
+  /// The JSON object in a 200 answer, or an [ApiException].
+  Map<String, dynamic> _object(String what, http.Response response) {
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw _failure(what, response);
+  }
+
   // GET /status
   Future<Status> getStatus() async {
-    final response = await http.get(Uri.parse('$baseUrl/status'));
-    if (response.statusCode == 200) {
-      return Status.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to get status: ${response.statusCode}');
+    final response = await _get('/status');
+    return Status.fromJson(_object('get status', response));
   }
 
   // GET /chips
   Future<List<SpeakerChip>> getChips() async {
-    final response = await http.get(Uri.parse('$baseUrl/chips'));
+    final response = await _get('/chips');
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((json) => SpeakerChip.fromJson(json)).toList();
     }
-    throw Exception('Failed to get chips: ${response.statusCode}');
+    throw _failure('get chips', response);
   }
 
   // POST /chips - Register a new chip
   Future<SpeakerChip> createChip(String uid, {String? name}) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/chips'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'uid': uid, 'name': name ?? ''}),
-    );
+    final response = await _post('/chips', {'uid': uid, 'name': name ?? ''});
     if (response.statusCode == 200 || response.statusCode == 201) {
       return SpeakerChip.fromJson(jsonDecode(response.body));
     }
-    throw Exception('Failed to create chip: ${response.statusCode}');
+    throw _failure('create chip', response);
   }
 
   // PUT /chips/{chip_id}
@@ -48,85 +136,73 @@ class ApiService {
     if (name != null) body['name'] = name;
     if (songId != null) body['song_id'] = songId;
 
-    final response = await http.put(
-      Uri.parse('$baseUrl/chips/$chipId'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
+    final response = await _put('/chips/$chipId', body);
     if (response.statusCode != 200) {
-      throw Exception('Failed to update chip: ${response.statusCode}');
+      throw _failure('update chip', response);
     }
   }
 
   // DELETE /chips/{chip_id}/assignment
   Future<void> resetChipAssignment(String chipId) async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/chips/$chipId/assignment'),
-    );
+    final response = await _delete('/chips/$chipId/assignment');
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to reset assignment: ${response.statusCode}');
+      throw _failure('reset assignment', response);
     }
   }
 
   // DELETE /chips/{chip_id}
   Future<void> deleteChip(String chipId) async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/chips/$chipId'),
-    );
+    final response = await _delete('/chips/$chipId');
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete chip: ${response.statusCode}');
+      throw _failure('delete chip', response);
     }
   }
 
   // GET /library
   Future<List<Song>> getLibrary() async {
-    final response = await http.get(Uri.parse('$baseUrl/library'));
+    final response = await _get('/library');
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((json) => Song.fromJson(json)).toList();
     }
-    throw Exception('Failed to get library: ${response.statusCode}');
+    throw _failure('get library', response);
   }
 
   // POST /library
   Future<Song> createSong(String name, String uri) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/library'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'uri': uri}),
-    );
+    final response = await _post('/library', {'name': name, 'uri': uri});
     if (response.statusCode == 200 || response.statusCode == 201) {
       return Song.fromJson(jsonDecode(response.body));
     }
-    throw Exception('Failed to create song: ${response.statusCode}');
+    throw _failure('create song', response);
   }
 
   // PUT /library/{song_id}
   Future<void> updateSong(String songId, String name, String uri) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/library/$songId'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'uri': uri}),
-    );
+    final response = await _put('/library/$songId', {'name': name, 'uri': uri});
     if (response.statusCode != 200) {
-      throw Exception('Failed to update song: ${response.statusCode}');
+      throw _failure('update song', response);
     }
   }
 
   // DELETE /library/{song_id}
   Future<void> deleteSong(String songId) async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/library/$songId'),
-    );
+    final response = await _delete('/library/$songId');
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete song: ${response.statusCode}');
+      throw _failure('delete song', response);
     }
   }
 
   // POST /files (multipart/form-data)
   // Takes raw bytes so it works on both native and web builds.
-  Future<String> uploadFileBytes(Uint8List bytes, String filename) async {
+  //
+  // The speaker adds the uploaded file to the library by itself, and answers
+  // with that entry. The caller must NOT also create a library entry for it
+  // (that made two entries for one file); to give it another name, rename
+  // the returned entry with [updateSong].
+  Future<Song> uploadFileBytes(Uint8List bytes, String filename) async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/files'));
+    request.headers.addAll(await _headers());
     request.files.add(
       http.MultipartFile.fromBytes('file', bytes, filename: filename),
     );
@@ -135,10 +211,9 @@ class ApiService {
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      return data['uri'];
+      return Song.fromJson(jsonDecode(response.body));
     }
-    throw Exception('Failed to upload file: ${response.statusCode}');
+    throw _failure('upload file', response);
   }
 
   // ===========================================================================
@@ -147,235 +222,143 @@ class ApiService {
 
   // GET /settings/parental
   Future<Map<String, dynamic>> getParentalSettings() async {
-    final response = await http.get(Uri.parse('$baseUrl/settings/parental'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get parental settings: ${response.statusCode}');
+    final response = await _get('/settings/parental');
+    return _object('get parental settings', response);
   }
 
   // PUT /settings/parental
-  Future<Map<String, dynamic>> updateParentalSettings(Map<String, dynamic> settings) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/settings/parental'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(settings),
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to update parental settings: ${response.statusCode}');
+  Future<Map<String, dynamic>> updateParentalSettings(
+      Map<String, dynamic> settings) async {
+    final response = await _put('/settings/parental', settings);
+    return _object('update parental settings', response);
   }
 
   // ===========================================================================
-  // DEBUG / DEVELOPER TOOLS
+  // DEBUG / DEVELOPER TOOLS (all need the token)
   // ===========================================================================
+
+  // GET /debug/ping - does the speaker accept our token?
+  Future<void> checkToken() async {
+    final response = await _get('/debug/ping');
+    if (response.statusCode != 200) {
+      throw _failure('check the token', response);
+    }
+  }
 
   // GET /debug/i2c
   Future<Map<String, dynamic>> getI2cDevices() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/i2c'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get I2C devices: ${response.statusCode}');
+    return _object('get I2C devices', await _get('/debug/i2c'));
   }
 
   // GET /debug/system
   Future<Map<String, dynamic>> getSystemInfo() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/system'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get system info: ${response.statusCode}');
+    return _object('get system info', await _get('/debug/system'));
   }
 
   // GET /debug/logs
   Future<Map<String, dynamic>> getLogs() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/logs'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get logs: ${response.statusCode}');
+    return _object('get logs', await _get('/debug/logs'));
   }
 
   // GET /debug/git-status
   Future<Map<String, dynamic>> getGitStatus() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/git-status'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get git status: ${response.statusCode}');
+    return _object('get git status', await _get('/debug/git-status'));
   }
 
   // POST /debug/git-pull
   Future<Map<String, dynamic>> gitPull() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/git-pull'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to git pull: ${response.statusCode}');
+    return _object('git pull', await _post('/debug/git-pull'));
   }
 
   // GET /debug/speaker/status
   Future<Map<String, dynamic>> getSpeakerStatus() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/speaker/status'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get speaker status: ${response.statusCode}');
+    return _object('get speaker status', await _get('/debug/speaker/status'));
   }
 
   // POST /debug/speaker/start
   Future<Map<String, dynamic>> startSpeaker() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/speaker/start'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to start speaker: ${response.statusCode}');
+    return _object('start speaker', await _post('/debug/speaker/start'));
   }
 
   // POST /debug/speaker/stop
   Future<Map<String, dynamic>> stopSpeaker() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/speaker/stop'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to stop speaker: ${response.statusCode}');
+    return _object('stop speaker', await _post('/debug/speaker/stop'));
   }
 
   // POST /debug/speaker/restart
   Future<Map<String, dynamic>> restartSpeaker() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/speaker/restart'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to restart speaker: ${response.statusCode}');
+    return _object('restart speaker', await _post('/debug/speaker/restart'));
   }
 
   // POST /debug/daemon-reload
   Future<Map<String, dynamic>> daemonReload() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/daemon-reload'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to daemon reload: ${response.statusCode}');
-  }
-
-  // POST /debug/run-main
-  Future<Map<String, dynamic>> runMain() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/run-main'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to run main: ${response.statusCode}');
+    return _object('daemon reload', await _post('/debug/daemon-reload'));
   }
 
   // POST /debug/reboot
   Future<Map<String, dynamic>> rebootPi() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/reboot'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to reboot: ${response.statusCode}');
+    return _object('reboot', await _post('/debug/reboot'));
   }
 
   // ===========================================================================
   // WIFI MANAGEMENT
+  // The setup routes (status, scan, connect, connect-status) are open while the
+  // speaker's setup hotspot is up. The rest need the token.
   // ===========================================================================
 
   // GET /debug/wifi/status
   Future<Map<String, dynamic>> getWifiStatus() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/wifi/status'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get WiFi status: ${response.statusCode}');
+    return _object('get WiFi status', await _get('/debug/wifi/status'));
   }
 
   // GET /debug/wifi/connections
   Future<Map<String, dynamic>> getWifiConnections() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/wifi/connections'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get WiFi connections: ${response.statusCode}');
+    return _object('get WiFi connections', await _get('/debug/wifi/connections'));
   }
 
   // GET /debug/wifi/scan
   Future<Map<String, dynamic>> scanWifiNetworks() async {
-    final response = await http.get(Uri.parse('$baseUrl/debug/wifi/scan'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to scan WiFi networks: ${response.statusCode}');
+    return _object('scan WiFi networks', await _get('/debug/wifi/scan'));
   }
 
   // POST /debug/wifi/connect
   Future<Map<String, dynamic>> connectWifi(String ssid, {String? password}) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/debug/wifi/connect'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'ssid': ssid, 'password': password}),
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to connect to WiFi: ${response.statusCode}');
+    final response =
+        await _post('/debug/wifi/connect', {'ssid': ssid, 'password': password});
+    return _object('connect to WiFi', response);
   }
 
   // POST /debug/wifi/disconnect
   Future<Map<String, dynamic>> disconnectWifi() async {
-    final response = await http.post(Uri.parse('$baseUrl/debug/wifi/disconnect'));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to disconnect WiFi: ${response.statusCode}');
+    return _object('disconnect WiFi', await _post('/debug/wifi/disconnect'));
   }
 
   // POST /debug/wifi/forget
   Future<Map<String, dynamic>> forgetWifi(String name) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/debug/wifi/forget'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name}),
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to forget WiFi: ${response.statusCode}');
+    final response = await _post('/debug/wifi/forget', {'name': name});
+    return _object('forget WiFi', response);
   }
 
   // POST /debug/wifi/priority
   Future<Map<String, dynamic>> setWifiPriority(String name, int priority) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/debug/wifi/priority'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'priority': priority}),
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to set WiFi priority: ${response.statusCode}');
+    final response =
+        await _post('/debug/wifi/priority', {'name': name, 'priority': priority});
+    return _object('set WiFi priority', response);
   }
 
   // GET /debug/wifi/connect-status — poll after POST /debug/wifi/connect
   // state: "idle" | "connecting" | "connected" | "failed"
   Future<Map<String, dynamic>> getWifiConnectStatus() async {
-    final response = await http
-        .get(Uri.parse('$baseUrl/debug/wifi/connect-status'))
-        .timeout(const Duration(seconds: 5));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to get connect status: ${response.statusCode}');
+    final response =
+        await _get('/debug/wifi/connect-status').timeout(const Duration(seconds: 5));
+    return _object('get connect status', response);
   }
 
   // Probe whether the server is reachable (short timeout).
   Future<bool> isReachable({int timeoutSeconds = 3}) async {
     try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/status'))
-          .timeout(Duration(seconds: timeoutSeconds));
+      final response =
+          await _get('/status').timeout(Duration(seconds: timeoutSeconds));
       return response.statusCode == 200;
     } catch (_) {
       return false;
@@ -384,15 +367,7 @@ class ApiService {
 
   // POST /debug/wifi/ap-mode
   Future<Map<String, dynamic>> setApMode(bool enable) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/debug/wifi/ap-mode'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'enable': enable}),
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Failed to set AP mode: ${response.statusCode}');
+    final response = await _post('/debug/wifi/ap-mode', {'enable': enable});
+    return _object('set AP mode', response);
   }
 }
-

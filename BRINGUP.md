@@ -271,6 +271,28 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
 
 ---
 
+## Step 6: the app: the token, the status and the fixes (about 45 minutes)
+
+Do this after step 5, because the app talks to the new server. The app code was written without being able to compile it on the development computer (Flutter was not run), so **6.1 comes first**.
+
+- [ ] **6.1** *On this computer.* Check the app code compiles: `cd flutter_app && flutter analyze`. It must say "No issues found". If it prints errors, paste them to me and I fix them before you build anything. (I did not run it: it downloads packages into your home folder, which I did not want to do without asking.)
+- [ ] **6.2** *On this computer.* Build the web app and put it on the Pi (this only replaces the web app's files in `Main/web_app` on the Pi; no service restarts):
+  ```
+  scripts/deploy_web.sh iot-proj@rpi2.local
+  ```
+- [ ] **6.3** Open `http://rpi2.local:8080` in a browser on any computer or phone on the network:
+  - [ ] the home screen shows a second card saying what the speaker is doing ("Waiting for a chip", "Ready: <chip>", "Playing", "Paused", "Recording"), the volume and "Played today". Tap a chip on the speaker, press Play: the card follows within about 5 seconds
+  - [ ] with the made-up link from 5.9 the card shows an orange "The last song could not be played" with Mopidy's reason; a later good play clears it
+  - [ ] stop the controller (`sudo systemctl stop smart_speaker` on the Pi): within about 25 seconds the card says "The speaker is not running". Start it again
+- [ ] **6.4** The token. In the app go to Settings, **Speaker Token**, type the token (read it on the Pi with `grep DEBUG_TOKEN /home/iot-proj/IOT-project--Smart-Speaker/SECRETS`; do not paste it anywhere else), press **Check**: "The speaker accepted the token". With a wrong token it says "did not accept".
+- [ ] **6.5** Without the token (clear the field, Save): changing a chip name or a setting shows "The speaker needs its token for this. Enter it in Settings." and changes nothing. Looking at chips, library and settings still works. Put the token back.
+- [ ] **6.6** Library: upload a song from a file, give it a name. There is **one** new entry, with the name you chose (before, there were two: "[UPLOAD] <file>" and your name).
+- [ ] **6.7** Developer Tools (needs the token): system info and logs show. WiFi, connect to the network the speaker is **already on** (a saved one): it says "Connected to ...", not "Failed" (before, it always said Failed, because the speaker answers "connecting" first). The old "Run Main" action is gone.
+- [ ] **6.8** *Phone only.* Build and install the Android app: `cd flutter_app && flutter build apk --release`, then install `build/app/outputs/flutter-apk/app-release.apk`. In Settings, **Test Connection** works with `rpi2.local`. If it fails (Android's name lookup is the known weak spot), open Advanced Settings and type the speaker's address as `http://<its IP>:8080` (the IP is in `/tmp/report.txt` from `pi_report.sh`, or `hostname -I` on the Pi). Then repeat 6.4.
+- [ ] **6.9** *Phone only.* The WiFi wizard: start Settings, WiFi Setup, let it join the speaker's setup hotspot, then go **back** before finishing. The phone returns to its normal WiFi and its internet works again (before, the app kept using the hotspot until you restarted it).
+
+---
+
 ## Step 7: final tests (later)
 
 **The walkthrough** (you do these on the speaker):

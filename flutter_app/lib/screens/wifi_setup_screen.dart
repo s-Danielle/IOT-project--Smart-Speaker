@@ -51,6 +51,11 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
   // ── Success step ──
   String? _connectedSsid;
 
+  /// True from joining the setup hotspot until the binding is released.
+  /// Closing the screen in between must release it, or the phone keeps sending
+  /// the app's traffic over the speaker's hotspot (which has no internet).
+  bool _boundToHotspot = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +66,10 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
   void dispose() {
     _joinPollTimer?.cancel();
     _pollTimer?.cancel();
+    if (_boundToHotspot) {
+      _boundToHotspot = false;
+      WifiConnector.releaseWifiBinding();
+    }
     super.dispose();
   }
 
@@ -144,6 +153,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
     });
 
     final ok = await WifiConnector.connectToSetupAp(_apSsid);
+    if (ok) _boundToHotspot = true;
     if (!mounted) return;
 
     if (ok) {
@@ -279,6 +289,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
         if (state == 'connected') {
           _pollTimer?.cancel();
           await WifiConnector.releaseWifiBinding();
+          _boundToHotspot = false;
           setState(() {
             _connectedSsid = ssid;
             _step = _Step.success;
@@ -299,6 +310,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
         if (_timeoutPollCount >= 5) {
           _pollTimer?.cancel();
           await WifiConnector.releaseWifiBinding();
+          _boundToHotspot = false;
           if (!mounted) return;
           setState(() {
             _step = _Step.awaitingHome;

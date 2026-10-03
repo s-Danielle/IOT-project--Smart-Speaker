@@ -294,6 +294,14 @@ def test_with_the_token_a_debug_request_gets_past_the_door(remote):
     assert remote.post("/debug/no-such-thing")[0] == 404
 
 
+def test_the_apps_check_token_button_gets_yes_or_no(remote):
+    assert remote.get("/debug/ping")[0] == 401  # no token
+    remote.token = "wrong-token-here"
+    assert remote.get("/debug/ping")[0] == 401
+    remote.token = TOKEN
+    assert remote.get("/debug/ping") == (200, {"ok": True})
+
+
 def test_the_hand_started_second_controller_is_gone(remote):
     remote.token = TOKEN
     assert not hasattr(remote.module, "debug_run_main")

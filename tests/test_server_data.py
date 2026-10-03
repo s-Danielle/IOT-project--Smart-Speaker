@@ -159,6 +159,7 @@ def test_an_uploaded_file_is_saved_and_listed_once(api):
     )
     status, result = api.post("/files", raw=body, headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
     assert status == 201 and result["name"] == "[UPLOAD] My Song"
+    assert result["id"] in [s["id"] for s in api.get("/library")[1]]  # the app renames this entry; it must not add a second
     path = result["uri"][len("file://"):]
     assert os.path.dirname(path) == str(api.tmp / "uploads")
     with open(path, "rb") as f:

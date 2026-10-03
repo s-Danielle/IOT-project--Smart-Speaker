@@ -109,11 +109,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final baseUrl = await SettingsService.getBaseUrl();
       final api = ApiService(baseUrl);
 
-      // Upload file and get URI
-      final uri = await api.uploadFileBytes(file.bytes!, file.name);
-
-      // Create library entry
-      await api.createSong(nameController.text, uri);
+      // The speaker adds the uploaded file to the library by itself
+      // (as "[UPLOAD] <file name>"). Creating another entry here made two
+      // entries for one file, so give the existing one the chosen name instead.
+      final uploaded = await api.uploadFileBytes(file.bytes!, file.name);
+      final chosenName = nameController.text.trim();
+      if (chosenName.isNotEmpty && chosenName != uploaded.name) {
+        await api.updateSong(uploaded.id, chosenName, uploaded.uri);
+      }
       _loadSongs();
 
       if (mounted) {

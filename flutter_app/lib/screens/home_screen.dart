@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
@@ -23,35 +24,86 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _error;
   bool _loading = false;
 
+  /// Asks the speaker again every few seconds while this screen is the one
+  /// being shown, so "what is playing" stays current.
+  Timer? _timer;
+
+  /// Quiet refreshes that failed in a row. One missed answer is not shown as an error.
+  int _quietFailures = 0;
+
   @override
   void initState() {
     super.initState();
     _refresh();
+    _startTimer();
   }
 
-  Future<void> _refresh() async {
-    setState(() {
-      _loading = true;
-      _error = null;
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!_loading) _refresh(quiet: true);
     });
+  }
+
+  /// Opens another screen. The home screen stops asking the speaker while
+  /// another screen is on top, and refreshes when it comes back.
+  Future<void> _open(Widget screen) async {
+    _timer?.cancel();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+    if (!mounted) return;
+    _startTimer();
+    _refresh();
+  }
+
+  Future<void> _refresh({bool quiet = false}) async {
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final baseUrl = await SettingsService.getBaseUrl();
       final api = ApiService(baseUrl);
       final status = await api.getStatus();
+      if (!mounted) return;
       setState(() {
         _status = status;
+        _error = null;
       });
+      _quietFailures = 0;
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _status = null;
-      });
+      if (!mounted) return;
+      _quietFailures++;
+      if (!quiet || _quietFailures >= 2) {
+        setState(() {
+          _error = e.toString();
+          _status = null;
+        });
+      }
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted && !quiet) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
+  }
+
+  /// "under a minute", "1 min", "12 min"
+  static String _minutes(int seconds) {
+    if (seconds < 60) return 'under a minute';
+    return '${seconds ~/ 60} min';
   }
 
   @override
@@ -85,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,12 +207,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                if (_status?.chipId != null)
+                                if (_error != null && !_loading)
                                   Text(
-                                    'Chip: ${_status!.chipId}',
+                                    _error!,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: Colors.white.withValues(alpha: 0.9),
-                                      fontSize: 14,
+                                      fontSize: 13,
                                     ),
                                   ),
                               ],
@@ -183,25 +237,23 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
+            // What the speaker is doing right now
+            if (_status?.controller != null) ...[
+              const SizedBox(height: 12),
+              _buildSpeakerCard(theme, _status!),
+            ],
+
             // WiFi setup prompt when speaker is unreachable
             if (_error != null && !_loading) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const WifiSetupScreen()),
-                    );
-                    _refresh();
-                  },
+                  onPressed: () => _open(const WifiSetupScreen()),
                   icon: const Icon(Icons.wifi_tethering),
                   label: const Text('Set up WiFi'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white54),
+                    foregroundColor: theme.colorScheme.primary,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
@@ -215,12 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(
                 height: 64,
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ScanChipScreen()),
-                    );
-                  },
+                  onPressed: () => _open(const ScanChipScreen()),
                   icon: const Icon(Icons.nfc, size: 28),
                   label: const Text(
                     'Scan Chip',
@@ -239,53 +286,172 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
 
             // Navigation Grid
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 1.3,
-                children: [
-                  _buildNavCard(
-                    context,
-                    icon: Icons.memory,
-                    label: 'Chips',
-                    color: Colors.orange,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ChipsScreen()),
-                      );
-                    },
-                  ),
-                  _buildNavCard(
-                    context,
-                    icon: Icons.library_music,
-                    label: 'Library',
-                    color: Colors.teal,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LibraryScreen()),
-                      );
-                    },
-                  ),
-                  _buildNavCard(
-                    context,
-                    icon: Icons.settings,
-                    label: 'Settings',
-                    color: Colors.blueGrey,
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                      );
-                      _refresh();
-                    },
-                  ),
-                ],
-              ),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 1.3,
+              children: [
+                _buildNavCard(
+                  context,
+                  icon: Icons.memory,
+                  label: 'Chips',
+                  color: Colors.orange,
+                  onTap: () => _open(const ChipsScreen()),
+                ),
+                _buildNavCard(
+                  context,
+                  icon: Icons.library_music,
+                  label: 'Library',
+                  color: Colors.teal,
+                  onTap: () => _open(const LibraryScreen()),
+                ),
+                _buildNavCard(
+                  context,
+                  icon: Icons.settings,
+                  label: 'Settings',
+                  color: Colors.blueGrey,
+                  onTap: () => _open(const SettingsScreen()),
+                ),
+              ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// What the speaker is doing: playing, ready, waiting; the volume; the time
+  /// played today; and a warning if the last song could not be played.
+  Widget _buildSpeakerCard(ThemeData theme, Status status) {
+    final controller = status.controller!;
+
+    IconData icon;
+    String headline;
+    String? detail;
+    Color color;
+
+    if (!controller.alive) {
+      icon = Icons.error_outline;
+      headline = 'The speaker is not running';
+      detail = controller.problem;
+      color = Colors.red;
+    } else {
+      final song = controller.songName ?? controller.chipName;
+      switch (controller.state) {
+        case 'PLAYING':
+          icon = controller.playing ? Icons.play_circle : Icons.hourglass_top;
+          headline = controller.playing ? 'Playing' : 'Starting...';
+          detail = song;
+          color = Colors.green;
+          break;
+        case 'PAUSED':
+          icon = Icons.pause_circle;
+          headline = 'Paused';
+          detail = song;
+          color = Colors.orange;
+          break;
+        case 'RECORDING':
+          icon = Icons.mic;
+          headline = 'Recording';
+          detail = null;
+          color = Colors.red;
+          break;
+        case 'IDLE_CHIP_LOADED':
+          icon = Icons.nfc;
+          headline = 'Ready: ${controller.chipName ?? 'chip'}';
+          detail = 'Press Play on the speaker';
+          color = theme.colorScheme.primary;
+          break;
+        default:
+          icon = Icons.nfc;
+          headline = 'Waiting for a chip';
+          detail = 'Put a chip on the speaker';
+          color = theme.colorScheme.primary;
+      }
+    }
+
+    final facts = <String>[];
+    if (controller.alive && controller.volume != null) {
+      facts.add('Volume ${controller.volume}%');
+    }
+    if (status.usageSeconds != null) {
+      facts.add('Played today: ${_minutes(status.usageSeconds!)}');
+    }
+    final lastPlay = controller.lastPlay;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 36, color: color),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        headline,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (detail != null && detail.isNotEmpty)
+                        Text(
+                          detail,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (facts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                facts.join('   ·   '),
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+            if (lastPlay != null && lastPlay.failed) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'The last song could not be played'
+                        '${lastPlay.reason == null ? '' : '\n${lastPlay.reason}'}',
+                        style: TextStyle(
+                          color: Colors.orange.shade900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

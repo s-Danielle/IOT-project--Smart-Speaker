@@ -892,6 +892,8 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         elif self.path == '/usage/today':
             self._send_json(store.daily_usage())
         # Debug endpoints
+        elif path == '/debug/ping':
+            self._send_json({"ok": True})  # only reached with a valid token: the app's "check token" button
         elif path == '/debug/i2c':
             self._send_json(debug_get_i2c_devices())
         elif path == '/debug/system':
@@ -1069,18 +1071,18 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                     display_name = f"[UPLOAD] {original_name}"
 
                     # Add to library automatically
-                    store.add_song(display_name, uri)
+                    song = store.add_song(display_name, uri)
 
                     log(f"Uploaded file: {filepath} (added to library as '{display_name}')")
-                    self._send_json({"uri": uri, "name": display_name}, 201)
+                    self._send_json({"id": song["id"], "uri": uri, "name": display_name}, 201)
                     return
             
             # Fallback for non-multipart
             file_id = uuid.uuid4().hex[:8]
             uri = f"file://{UPLOADS_DIR}/{file_id}.mp3"
             display_name = f"[UPLOAD] {file_id}"
-            store.add_song(display_name, uri)
-            self._send_json({"uri": uri, "name": display_name}, 201)
+            song = store.add_song(display_name, uri)
+            self._send_json({"id": song["id"], "uri": uri, "name": display_name}, 201)
         
         # Debug POST endpoints
         elif self.path == '/debug/git-pull':

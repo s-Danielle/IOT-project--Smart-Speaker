@@ -212,23 +212,6 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     }
   }
 
-  Future<void> _runMain() async {
-    final confirmed = await _confirmAction(
-      'Run Main',
-      'This will start main.py manually. Make sure the service is stopped first.',
-    );
-    if (!confirmed) return;
-
-    _showActionStatus('Starting main.py...');
-    try {
-      final api = await _getApi();
-      final result = await api.runMain();
-      _showActionStatus('main.py ${result['status']}');
-    } catch (e) {
-      _showActionStatus('Error: $e');
-    }
-  }
-
   Future<void> _rebootPi() async {
     final confirmed = await _confirmAction(
       'Reboot Raspberry Pi',
@@ -295,15 +278,49 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
     try {
       final api = await _getApi();
       final result = await api.connectWifi(ssid, password: password);
-      if (result['status'] == 'connected') {
-        _showActionStatus('Connected to $ssid');
-        _loadWifiStatus();
+      if (result['status'] == 'connecting') {
+        // The speaker connects in the background: ask how it went until it says.
+        await _waitForWifiResult(api, ssid);
       } else {
         _showActionStatus('Failed: ${result['error'] ?? 'Unknown error'}');
       }
     } catch (e) {
       _showActionStatus('Error: $e');
     }
+  }
+
+  /// The speaker answers "connecting" at once and finishes in the background.
+  /// This asks for the outcome every 2 seconds. (It used to look for
+  /// "connected" in the first answer, which is never there, so it always said
+  /// "Failed".)
+  Future<void> _waitForWifiResult(ApiService api, String ssid) async {
+    var failedPolls = 0;
+    for (var i = 0; i < 25; i++) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      try {
+        final status = await api.getWifiConnectStatus();
+        failedPolls = 0;
+        final state = status['state'] as String? ?? 'idle';
+        if (state == 'connected') {
+          _showActionStatus('Connected to $ssid');
+          _loadWifiStatus();
+          return;
+        }
+        if (state == 'failed') {
+          _showActionStatus('Failed: ${status['error'] ?? 'Unknown error'}');
+          return;
+        }
+      } catch (_) {
+        failedPolls++;
+        if (failedPolls >= 3) {
+          _showActionStatus(
+              'Lost contact with the speaker. It may have joined $ssid: check again from that network.');
+          return;
+        }
+      }
+    }
+    _showActionStatus('Still connecting to $ssid. Check again in a moment.');
   }
 
   Future<void> _forgetWifi(String name) async {
