@@ -1,0 +1,13 @@
+# Rotates the speaker's log files that systemd only ever appends to. (The controller's own
+# log, /var/log/smart_speaker/controller.log, rotates itself.) Without this they grow for
+# ever: the server log alone was 4 MB after a few weeks of idling.
+/var/log/smart_speaker_server.log /var/log/smart_speaker_health.log /var/log/smart_speaker_wifi.log {
+    weekly
+    maxsize 5M
+    rotate 4
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

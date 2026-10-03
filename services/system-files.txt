@@ -1,0 +1,6 @@
+# Extra system files that belong to the speaker but are not service files.
+# pi_update.sh and copy-and-enable-service.sh install the ones that differ.
+#
+# source (in services/)             where it goes                                           mode  restart afterwards
+system/logrotate-smart-speaker      /etc/logrotate.d/smart_speaker                          644
+system/journald-persistent.conf     /etc/systemd/journald.conf.d/90-smart-speaker.conf      644   systemd-journald

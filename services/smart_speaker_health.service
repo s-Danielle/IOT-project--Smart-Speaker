@@ -8,13 +8,17 @@ Type=simple
 User=iot-proj
 Group=iot-proj
 WorkingDirectory=/home/iot-proj/IOT-project--Smart-Speaker/Main
-ExecStart=/usr/bin/python3 health_monitor.py
+# The app's own Python (it has smbus2), not the system one: a system package update must not break it
+ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python health_monitor.py
 Restart=always
 RestartSec=5
 
 # Logging
 StandardOutput=append:/var/log/smart_speaker_health.log
 StandardError=append:/var/log/smart_speaker_health.log
+
+# Environment (unbuffered, or the log stays empty for minutes and is lost if the service dies)
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target

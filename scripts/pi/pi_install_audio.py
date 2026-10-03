@@ -19,8 +19,8 @@ Part A (the default):
   - restarts Mopidy and checks that both users can play and record
 
 Part B (--mopidy-conf):
-  - sets the [audio], [mpd] and [file] settings from audio/mopidy.conf in the
-    live /etc/mopidy/mopidy.conf. It never touches [spotify].
+  - sets the [audio], [mpd], [loglevels] and [file] settings from audio/mopidy.conf
+    in the live /etc/mopidy/mopidy.conf. It never touches [spotify].
 
 Before it changes anything it saves what it is about to change in
 /var/lib/smart-speaker-setup/rollback/<time>/, and --rollback puts that back.
@@ -454,12 +454,12 @@ class Setup:
 
     # ---- Part B -----------------------------------------------------
     def part_b(self):
-        self.step("Mopidy settings ([audio], [mpd], [file])")
+        self.step("Mopidy settings ([audio], [mpd], [loglevels], [file])")
         self.open_snapshot()
         live = read_text(MOPIDY_CONF)
         if live is None:
             raise Stop("Cannot read %s (is Mopidy installed, and are you root?)." % MOPIDY_CONF)
-        new = ini_edit.apply_sections(live, read_text(REF_MOPIDY), ["audio", "mpd", "file"])
+        new = ini_edit.apply_sections(live, read_text(REF_MOPIDY), ["audio", "mpd", "loglevels", "file"])
         if new == live:
             self.say("OK: /etc/mopidy/mopidy.conf already has these settings.")
             return

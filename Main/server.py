@@ -20,6 +20,7 @@ import threading
 import subprocess
 import time
 from utils.logger import log, log_success
+from utils.shared_dirs import ensure_shared_dir
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT,
     render_network_list_html, CAPTIVE_PORTAL_HTML
@@ -58,8 +59,11 @@ RECORDINGS_DIR = os.path.join(LOCAL_FILES_DIR, 'recordings')
 WEB_APP_DIR = os.path.join(SCRIPT_DIR, 'web_app')
 
 # Ensure directories exist
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-os.makedirs(RECORDINGS_DIR, exist_ok=True)
+# The server runs as root. These folders must belong to the speaker's user (the owner of this
+# program's folder): the controller's arecord writes recordings into them, Mopidy reads them.
+ensure_shared_dir(LOCAL_FILES_DIR, SCRIPT_DIR)
+ensure_shared_dir(UPLOADS_DIR, SCRIPT_DIR)
+ensure_shared_dir(RECORDINGS_DIR, SCRIPT_DIR)
 os.makedirs(WEB_APP_DIR, exist_ok=True)
 
 # Some platforms guess these wrong (or not at all); Flutter web needs them

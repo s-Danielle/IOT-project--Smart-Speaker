@@ -14,7 +14,7 @@
 #   2. save a snapshot of the speaker's data (to compare afterwards)
 #   3. install the Python packages the NEW code needs (nothing has changed yet)
 #   4. switch the code
-#   5. copy changed service files, reload systemd, restart the services
+#   5. copy changed service files and log settings, reload systemd, restart the services
 #   6. run the quick check and compare the data with the snapshot
 
 set -euo pipefail
@@ -66,6 +66,31 @@ install_units() {   # copy only the service files that differ, then reload syste
     return 0
 }
 
+install_system_files() {   # the extra files listed in services/system-files.txt (log rotation, a persistent journal)
+    local manifest="$REPO/services/system-files.txt" src dst mode restart unit
+    local restarts=()
+    [ -f "$manifest" ] || return 0
+    while read -r src dst mode restart <&3; do
+        case "$src" in ''|\#*) continue ;; esac
+        if [ ! -f "$REPO/services/$src" ]; then
+            say "(system-files.txt lists services/$src but it is missing; skipped)"
+            continue
+        fi
+        if ! diff -q "$REPO/services/$src" "$dst" >/dev/null 2>&1; then
+            act "system file changed: $dst"
+            do_it sudo mkdir -p "$(dirname "$dst")"
+            do_it sudo cp "$REPO/services/$src" "$dst"
+            do_it sudo chown root:root "$dst"
+            do_it sudo chmod "$mode" "$dst"
+            if [ -n "$restart" ]; then restarts+=("$restart"); fi
+        fi
+    done 3< "$manifest"
+    for unit in ${restarts[@]+"${restarts[@]}"}; do
+        do_it sudo systemctl restart "$unit"
+    done
+    return 0
+}
+
 restart_services() {
     local s
     for s in "${SERVICES[@]}"; do
@@ -110,6 +135,7 @@ if [ "$UNDO" -eq 1 ]; then
         do_it git checkout --detach "$PREV_COMMIT"
     fi
     install_units
+    install_system_files
     restart_services
     run_check
     exit $?
@@ -191,6 +217,7 @@ esac
 # ---- 5. services ------------------------------------------------------------------------------------
 step "5. Service files and restart"
 install_units
+install_system_files
 restart_services
 
 # ---- 6. check ------------------------------------------------------------------------------------------

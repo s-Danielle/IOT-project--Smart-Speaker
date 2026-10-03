@@ -41,6 +41,20 @@ done
 echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
+# Log rotation and a persistent system log (see system-files.txt)
+MANIFEST="$SOURCE_DIR/system-files.txt"
+if [ -f "$MANIFEST" ]; then
+    echo "Installing the logging files..."
+    while read -r SRC DST MODE RESTART <&3; do
+        case "$SRC" in ''|\#*) continue ;; esac
+        mkdir -p "$(dirname "$DST")"
+        cp "$SOURCE_DIR/$SRC" "$DST"
+        chown root:root "$DST"
+        chmod "$MODE" "$DST"
+        if [ -n "$RESTART" ]; then systemctl restart "$RESTART" || true; fi
+    done 3< "$MANIFEST"
+fi
+
 for SERVICE_NAME in "${SERVICES[@]}"; do
     echo "Enabling and starting $SERVICE_NAME..."
     systemctl enable --now "$SERVICE_NAME" || true
