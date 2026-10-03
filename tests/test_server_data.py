@@ -207,11 +207,12 @@ OLD_TAGS = {"E41C9DBB": {"name": "MyFirstChip", "uri": "spotify:track:1"}}
 
 
 def restart(api):
-    """What a service restart does: a new store on the same file, then start_storage()."""
-    new_store = JsonStore(api.store.path, today=lambda: "2026-10-03")
-    api.module.store = new_store
+    """What a service restart does: start_storage() opens the data again (the kind comes from SPEAKER_STORAGE)."""
+    old = api.module.store
+    if hasattr(old, "close"):
+        old.close()
     api.module.start_storage()
-    return new_store
+    return api.module.store
 
 
 def test_the_first_start_imports_the_old_tags_file(api):
@@ -233,13 +234,39 @@ def test_a_chip_deleted_in_the_app_stays_deleted_after_a_restart(api):
 def test_a_start_without_an_old_tags_file(api):
     restart(api)
     assert api.get("/chips")[1] == []
-    assert os.path.exists(api.store.path)
+    assert os.path.exists(api.data_path)
 
 
 def test_a_damaged_data_file_is_repaired_at_start(api):
     api.post("/chips", {"uid": "AA11"})
     api.post("/chips", {"uid": "BB22"})
-    with open(api.store.path, "w") as f:
-        f.write("garbage")
     restart(api)
-    assert [c["uid"] for c in api.get("/chips")[1]] == ["AA11"]  # the last good copy
+    api.module.store.close() if hasattr(api.module.store, "close") else None
+    for extra in ("-wal", "-shm"):
+        if os.path.exists(api.data_path + extra):
+            os.remove(api.data_path + extra)
+    with open(api.data_path, "wb") as f:
+        f.write(b"garbage" * 100)
+    restart(api)
+    uids = [c["uid"] for c in api.get("/chips")[1]]
+    # The JSON file keeps the version before the last save; the database keeps a copy made at
+    # start-up (and once a day), which here was made by the first restart, with both chips in it.
+    assert uids == (["AA11"] if api.kind == "json" else ["AA11", "BB22"])
+
+
+def test_the_status_says_which_store_is_in_use(api):
+    assert api.get("/status") == (200, {"connected": True, "storage": api.kind})
+
+
+def test_a_start_with_the_other_store_chosen_moves_the_data_across(api, monkeypatch):
+    chip = api.post("/chips", {"uid": "AA11", "name": "Bedtime"})[1]
+    api.put("/chips/" + chip["id"], {"song_id": "song001"})
+    other = "sqlite" if api.kind == "json" else "json"
+    monkeypatch.setenv("SPEAKER_STORAGE", other)
+    restart(api)
+    assert api.get("/status")[1]["storage"] == other
+    moved = api.get("/chips")[1]
+    assert [(c["uid"], c["name"], c["song_name"]) for c in moved] == [("AA11", "Bedtime", "Surprise")]
+    assert api.get("/chips/lookup?uid=AA11")[1]["uri"] == "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"
+    api.post("/chips", {"uid": "BB22"})  # and it keeps working in the new store
+    assert len(api.get("/chips")[1]) == 2

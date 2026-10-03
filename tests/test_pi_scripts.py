@@ -569,3 +569,101 @@ def test_shell_scripts_have_valid_syntax(name):
     # `bash -n` only reads the file and checks the syntax. It does not run anything in it.
     result = subprocess.run(["bash", "-n", str(PI_SCRIPTS / name)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+# --------------------------------------------------------------------------
+# db_export_json.py: reads the database, writes a copy, and refuses the risky cases
+# --------------------------------------------------------------------------
+
+import db_export_json  # noqa: E402
+
+
+@pytest.fixture
+def speaker_folder(tmp_path):
+    """A program folder with a SQLite database that has one chip with a song."""
+    from storage import SqliteStore
+
+    main = tmp_path / "Main"
+    main.mkdir()
+    store = SqliteStore(str(main / "server_data.db"), today=lambda: "2026-10-03")
+    store.open()
+    chip = store.register_chip("04A1B2C3", "Bedtime")
+    store.update_chip(chip["id"], {"song_id": "song001"})
+    store.close()
+    # find_repo wants the storage package next to the database's Main folder
+    (main / "storage").symlink_to(REPO / "Main" / "storage")
+    return tmp_path
+
+
+def run_export(capsys, *args):
+    code = db_export_json.main(list(args))
+    return code, capsys.readouterr().out
+
+
+def test_export_checks_the_database_and_writes_nothing_by_default(speaker_folder, capsys, tmp_path):
+    out = tmp_path / "copy.json"
+    code, text = run_export(capsys, "--repo", str(speaker_folder), "--out", str(out))
+    assert code == 0
+    assert "chips: 1" in text and "songs: 2" in text and "passes its own check" in text
+    assert "Nothing was written" in text
+    assert not out.exists()
+
+
+def test_export_writes_a_copy_the_old_code_can_read(speaker_folder, capsys, tmp_path):
+    import json
+    out = tmp_path / "copy.json"
+    code, text = run_export(capsys, "--repo", str(speaker_folder), "--write", "--out", str(out))
+    assert code == 0 and "it matches" in text
+    data = json.loads(out.read_text())
+    assert data["chips"][0]["uid"] == "04A1B2C3" and data["chips"][0]["song_name"] == "Surprise"
+    assert {s["id"] for s in data["library"]} == {"song001", "song002"}
+
+
+def test_export_does_not_overwrite_a_file_unless_told_to(speaker_folder, capsys, tmp_path):
+    out = tmp_path / "copy.json"
+    out.write_text('{"chips": [], "library": [], "note": "precious"}')
+    code, text = run_export(capsys, "--repo", str(speaker_folder), "--write", "--out", str(out))
+    assert code == 1 and "already exists" in text
+    assert "precious" in out.read_text()
+    code, _ = run_export(capsys, "--repo", str(speaker_folder), "--write", "--out", str(out), "--overwrite")
+    assert code == 0 and "precious" in (tmp_path / "copy.json.bak").read_text()
+
+
+def test_export_over_a_file_that_is_not_json_keeps_that_file_too(speaker_folder, capsys, tmp_path):
+    out = tmp_path / "copy.json"
+    out.write_text("precious")
+    code, _ = run_export(capsys, "--repo", str(speaker_folder), "--write", "--out", str(out), "--overwrite")
+    assert code == 0
+    kept = [p for p in tmp_path.iterdir() if p.name.startswith("copy.json.corrupt-")]
+    assert len(kept) == 1 and kept[0].read_text() == "precious"
+
+
+def test_export_will_not_write_next_to_the_live_database(speaker_folder, capsys):
+    live = speaker_folder / "Main" / "server_data.json"
+    code, text = run_export(capsys, "--repo", str(speaker_folder), "--write", "--out", str(live))
+    assert code == 1 and "SPEAKER_STORAGE=json" in text
+    assert not live.exists()
+
+
+def test_export_says_so_when_there_is_no_database(tmp_path, capsys):
+    main = tmp_path / "Main"
+    main.mkdir()
+    (main / "storage").symlink_to(REPO / "Main" / "storage")
+    code, text = run_export(capsys, "--repo", str(tmp_path))
+    assert code == 1 and "no database" in text
+
+
+def test_export_reports_a_damaged_database_and_does_not_write(speaker_folder, capsys, tmp_path):
+    db = speaker_folder / "Main" / "server_data.db"
+    for extra in ("-wal", "-shm"):
+        if (speaker_folder / "Main" / ("server_data.db" + extra)).exists():
+            (speaker_folder / "Main" / ("server_data.db" + extra)).unlink()
+    db.write_bytes(b"not a database" * 100)
+    out = tmp_path / "copy.json"
+    code, text = run_export(capsys, "--repo", str(speaker_folder), "--write", "--out", str(out))
+    assert code == 1 and not out.exists()
+
+
+def test_export_cannot_find_the_program_folder(tmp_path, capsys):
+    code, text = run_export(capsys, "--repo", str(tmp_path / "nowhere"))
+    assert code == 2 and "--repo" in text

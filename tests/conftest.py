@@ -56,26 +56,35 @@ def server_module(tmp_path_factory):
     sys.modules.pop("server", None)
 
 
-@pytest.fixture
-def api(server_module, tmp_path, monkeypatch):
+@pytest.fixture(params=["json", "sqlite"])
+def api(request, server_module, tmp_path, monkeypatch):
+    """A running server with its data in a temporary folder, once with each kind of data store."""
+    kind = request.param
     uploads = tmp_path / "uploads"
     uploads.mkdir()
-    store = JsonStore(str(tmp_path / "server_data.json"), today=lambda: "2026-10-03")
+    monkeypatch.setenv("SPEAKER_STORAGE", kind)  # what a restart (start_storage) will pick
+    data_path = str(tmp_path / ("server_data.json" if kind == "json" else "server_data.db"))
+    from storage import SqliteStore
+    store = (JsonStore if kind == "json" else SqliteStore)(data_path, today=lambda: "2026-10-03")
     monkeypatch.setattr(server_module, "store", store)
-    monkeypatch.setattr(server_module, "DATA_FILE", store.path)
+    monkeypatch.setattr(server_module, "DATA_FILE", str(tmp_path / "server_data.json"))
     monkeypatch.setattr(server_module, "UPLOADS_DIR", str(uploads))
     monkeypatch.setattr(server_module, "OLD_TAGS_FILE", str(tmp_path / "tags.json"))
     httpd = server_module.ThreadPoolHTTPServer(("127.0.0.1", 0), server_module.SpeakerHandler, max_workers=2)
     thread = threading.Thread(target=lambda: httpd.serve_forever(poll_interval=0.02), daemon=True)
     thread.start()
     client = Client("http://127.0.0.1:%d" % httpd.server_address[1])
-    client.store = store
+    client.kind = kind
+    client.data_path = data_path
     client.module = server_module
     client.tmp = tmp_path
     yield client
     httpd.shutdown()
     httpd.server_close()
     thread.join(timeout=5)
+    for s in (store, server_module.store):
+        if hasattr(s, "close"):
+            s.close()
 
 
 class Client:

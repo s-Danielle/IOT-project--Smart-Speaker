@@ -212,13 +212,49 @@ The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi
 - [ ] **5.13** Voice: hold PTT and say "hi speaker, clear" with a chip loaded: the chip's song link is cleared (check the app) and only then the music stops. Say a command with the internet off or the microphone covered: the speaker answers within about 10 seconds and the buttons still work.
 - [ ] **5.14** The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
 
-**Part C: WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
-- [ ] **5.15** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.
-- [ ] **5.16** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot.
+**Part C: the database (SQLite)** (the data moves out of the JSON file into a database that a power cut cannot damage; this is a switch you turn on, look at, rehearse turning off, and turn on again)
+
+How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been running) or `sqlite`. When the server starts and finds the setting has changed, it moves your data across by itself, **checks every row against the original**, and keeps the old copy under a dated name (`server_data.json.migrated-<date>` or `server_data.db.exported-<date>`). If the check fails it undoes itself and carries on with the old copy, and says so in the log. There is only ever one live copy of the data, so the two can't drift apart.
+
+- [ ] **5.15** Take a snapshot of what the app sees now, to compare with later (it hashes the chips, library and settings):
+  ```
+  python3 /tmp/pi/pi_smoke_test.py --only data --save-data /tmp/data-json.json
+  ```
+- [ ] **5.16** Switch to SQLite:
+  ```
+  sudo mkdir -p /etc/systemd/system/smart_speaker_server.service.d
+  printf '[Service]\nEnvironment=SPEAKER_STORAGE=sqlite\n' | sudo tee /etc/systemd/system/smart_speaker_server.service.d/storage.conf
+  sudo systemctl daemon-reload
+  sudo systemctl restart smart_speaker_server
+  ```
+  Then check:
+  - [ ] `grep STORAGE /var/log/smart_speaker_server.log | tail -n 8` says the JSON data was moved into the database and the old file was kept as `server_data.json.migrated-...`, with no line saying it failed
+  - [ ] `curl -s localhost:8080/status` shows `"storage": "sqlite"`
+  - [ ] `ls -l /home/iot-proj/IOT-project--Smart-Speaker/Main/server_data*` shows `server_data.db` (with `-wal` and `-shm` files next to it, which is normal), `server_data.db.bak`, and the `.migrated-` JSON copy, and **no** plain `server_data.json`
+  - [ ] `python3 /tmp/pi/db_export_json.py` says the database passes its own check and shows your chip and song counts
+  - [ ] `python3 /tmp/pi/pi_smoke_test.py --only api --compare-data /tmp/data-json.json` says the data matches
+  - [ ] the app shows the same chips, library and settings as before
+- [ ] **5.17** Use it: rename a chip and assign a different song in the app, tap that chip, press Play. Add a song from the app. Everything works as before, and the controller log shows no errors about the chip lookup (`journalctl -u smart_speaker -n 50`).
+- [ ] **5.18** `sudo reboot`. After 90 seconds the changes from 5.17 are still there and `/status` still says `sqlite`. (The real power-cut test is in step 7.)
+- [ ] **5.19** Rehearse the way back. Switch to JSON:
+  ```
+  printf '[Service]\nEnvironment=SPEAKER_STORAGE=json\n' | sudo tee /etc/systemd/system/smart_speaker_server.service.d/storage.conf
+  sudo systemctl daemon-reload
+  sudo systemctl restart smart_speaker_server
+  ```
+  - [ ] the log says the data was moved back into the JSON file, and the database was kept as `server_data.db.exported-...`
+  - [ ] `/status` shows `"storage": "json"`, and the changes you made in 5.17 are still there in the app
+  - [ ] `ls /home/iot-proj/IOT-project--Smart-Speaker/Main/server_data*` shows `server_data.json` and **no** `server_data.db`
+- [ ] **5.20** Switch to SQLite again (same commands as 5.16 with `sqlite`) and check the changes are still there. If everything passed, **leave it on SQLite** and tell me: I then make SQLite the default in the code, so this setting file is no longer needed. (If something failed, set it back to `json`, tell me what the log said, and nothing is lost: both copies are kept.)
+
+**Part D: WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
+- [ ] **5.21** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.
+- [ ] **5.22** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot.
 
 **Undo, if something is wrong**
 - Code: `bash /tmp/pi/pi_update.sh --undo`. It goes back to the previous code. The extra system files stay in place; they're harmless. To remove them: `sudo rm /etc/systemd/journald.conf.d/90-smart-speaker.conf /etc/logrotate.d/smart_speaker` and then `sudo systemctl restart systemd-journald`.
 - Mopidy settings: `bash /tmp/pi/pi_install_audio.sh --rollback`.
+- The database: set `SPEAKER_STORAGE=json` as in 5.19. The code switch above (`pi_update.sh --undo`) does not move data by itself: if the Pi has been on SQLite, do 5.19 **first**, then undo the code.
 
 ---
 

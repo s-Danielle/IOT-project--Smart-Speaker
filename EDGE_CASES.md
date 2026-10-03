@@ -98,6 +98,12 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 46 | A chip number in lower case (older tools wrote it that way) | Chip numbers are compared without regard to case, so it is the same chip |
 | 47 | The app asks for today's usage on a new day | It reports 0 seconds without rewriting the data file (it used to rewrite the whole file) |
 | 48 | A chip is tapped | The controller asks the server about that one chip (`GET /chips/lookup?uid=`) and gets the chip with its song link. It used to download the whole chip list and the whole library on every tap. A server that cannot be reached is an error (the chip is not re-registered), and an unknown chip is registered |
+| 49 | SQLite: the program is killed in the middle of a save | A save is all or nothing (write-ahead log, every save forced to the card). 250 random kills of a writing program, with saves of 1 and of 40 rows, left the database sound every time. (A real power cut is tested on the speaker, `BRINGUP.md` step 7) |
+| 50 | SQLite: the database file is damaged | It checks itself at start-up (integrity check). If it fails, the damaged files are kept as `server_data.db.corrupt-<time>` and the copy `server_data.db.bak` (made at start-up and once a day, so up to a day old) is put back. With no good copy it starts empty and keeps the damaged files |
+| 51 | SQLite: a song is deleted while chips use it | The database clears those chips' links itself; a chip can never point at a song that is not there |
+| 52 | SQLite: the same chip number in another case | The database allows each number once, whatever its case |
+| 53 | Moving the data from JSON to SQLite (and back) | Done by the server at start-up when `SPEAKER_STORAGE` changes. The new copy is built under another name and compared row by row with the old one before it is put in place; a mismatch undoes it and the old copy keeps being used. Repeated chip numbers or ids, chips pointing at missing songs, and entries of the wrong kind are cleaned up and listed in the log. The old copy is kept under a dated name |
+| 54 | Two programs save to the SQLite database at the same moment | The second waits (up to 5 seconds) instead of failing with "database is locked" |
 
 ---
 

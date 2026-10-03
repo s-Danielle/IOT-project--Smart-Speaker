@@ -21,7 +21,7 @@ import subprocess
 import time
 from utils.logger import log, log_success
 from utils.shared_dirs import ensure_shared_dir
-from storage import JsonStore
+from storage import JsonStore, open_store
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT,
     render_network_list_html, CAPTIVE_PORTAL_HTML
@@ -131,21 +131,28 @@ def is_ap_mode() -> bool:
 # =============================================================================
 # DATA: chips, songs, parental controls, daily usage
 # =============================================================================
-# One store owns the data file and saves it safely (see storage/json_store.py).
-# Everything below that reads or writes the data goes through it.
+# One store owns the data and saves it safely. It is either a JSON file or a SQLite database
+# (the setting SPEAKER_STORAGE, see storage/__init__.py). Everything below that reads or writes
+# the data goes through it. This one is only a placeholder until start_storage() runs.
 store = JsonStore(DATA_FILE)
 
 
 def start_storage():
-    """Open the data file when the server starts: create it, or repair it from its backup."""
-    status = store.open()
+    """Open the data when the server starts: pick JSON or SQLite, move the data across if the
+    choice has changed, create the data on a first run, repair it from its backup if it is damaged."""
+    global store
+    store, status, notes = open_store(os.path.dirname(DATA_FILE))
+    for level, message in notes:
+        log(message, 'ERROR' if level == 'error' else 'INFO')
     what_happened = {
-        'ok': 'data file opened',
-        'new': 'no data file yet, so one was created',
-        'recovered': 'the data file was damaged or missing, so the last good copy was put back (a damaged file is kept next to it)',
-        'damaged': 'the data file was damaged and there was no good copy, so it started empty (the damaged file was kept)',
+        'ok': 'data opened',
+        'new': 'no data yet, so it was created',
+        'imported': 'the JSON data was moved into the SQLite database',
+        'exported': 'the SQLite data was moved back into the JSON file',
+        'recovered': 'the data was damaged or missing, so the last good copy was put back (the damaged one is kept next to it)',
+        'damaged': 'the data was damaged and there was no good copy, so it started empty (the damaged file was kept)',
     }
-    log(f"[STORAGE] {what_happened[status]} ({store.kind}: {DATA_FILE})")
+    log(f"[STORAGE] {what_happened[status]} ({store.kind})")
     if status == 'new':
         import_old_tags_file()
 
@@ -734,7 +741,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             return
         
         if path == '/status':
-            self._send_json({"connected": True})
+            self._send_json({"connected": True, "storage": store.kind})
         elif path == '/health':
             # Return hardware health status for all components
             from utils.hardware_health import HardwareHealthManager
@@ -1037,7 +1044,7 @@ def run_server_blocking(port=8080, host='0.0.0.0'):
     start_storage()
     server = ThreadPoolHTTPServer((host, port), SpeakerHandler, max_workers=2)
     log_success(f"HTTP Server started on http://{host}:{port}")
-    log(f"  - Data file: {DATA_FILE}")
+    log(f"  - Data: {store.kind} store in {os.path.dirname(DATA_FILE)}")
     log(f"  - Local files directory: {LOCAL_FILES_DIR}")
     log("Server running in standalone mode (blocking)...")
     

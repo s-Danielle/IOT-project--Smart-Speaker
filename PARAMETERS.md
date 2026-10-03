@@ -137,6 +137,18 @@ Defined in `Main/config/paths.py`:
 |------|-------------|
 | `TAGS_JSON` | `Main/config/tags.json` - old NFC chip list. It is imported once, on the very first run, into the data file below |
 | `DATA_FILE` | `Main/server_data.json` - chips, songs, parental controls and daily usage, owned by the server (`Main/storage/`). Each save keeps the previous version as `server_data.json.bak`; a damaged file is kept as `server_data.json.corrupt-<time>` (the newest 3) |
+| `server_data.db` | The same data in a SQLite database, when `SPEAKER_STORAGE=sqlite`. Next to it: `-wal` and `-shm` (normal), `server_data.db.bak` (a copy made at start-up and once a day), and `.corrupt-<time>` for a damaged one. See below |
+
+**Where the data lives: `SPEAKER_STORAGE`**
+
+An environment setting of the server (`smart_speaker_server`), set with a systemd drop-in (`BRINGUP.md`, step 5, part C).
+
+| Value | Meaning |
+|-------|---------|
+| `json` (default) | The data is in `Main/server_data.json`, saved safely (temporary file, then rename, with the previous version kept as `.bak`) |
+| `sqlite` | The data is in `Main/server_data.db`. A power cut leaves the old data or the new data, never half |
+
+Changing the value and restarting the server moves the data across by itself, checks it, and keeps the old copy under a dated name (`server_data.json.migrated-<date>` or `server_data.db.exported-<date>`); there is only ever one live copy. `GET /status` shows which one is in use (`"storage": "sqlite"`). `scripts/pi/db_export_json.py` checks the database and writes a readable JSON copy without changing anything.
 | `SOUNDS_DIR` | `Main/assets/sounds/` - Audio feedback files |
 | `RECORDINGS_DIR` | `Main/local_files/recordings/` - User recordings |
 
