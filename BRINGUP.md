@@ -170,7 +170,7 @@ sudo systemctl stop smart_speaker smart_speaker_health
 
 ## Step 5: install the fixes (about 60 minutes)
 
-The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi pulls from there). Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is tested by 194 automatic tests on the development computer, but **none of it has run on the Pi yet**: the shared LED file on real I2C, the NFC reader retry, the WiFi retry, `setup.sh` and the saved system log are all untested on real hardware, so this step is where they get their first real run.
+The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi pulls from there). Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is covered by more than 700 automatic tests on the development computer, but **none of it has run on the Pi yet**: the shared LED file on real I2C, the NFC reader retry, the WiFi retry, `setup.sh` and the saved system log are all untested on real hardware, so this step is where they get their first real run.
 
 **Part A: the code**
 - [ ] **5.1** Preview. It lists what changes and the system files it would install (log rotation, a saved system log). It changes nothing:
