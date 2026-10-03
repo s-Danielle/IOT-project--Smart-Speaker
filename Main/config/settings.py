@@ -73,4 +73,6 @@ MIN_DISK_SPACE_MB = 100  # Minimum free disk space in MB before allowing recordi
 PTT_ENABLED = True                          # Enable/disable PTT feature
 PTT_LISTEN_DURATION = 5.0                   # Seconds to listen for voice command
 PTT_WAKE_PHRASE = "hi speaker"              # Must say this before command
+PTT_MAX_HOLD = 10.0                         # Seconds: holding PTT longer counts as "let go" (a stuck button must not keep the mic and music paused)
+PTT_TRANSCRIBE_TIMEOUT = 8.0                # Seconds to wait for the speech service before giving up (the controller waits meanwhile)
 # Note: Uses Google Speech API (requires internet connection)

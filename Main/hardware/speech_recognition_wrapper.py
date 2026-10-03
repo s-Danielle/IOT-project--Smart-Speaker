@@ -6,8 +6,10 @@ Requires internet connection.
 
 import os
 import tempfile
+import threading
 import wave
 from typing import Optional
+from config.settings import PTT_TRANSCRIBE_TIMEOUT
 from utils.logger import log
 
 
@@ -49,7 +51,10 @@ class SpeechRecognitionWrapper:
             log(f"[SPEECH] Error initializing: {e}")
             return False
     
-    def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> Optional[str]:
+    def transcribe(self, audio_data: bytes, sample_rate: int = 16000,
+                   timeout: Optional[float] = None) -> Optional[str]:
+        # `timeout`: seconds to wait for the speech service in total (default PTT_TRANSCRIBE_TIMEOUT).
+        # Without it a dead connection froze the whole controller for minutes.
         """
         Transcribe audio bytes to text using Google Speech API.
         
@@ -83,7 +88,7 @@ class SpeechRecognitionWrapper:
                     audio = self._recognizer.record(source)
                 
                 # Transcribe using Google (free, no API key needed)
-                text = self._recognizer.recognize_google(audio).lower().strip()
+                text = self._recognize_with_timeout(audio, timeout).lower().strip()
                 
                 if text:
                     log(f"[SPEECH] Transcribed: '{text}'")
@@ -106,10 +111,38 @@ class SpeechRecognitionWrapper:
                 log("[SPEECH] Could not understand audio")
             elif error_name == 'RequestError':
                 log(f"[SPEECH] API error (need internet): {e}")
+            elif error_name == 'TimeoutError':
+                log(f"[SPEECH] {e} (no internet?)")
             else:
                 log(f"[SPEECH] Transcription error: {e}")
             return None
     
+    def _recognize_with_timeout(self, audio, timeout: Optional[float] = None) -> str:
+        """Ask Google, but never wait longer than `timeout` seconds in total.
+
+        The library's own timeout applies to each network step, not to the whole request, and
+        name lookup has none. So the request runs on its own thread and we stop waiting for it
+        (the thread ends by itself when the connection finally gives up).
+        """
+        seconds = PTT_TRANSCRIBE_TIMEOUT if timeout is None else timeout
+        self._recognizer.operation_timeout = seconds
+        outcome = {}
+
+        def ask():
+            try:
+                outcome["text"] = self._recognizer.recognize_google(audio)
+            except Exception as exc:  # handed back to the caller below
+                outcome["error"] = exc
+
+        thread = threading.Thread(target=ask, name="speech-request", daemon=True)
+        thread.start()
+        thread.join(seconds)
+        if thread.is_alive():
+            raise TimeoutError(f"The speech service did not answer within {seconds:.0f}s")
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["text"]
+
     def is_available(self) -> bool:
         """Check if speech recognition is available."""
         try:

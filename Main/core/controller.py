@@ -6,6 +6,7 @@ Main loop: polls inputs, updates state machine
 import time
 import os
 import subprocess
+import threading
 from datetime import datetime
 
 
@@ -27,6 +28,7 @@ from config.settings import (
     MAX_WAIT_FOR_PLAYBACK,
     MIN_PLAYBACK_DURATION,
     PTT_ENABLED,
+    PTT_MAX_HOLD,
     MAX_RECORDING_DURATION,
     MIN_DISK_SPACE_MB,
     VOLUME_DEFAULT,
@@ -1040,19 +1042,34 @@ class Controller:
                 self._ptt_leds.set_light(2, Colors.BLUE)
             return
         
-        # Handle button release - STOP recording and process
-        if self._buttons.just_released(ButtonID.PTT):
+        # Handle button release - STOP recording and process. Holding longer than PTT_MAX_HOLD
+        # counts as a release too, so a stuck button cannot keep the mic (and the music) paused.
+        released = self._buttons.just_released(ButtonID.PTT)
+        held_too_long = (
+            self._buttons.is_pressed(ButtonID.PTT)
+            and self._voice_command.is_recording()
+            and self._buttons.hold_duration(ButtonID.PTT) >= PTT_MAX_HOLD
+        )
+        if released or held_too_long:
             # Check if we were actually recording
             if not self._voice_command.is_recording():
                 return
-            
-            log_button("PTT released - processing command")
-            
+
+            if released:
+                log_button("PTT released - processing command")
+            else:
+                log_button(f"PTT held {PTT_MAX_HOLD:.0f}s - processing command")
+
             # Keep BLUE while processing
             if self._ptt_leds:
                 self._ptt_leds.set_light(2, Colors.BLUE)
-            
-            command = self._voice_command.stop_and_parse()
+
+            try:
+                command = self._voice_command.stop_and_parse()
+            except Exception as e:
+                # Whatever goes wrong, the mic must be released below and the loop must go on
+                log_error(f"[PTT] Voice processing failed: {e}")
+                command = None
             restore = self._should_restore_media_after_ptt(command)
             self._mic.release(restore=restore)
             if restore and self.device_state.state == State.PLAYING:
@@ -1063,14 +1080,23 @@ class Controller:
             return
     
     def _ptt_blink(self, color: tuple, times: int = 3):
-        """Blink PTT LED (Light 2) then turn off"""
+        """Blink PTT LED (Light 2) then turn off. Runs on its own thread, so the buttons
+        keep working (it used to block the main loop for 0.6 s after every voice command).
+        Returns the thread (or None), which the tests wait for."""
         if not self._ptt_leds:
-            return
-        for _ in range(times):
-            self._ptt_leds.set_light(2, color)
-            time.sleep(0.1)
-            self._ptt_leds.off(2)
-            time.sleep(0.1)
+            return None
+        leds = self._ptt_leds
+
+        def blink():
+            for _ in range(times):
+                leds.set_light(2, color)
+                time.sleep(0.1)
+                leds.off(2)
+                time.sleep(0.1)
+
+        thread = threading.Thread(target=blink, name="ptt-blink", daemon=True)
+        thread.start()
+        return thread
 
     def _should_restore_media_after_ptt(self, command: Optional[str]) -> bool:
         """Resume paused media unless the command is about to change playback."""
