@@ -27,7 +27,7 @@ def chip(uid, name="Chip", uri=SONG, chip_id="chip-1"):
 class Rig:
     """Build with Rig(monkeypatch). Parental controls are off until set_parental()."""
 
-    def __init__(self, monkeypatch, chips=None, voice_command=None, ptt_leds=None, volume=50, parental=None):
+    def __init__(self, monkeypatch, chips=None, voice_command=None, ptt_leds=None, volume=50, parental=None, status_path=None):
         self.nfc = fakes.FakeNFC()
         self.chip_store = fakes.FakeChipStore(chips if chips is not None else {"AA": chip("AA"), "BB": chip("BB", "Other", chip_id="chip-2")})
         self.buttons = fakes.FakeButtons()
@@ -53,6 +53,8 @@ class Rig:
             recorder=self.recorder,
             voice_command=voice_command,
             ptt_leds=ptt_leds,
+            status_path=status_path,  # None: the status file is off unless a test asks for it
+            version="test",
         )
 
     def _add_usage(self, seconds):

@@ -22,6 +22,7 @@ from hardware.mic_session import MicSession
 from ui.ui_controller import UIController
 from config.settings import (
     LOOP_INTERVAL, 
+    STATUS_INTERVAL,
     RECORD_HOLD_DURATION, 
     CLEAR_CHIP_HOLD_DURATION,
     PLAY_LATEST_HOLD_DURATION,
@@ -36,6 +37,8 @@ from config.settings import (
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
 from utils.server_client import get_parental_controls, get_daily_usage, add_daily_usage
+from utils.status_file import status_path, write_status, git_version
+from utils.hardware_health import HardwareHealthManager
 from hardware.leds import RGBLeds, Colors
 import shutil
 
@@ -49,6 +52,8 @@ class Controller:
         The speaker passes nothing and gets the real hardware. Tests pass fake
         parts (nfc, chip_store, buttons, audio, mixer, ui, mic, recorder,
         voice_command, ptt_leds) so the logic can run without any hardware.
+        `status_path` (None switches the status file off) and `version` are
+        passed by tests too.
         """
         log("=" * 60)
         log("SMART SPEAKER CONTROLLER STARTING")
@@ -126,6 +131,15 @@ class Controller:
         # Track last volume limit check time (check periodically, not every loop)
         self._last_volume_limit_check: float = 0.0
         
+        # The status file: proof the loop is running, and what the speaker is doing
+        self._status_path = parts["status_path"] if "status_path" in parts else status_path()
+        self._version = parts["version"] if "version" in parts else git_version(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self._started = time.monotonic()
+        self._last_status_write = float("-inf")
+        self._last_status_key = None
+        self._status_write_failed = False
+        self._last_play = None  # {"result": "waiting" | "ok" | "failed", "reason": ..., "at": ...}
+
         self._apply_safe_startup_volume()
 
         log_state(f"Initial state: {self.device_state.state}")
@@ -172,6 +186,74 @@ class Controller:
             self._check_and_enforce_volume_limit()
             self._last_volume_limit_check = now
 
+        self._publish_status(now)
+
+    # =========================================================================
+    # STATUS FILE
+    # =========================================================================
+
+    def _record_play(self, result: str, reason: Optional[str] = None):
+        """Remember how the last attempt to play something went (the app shows it)."""
+        self._last_play = {"result": result, "reason": reason, "at": datetime.now().isoformat(timespec="seconds")}
+        if result == "failed":
+            log_error(f"[PLAY] The last play failed: {reason}")
+
+    def _status_snapshot(self) -> dict:
+        chip = self.device_state.loaded_chip
+        meta = chip.metadata if chip is not None and isinstance(chip.metadata, dict) else {}
+        try:
+            volume = self._mixer.get_volume()
+        except Exception:
+            volume = None
+        try:
+            components = {
+                name: {"status": h.status.value, "last_error": h.last_error, "error_count": h.error_count}
+                for name, h in HardwareHealthManager.get_instance().get_all_status().items()
+            }
+        except Exception:
+            components = {}
+        return {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "uptime_seconds": int(time.monotonic() - self._started),
+            "version": self._version,
+            "state": self.device_state.state.name,
+            "chip": None if chip is None else {
+                "id": meta.get("id"), "uid": chip.uid, "name": chip.name, "song_name": meta.get("song_name") or None,
+            },
+            "playing": (self.device_state.state == State.PLAYING and self._playback_confirmed
+                        and not self._mic.is_held()),
+            "volume": volume,
+            "mic_held": bool(self._mic.is_held()),
+            "last_play": self._last_play,
+            "components": components,
+        }
+
+    def _publish_status(self, now: float):
+        """Write the status file once a second, and straight away when something changes."""
+        if self._status_path is None:
+            return
+        chip = self.device_state.loaded_chip
+        key = (self.device_state.state, chip.uid if chip else None, self._last_play)
+        if key == self._last_status_key and now - self._last_status_write < STATUS_INTERVAL:
+            return
+        if write_status(self._status_snapshot(), self._status_path):
+            if self._status_write_failed:
+                log("[STATUS] The status file can be written again")
+                self._status_write_failed = False
+        elif not self._status_write_failed:
+            log_error(f"[STATUS] Cannot write the status file {self._status_path}: the app and the health light will "
+                      "think the controller is not running")
+            self._status_write_failed = True
+        self._last_status_key = key
+        self._last_status_write = now
+
+    def _remove_status_file(self):
+        if self._status_path is not None:
+            try:
+                os.remove(self._status_path)  # "not running" shows at once, not 20 seconds later
+            except OSError:
+                pass
+
     def shutdown(self):
         """Clean shutdown"""
         log("=" * 60)
@@ -185,6 +267,7 @@ class Controller:
         self._recorder.close()
         self._mic.release(restore=False)
         self._update_playback_usage()  # count the music played so far
+        self._remove_status_file()
         self._audio.close()
         try:
             self._ui.shutdown()  # speaker LED off
@@ -280,6 +363,7 @@ class Controller:
                 self._playback_confirmed = True
                 self._playback_confirmed_time = now
                 log_event("Playback confirmed by Mopidy")
+                self._record_play("ok")
                 return
             else:
                 # Still waiting for Mopidy to start playing
@@ -288,6 +372,7 @@ class Controller:
                     if elapsed > MAX_WAIT_FOR_PLAYBACK:
                         # Timeout - playback never started, something went wrong
                         log_event(f"Playback timeout after {elapsed:.1f}s - Mopidy never started playing")
+                        self._record_play("failed", f"Mopidy accepted the song but no sound started within {int(elapsed)} seconds")
                         self._audio.stop()  # in case it starts late: never play while the speaker shows idle
                         self._playback_time_start = None  # Don't count failed playback
                         self._reset_playback_tracking()
@@ -356,9 +441,12 @@ class Controller:
         """
         if not self._may_start_playback():
             return False
+        self._audio.last_error = None  # so a reason below is from this attempt, not an old one
         self.device_state = start()
         if self.device_state.state != State.PLAYING:
+            self._record_play("failed", getattr(self._audio, "last_error", None) or "it could not be started (see the controller log)")
             return False
+        self._record_play("waiting")
         self._wait_for_playback_confirmation()
         return True
 

@@ -7,6 +7,8 @@ a temporary folder. Nothing on the speaker's own folders or network is touched.
 import json
 import os
 
+import pytest
+
 from storage import JsonStore
 
 
@@ -255,7 +257,8 @@ def test_a_damaged_data_file_is_repaired_at_start(api):
 
 
 def test_the_status_says_which_store_is_in_use(api):
-    assert api.get("/status") == (200, {"connected": True, "storage": api.kind})
+    status, body = api.get("/status")
+    assert status == 200 and body["connected"] is True and body["storage"] == api.kind
 
 
 def test_a_start_with_the_other_store_chosen_moves_the_data_across(api, monkeypatch):
@@ -270,3 +273,108 @@ def test_a_start_with_the_other_store_chosen_moves_the_data_across(api, monkeypa
     assert api.get("/chips/lookup?uid=AA11")[1]["uri"] == "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"
     api.post("/chips", {"uid": "BB22"})  # and it keeps working in the new store
     assert len(api.get("/chips")[1]) == 2
+
+
+# ---------------------------------------------------------------------------
+# /status and /health show what the controller says about itself
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def controller_status(api, monkeypatch):
+    """Where the controller's status file would be. Call .write(...) to play the controller."""
+    path = str(api.tmp / "status.json")
+    monkeypatch.setenv("SPEAKER_STATUS_FILE", path)
+
+    class Controller:
+        def write(self, **content):
+            from utils.status_file import write_status
+            base = {"state": "IDLE_NO_CHIP", "chip": None, "playing": False, "volume": 40, "last_play": None, "components": {}}
+            return write_status(dict(base, **content), path)
+
+        def write_stale(self, seconds_ago=60):
+            import json
+            self.write()
+            content = json.load(open(path))
+            content["monotonic"] -= seconds_ago
+            json.dump(content, open(path, "w"))
+
+    return Controller()
+
+
+def test_the_status_without_a_controller(api, controller_status):
+    status, body = api.get("/status")
+    assert status == 200 and body["connected"] is True and body["storage"] == api.kind
+    assert body["controller"]["alive"] is False and "not running" in body["controller"]["problem"]
+    assert body["usage"] == {"date": "2026-10-03", "seconds": 0}
+
+
+def test_the_status_shows_what_the_speaker_is_doing_and_the_minutes_used(api, controller_status):
+    controller_status.write(state="PLAYING", playing=True, chip={"id": "c1", "uid": "AA", "name": "Bedtime", "song_name": "Lullaby"})
+    api.post("/usage/add", {"seconds": 125})
+    body = api.get("/status")[1]
+    assert body["controller"]["alive"] is True
+    assert body["controller"]["state"] == "PLAYING" and body["controller"]["chip"]["song_name"] == "Lullaby"
+    assert body["usage"]["seconds"] == 125
+
+
+def test_the_status_still_answers_when_the_data_store_does_not(api, controller_status, monkeypatch):
+    def broken():
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(api.module.store, "daily_usage", broken)
+    status, body = api.get("/status")
+    assert status == 200 and body["connected"] is True
+    assert body["usage"] is None and "disk gone" in body["usage_error"]
+
+
+def test_the_health_is_not_ok_without_a_controller(api, controller_status):
+    status, body = api.get("/health")
+    assert status == 503 and body["ok"] is False
+    assert any("not running" in p for p in body["problems"])
+
+
+def test_the_health_is_ok_with_a_running_controller(api, controller_status):
+    controller_status.write()
+    status, body = api.get("/health")
+    assert status == 200 and body == {
+        "ok": True, "problems": [], "warnings": [], "server": {"ok": True, "storage": api.kind},
+        "controller": body["controller"],
+    }
+    assert body["controller"]["alive"] is True
+
+
+def test_a_stuck_controller_is_a_problem(api, controller_status):
+    controller_status.write_stale(60)
+    status, body = api.get("/health")
+    assert status == 503 and any("stuck" in p for p in body["problems"])
+
+
+def test_a_failed_part_is_a_problem_and_a_struggling_part_a_warning(api, controller_status):
+    controller_status.write(components={
+        "nfc": {"status": "failed", "last_error": "no reader", "error_count": 9},
+        "audio": {"status": "degraded", "last_error": "slow", "error_count": 2},
+        "buttons": {"status": "ok", "last_error": None, "error_count": 0},
+    })
+    status, body = api.get("/health")
+    assert status == 503
+    assert body["problems"] == ["nfc has failed: no reader"]
+    assert body["warnings"] == ["audio is having trouble: slow"]
+
+
+def test_a_song_that_could_not_be_played_is_a_warning_not_a_broken_speaker(api, controller_status):
+    controller_status.write(last_play={"result": "failed", "reason": "[50@0] {add} directory or file not found", "at": "2026-10-03T12:00:00"})
+    status, body = api.get("/health")
+    assert status == 200 and body["ok"] is True
+    assert body["warnings"] == ["the last song could not be played: [50@0] {add} directory or file not found"]
+
+
+def test_a_data_store_that_does_not_answer_is_a_problem(api, controller_status, monkeypatch):
+    controller_status.write()
+
+    def broken():
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(api.module.store, "daily_usage", broken)
+    status, body = api.get("/health")
+    assert status == 503 and any("database is locked" in p for p in body["problems"])

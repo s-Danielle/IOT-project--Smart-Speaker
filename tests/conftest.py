@@ -63,6 +63,7 @@ def api(request, server_module, tmp_path, monkeypatch):
     uploads = tmp_path / "uploads"
     uploads.mkdir()
     monkeypatch.setenv("SPEAKER_STORAGE", kind)  # what a restart (start_storage) will pick
+    monkeypatch.setenv("SPEAKER_STATUS_FILE", str(tmp_path / "status.json"))  # never the real /run/smart_speaker
     data_path = str(tmp_path / ("server_data.json" if kind == "json" else "server_data.db"))
     from storage import SqliteStore
     store = (JsonStore if kind == "json" else SqliteStore)(data_path, today=lambda: "2026-10-03")

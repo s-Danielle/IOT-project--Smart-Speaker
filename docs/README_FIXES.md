@@ -40,7 +40,7 @@ A list for whoever fixes the README. Delete this file when that is done. The REA
 | 377-384 | Button table, "Long Press (3s)" | Record: **hold 5 s** starts recording (`RECORD_HOLD_DURATION`), and a short press only saves while recording. Play/Pause: hold 2 s plays the latest recording. Stop: a short press stops or cancels (and unloads an idle chip), hold 3 s **unloads the chip**; it does not clear the song assignment (the voice command "clear" does that) |
 | (missing) | Volume long presses | Hold Volume Up for 5 s to **reboot**, Volume Down for 5 s to **restart the services** (health monitor) |
 | 388-394 | Four voice commands | Also: "shut up" (mute), "happy birthday", "play despacito", "what is our grade" and "kill yourself" / "reboot" (reboots the Pi). Wake phrases: "hi speaker", "hey speaker", "hi", "hey" |
-| 427 | `/health` "Health check" | It returns `{}` today. A real one is planned |
+| 427 | `/health` "Health check" | On the old code it returns `{}`. On the fixes branch it answers `ok`, `problems`, `warnings`, `server` and `controller`, with HTTP 200 when ok and 503 when not. `/status` also shows what the speaker is doing and today's usage |
 | 420-461 | API endpoint list | Missing: `GET /usage/today`, `POST /usage/add`, `DELETE /chips/{id}/assignment`, `POST /chips`. The `/debug/*` endpoints have no password and the server allows requests from any website (planned fix: a token) |
 | 522, 529 | Hardware log is `/var/log/smart_speaker.log` | The current code writes `/var/log/smart_speaker/controller.log` (it rotates itself). The old code on the Pi still uses `/var/log/smart_speaker.log` |
 | 494 | It waits 30 s, then opens the hotspot | Still true, and now, if nobody is using the hotspot, it tries the saved network again every 2 minutes |

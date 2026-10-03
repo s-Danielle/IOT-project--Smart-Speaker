@@ -104,6 +104,9 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 52 | SQLite: the same chip number in another case | The database allows each number once, whatever its case |
 | 53 | Moving the data from JSON to SQLite (and back) | Done by the server at start-up when `SPEAKER_STORAGE` changes. The new copy is built under another name and compared row by row with the old one before it is put in place; a mismatch undoes it and the old copy keeps being used. Repeated chip numbers or ids, chips pointing at missing songs, and entries of the wrong kind are cleaned up and listed in the log. The old copy is kept under a dated name |
 | 54 | Two programs save to the SQLite database at the same moment | The second waits (up to 5 seconds) instead of failing with "database is locked" |
+| 55 | The controller is stuck in its loop (the process exists, nothing happens) | It rewrites `/run/smart_speaker/status.json` every second with a clock that cannot be fooled by a wrong date. After 20 seconds without a new write the health light blinks red and `/health` answers 503. Systemd alone cannot tell (it only knows the process exists) |
+| 56 | The controller stopped or is restarting | Its status folder is removed with it, so `/status` says "not running" at once, and the app does not show the last song as still playing |
+| 57 | A song is accepted but a Spotify problem keeps it from playing | The status keeps `last_play` (`failed` with Mopidy's reason, or the wait that ran out), so the app can say so without anyone reading logs. A later good play clears it |
 
 ---
 

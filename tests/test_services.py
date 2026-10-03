@@ -127,3 +127,12 @@ def test_a_failed_chown_does_not_stop_the_server_starting(tmp_path, monkeypatch)
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     monkeypatch.setattr(os, "chown", refuse)
     ensure_shared_dir(str(tmp_path / "x"), str(tmp_path))  # must not raise
+
+
+def test_the_controllers_status_folder_is_made_for_it_by_systemd():
+    # The controller runs as iot-proj and cannot create folders in /run itself.
+    from utils.status_file import DEFAULT_PATH
+    unit = (SERVICES / "smart_speaker.service").read_text()
+    assert "RuntimeDirectory=smart_speaker" in lines_of(SERVICES / "smart_speaker.service")
+    assert DEFAULT_PATH.startswith("/run/smart_speaker/")
+    assert "User=iot-proj" in unit

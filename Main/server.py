@@ -22,6 +22,7 @@ import time
 from utils.logger import log, log_success
 from utils.shared_dirs import ensure_shared_dir
 from storage import JsonStore, open_store
+from utils.status_file import read_status
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT,
     render_network_list_html, CAPTIVE_PORTAL_HTML
@@ -665,6 +666,49 @@ def _render_connecting_html(ssid: str) -> str:
     )
 
 
+def build_status() -> dict:
+    """What the app shows on its home screen: is the speaker up, what is it doing, how long has it played today."""
+    result = {"connected": True, "storage": store.kind, "controller": read_status()}
+    try:
+        result["usage"] = store.daily_usage()
+    except Exception as exc:  # a broken data store must not make the whole status fail
+        result["usage"] = None
+        result["usage_error"] = str(exc)
+    return result
+
+
+def build_health():
+    """A real health check: (answer, ok). The old one always answered {}.
+
+    `problems` are things that are wrong with the speaker; the speaker is not ok if there are any.
+    `warnings` are things worth knowing, such as the last song that could not be played.
+    """
+    controller = read_status()
+    problems, warnings = [], []
+    if not controller["alive"]:
+        problems.append(controller["problem"])
+    for name, part in (controller.get("components") or {}).items():
+        if isinstance(part, dict) and part.get("status") == "failed":
+            problems.append(f"{name} has failed: {part.get('last_error')}")
+        elif isinstance(part, dict) and part.get("status") == "degraded":
+            warnings.append(f"{name} is having trouble: {part.get('last_error')}")
+    last_play = controller.get("last_play")
+    if isinstance(last_play, dict) and last_play.get("result") == "failed":
+        warnings.append(f"the last song could not be played: {last_play.get('reason')}")
+    try:
+        store.daily_usage()
+    except Exception as exc:
+        problems.append(f"the data store does not answer: {exc}")
+    answer = {
+        "ok": not problems,
+        "problems": problems,
+        "warnings": warnings,
+        "server": {"ok": True, "storage": store.kind},
+        "controller": controller,
+    }
+    return answer, not problems
+
+
 class SpeakerHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override to use our logger instead of default logging"""
@@ -741,20 +785,10 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             return
         
         if path == '/status':
-            self._send_json({"connected": True, "storage": store.kind})
+            self._send_json(build_status())
         elif path == '/health':
-            # Return hardware health status for all components
-            from utils.hardware_health import HardwareHealthManager
-            manager = HardwareHealthManager.get_instance()
-            health_data = {
-                name: {
-                    "status": h.status.value,
-                    "last_error": h.last_error,
-                    "error_count": h.error_count
-                }
-                for name, h in manager.get_all_status().items()
-            }
-            self._send_json(health_data)
+            answer, ok = build_health()
+            self._send_json(answer, 200 if ok else 503)
         elif path == '/chips/lookup':
             # One chip by its number, with the link of its song: GET /chips/lookup?uid=04A1B2C3
             uid = parse_qs(parsed.query).get('uid', [''])[0]

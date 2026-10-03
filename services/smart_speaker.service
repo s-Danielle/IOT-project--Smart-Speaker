@@ -12,6 +12,11 @@ ExecStart=/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python main.py
 Restart=always
 RestartSec=5
 
+# The status file (/run/smart_speaker/status.json): proof the loop is running. systemd creates the
+# folder for this user and removes it when the service stops, so a stopped controller leaves no stale file.
+RuntimeDirectory=smart_speaker
+RuntimeDirectoryMode=0755
+
 # Logging
 LogsDirectory=smart_speaker
 Environment=SMART_SPEAKER_LOG_FILE=/var/log/smart_speaker/controller.log

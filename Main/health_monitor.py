@@ -5,7 +5,7 @@ Health Monitor Service - Controls Light 1 (Health LED)
 Monitors:
 - Internet connectivity (ping 8.8.8.8)
 - Server status (GET localhost:8080/status)
-- Hardware controller status (GET /debug/speaker/status)
+- Hardware controller status (its status file, rewritten every second)
 
 Long Press Actions:
 - Volume Up (5s): Reboot system
@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hardware.leds import RGBLeds, Colors
 from hardware.buttons import Buttons, ButtonID
 from utils.hardware_health import HardwareHealthManager
+from utils.status_file import read_status
 from config.settings import (
     SERVER_HOST, 
     SERVER_PORT,
@@ -72,6 +73,7 @@ class HealthMonitor:
         self._buttons = Buttons()
         self._running = False
         self._last_state = None
+        self._last_hardware_alive = None
         
         # Long press tracking - prevent re-triggering while held
         self._reboot_triggered = False
@@ -113,25 +115,16 @@ class HealthMonitor:
             return False
     
     def check_hardware(self) -> bool:
-        """Check if hardware controller (Main) is running"""
-        try:
-            import urllib.request
-            import json
-            req = urllib.request.Request(
-                f"{self.SERVER_URL}/debug/speaker/status",
-                method='GET'
-            )
-            with urllib.request.urlopen(req, timeout=3) as response:
-                if response.status == 200:
-                    data = json.loads(response.read().decode())
-                    # Server returns {"status": "active", "running": true}
-                    result = data.get('running', False) or data.get('status') == 'active'
-                    if not result:
-                        log_health(f"Hardware check got: {data}")
-                    return result
-        except Exception as e:
-            log_health(f"Hardware check failed: {e}")
-        return False
+        """Is the hardware controller (Main) running its loop?
+
+        It used to ask systemd whether the process existed, which a controller stuck in its loop
+        passes. Now it looks at the status file the controller rewrites every second.
+        """
+        status = read_status()
+        if status["alive"] != self._last_hardware_alive:  # say it when it changes, not every 5 seconds
+            log_health("Controller is running" if status["alive"] else f"Controller problem: {status['problem']}")
+            self._last_hardware_alive = status["alive"]
+        return status["alive"]
     
     def update_led(self):
         """Check all systems and update LED accordingly"""
