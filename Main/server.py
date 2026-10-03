@@ -21,6 +21,7 @@ import subprocess
 import time
 from utils.logger import log, log_success
 from utils.shared_dirs import ensure_shared_dir
+from storage import JsonStore
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT,
     render_network_list_html, CAPTIVE_PORTAL_HTML
@@ -127,310 +128,44 @@ def is_ap_mode() -> bool:
         _ap_mode_cache["checked_at"] = time.monotonic()
     return value
 
-# Default data - chips now have uid field for NFC matching
-DEFAULT_DATA = {
-    "chips": [
-        # uid will be set when chip is first scanned
-        # song_id links to library, uri is resolved from library
-    ],
-    "library": [
-        {"id": "song001", "name": "Surprise", "uri": "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"},
-        {"id": "song002", "name": "Lights", "uri": "file:///home/iot-proj/lights.mp3"},
-    ],
-    "parental_controls": {
-        "enabled": False,
-        "volume_limit": 100,
-        "quiet_hours": {
-            "enabled": False,
-            "start": "21:00",
-            "end": "07:00"
-        },
-        "daily_limit_minutes": 0,
-        "chip_blacklist": [],
-        "chip_whitelist_mode": False,
-        "chip_whitelist": []
-    },
-    "daily_usage": {
-        # Tracks daily playback usage, resets each day
-        # "date": "YYYY-MM-DD",
-        # "seconds": 0
+# =============================================================================
+# DATA: chips, songs, parental controls, daily usage
+# =============================================================================
+# One store owns the data file and saves it safely (see storage/json_store.py).
+# Everything below that reads or writes the data goes through it.
+store = JsonStore(DATA_FILE)
+
+
+def start_storage():
+    """Open the data file when the server starts: create it, or repair it from its backup."""
+    status = store.open()
+    what_happened = {
+        'ok': 'data file opened',
+        'new': 'no data file yet, so one was created',
+        'recovered': 'the data file was damaged or missing, so the last good copy was put back (a damaged file is kept next to it)',
+        'damaged': 'the data file was damaged and there was no good copy, so it started empty (the damaged file was kept)',
     }
-}
+    log(f"[STORAGE] {what_happened[status]} ({store.kind}: {DATA_FILE})")
+    if status == 'new':
+        import_old_tags_file()
 
-# Thread-safe data access
-_data_lock = threading.Lock()
-_migration_done = False
 
-def migrate_from_tags_json():
+def import_old_tags_file():
+    """First run only: bring in the chips from the old config/tags.json.
+
+    This used to run at every start, which brought back chips that had been deleted in the app.
     """
-    Migrate chips from old tags.json format to server_data.json.
-    This preserves existing chips that were set up before the unification.
-    """
-    global _migration_done
-    if _migration_done:
-        return
-    _migration_done = True
-    
     if not os.path.exists(OLD_TAGS_FILE):
         return
-    
     try:
         with open(OLD_TAGS_FILE, 'r') as f:
             old_tags = json.load(f)
     except Exception as e:
         log(f"Could not read old tags.json: {e}")
         return
-    
-    if not old_tags:
-        return
-    
-    # Load or create server_data
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            data = json.load(f)
-    else:
-        data = {'chips': [], 'library': []}
-    
-    if 'chips' not in data:
-        data['chips'] = []
-    if 'library' not in data:
-        data['library'] = []
-    
-    # Get existing UIDs to avoid duplicates
-    existing_uids = {chip.get('uid') for chip in data['chips'] if chip.get('uid')}
-    
-    migrated_count = 0
-    for uid, tag_data in old_tags.items():
-        if uid in existing_uids:
-            continue  # Already migrated
-        
-        # Add song to library if it has a URI
-        song_id = None
-        uri = tag_data.get('uri', '')
-        if uri:
-            # Check if this URI already exists in library
-            for song in data['library']:
-                if song.get('uri') == uri:
-                    song_id = song['id']
-                    break
-            
-            # If not found, add to library
-            if song_id is None:
-                song_id = f"song{uuid.uuid4().hex[:6]}"
-                data['library'].append({
-                    'id': song_id,
-                    'name': tag_data.get('name', 'Migrated Song'),
-                    'uri': uri,
-                })
-        
-        # Add chip
-        chip_name = tag_data.get('name', f'Chip {len(data["chips"]) + 1}')
-        data['chips'].append({
-            'id': f'chip{uuid.uuid4().hex[:6]}',
-            'uid': uid,
-            'name': chip_name,
-            'song_id': song_id,
-            'song_name': chip_name if song_id else None,
-        })
-        migrated_count += 1
-    
-    if migrated_count > 0:
-        with open(DATA_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-        log_success(f"Migrated {migrated_count} chips from tags.json to server_data.json")
-
-def load_data():
-    """Load data from JSON file, or create with defaults if not exists."""
-    # Run migration on first load
-    migrate_from_tags_json()
-    
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-                # Ensure chips and library keys exist
-                if 'chips' not in data:
-                    data['chips'] = []
-                if 'library' not in data:
-                    data['library'] = []
-                # Ensure parental_controls key exists
-                if 'parental_controls' not in data:
-                    data['parental_controls'] = DEFAULT_DATA['parental_controls'].copy()
-                return data
-        else:
-            save_data_unlocked(DEFAULT_DATA)
-            return DEFAULT_DATA.copy()
-
-
-def get_parental_controls() -> dict:
-    """Get parental control settings."""
-    data = load_data()
-    return data.get('parental_controls', DEFAULT_DATA['parental_controls'].copy())
-
-
-def update_parental_controls(settings: dict) -> dict:
-    """Update parental control settings."""
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-        else:
-            data = DEFAULT_DATA.copy()
-        
-        if 'parental_controls' not in data:
-            data['parental_controls'] = DEFAULT_DATA['parental_controls'].copy()
-        
-        # Update only provided fields
-        pc = data['parental_controls']
-        if 'enabled' in settings:
-            pc['enabled'] = settings['enabled']
-        if 'volume_limit' in settings:
-            pc['volume_limit'] = max(0, min(100, settings['volume_limit']))
-        if 'quiet_hours' in settings:
-            qh = settings['quiet_hours']
-            if 'enabled' in qh:
-                pc['quiet_hours']['enabled'] = qh['enabled']
-            if 'start' in qh:
-                pc['quiet_hours']['start'] = qh['start']
-            if 'end' in qh:
-                pc['quiet_hours']['end'] = qh['end']
-        if 'daily_limit_minutes' in settings:
-            pc['daily_limit_minutes'] = max(0, settings['daily_limit_minutes'])
-        if 'chip_blacklist' in settings:
-            pc['chip_blacklist'] = settings['chip_blacklist']
-        if 'chip_whitelist_mode' in settings:
-            pc['chip_whitelist_mode'] = settings['chip_whitelist_mode']
-        if 'chip_whitelist' in settings:
-            pc['chip_whitelist'] = settings['chip_whitelist']
-        
-        save_data_unlocked(data)
-        log(f"Updated parental controls: {pc}")
-        return pc
-
-def save_data_unlocked(data):
-    """Save data to JSON file (must be called with lock held)."""
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-def save_data(data):
-    """Save data to JSON file (thread-safe)."""
-    with _data_lock:
-        save_data_unlocked(data)
-
-
-# =============================================================================
-# DAILY USAGE TRACKING
-# =============================================================================
-
-def _get_today_str() -> str:
-    """Get today's date as YYYY-MM-DD string."""
-    from datetime import date
-    return date.today().isoformat()
-
-
-def get_daily_usage() -> dict:
-    """Get today's usage data. Resets if date changed."""
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-        else:
-            data = DEFAULT_DATA.copy()
-        
-        usage = data.get('daily_usage', {})
-        today = _get_today_str()
-        
-        # Reset if new day
-        if usage.get('date') != today:
-            usage = {'date': today, 'seconds': 0}
-            data['daily_usage'] = usage
-            save_data_unlocked(data)
-        
-        return usage
-
-
-def add_daily_usage(seconds: int) -> dict:
-    """Add seconds to today's usage. Returns updated usage."""
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-        else:
-            data = DEFAULT_DATA.copy()
-        
-        today = _get_today_str()
-        usage = data.get('daily_usage', {})
-        
-        # Reset if new day
-        if usage.get('date') != today:
-            usage = {'date': today, 'seconds': 0}
-        
-        # Add usage
-        usage['seconds'] = usage.get('seconds', 0) + max(0, int(seconds))
-        data['daily_usage'] = usage
-        save_data_unlocked(data)
-        
-        log(f"Daily usage updated: {usage['seconds']} seconds")
-        return usage
-
-
-def register_new_chip(uid: str, name: str = None) -> dict:
-    """
-    Register a new NFC chip that was scanned for the first time.
-    Returns the new chip data.
-    """
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-        else:
-            data = DEFAULT_DATA.copy()
-        
-        # Check if chip already exists
-        for chip in data.get('chips', []):
-            if chip.get('uid') == uid:
-                return chip
-        
-        # Create new chip
-        chip_num = len(data.get('chips', [])) + 1
-        new_chip = {
-            'id': f'chip{uuid.uuid4().hex[:6]}',
-            'uid': uid,
-            'name': name or f'Chip {chip_num}',
-            'song_id': None,
-            'song_name': None,
-        }
-        
-        if 'chips' not in data:
-            data['chips'] = []
-        data['chips'].append(new_chip)
-        save_data_unlocked(data)
-        
-        log(f"Registered new chip: {new_chip['name']} (UID: {uid[:20]}...)")
-        return new_chip
-
-def add_to_library(uri: str, name: str):
-    """
-    Add a file to the library (thread-safe).
-    Used for both recordings and uploads.
-    """
-    with _data_lock:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-        else:
-            data = DEFAULT_DATA.copy()
-        
-        new_song = {
-            "id": f"song{uuid.uuid4().hex[:6]}",
-            "name": name,
-            "uri": uri,
-        }
-        if 'library' not in data:
-            data['library'] = []
-        data['library'].append(new_song)
-        save_data_unlocked(data)
-        log(f"Added to library: {name} ({uri})")
+    added = store.import_legacy_tags(old_tags)
+    if added:
+        log_success(f"Migrated {added} chips from tags.json")
 
 
 # =============================================================================
@@ -1014,15 +749,13 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             }
             self._send_json(health_data)
         elif path == '/chips':
-            data = load_data()
-            self._send_json(data.get('chips', []))
+            self._send_json(store.chips())
         elif path == '/library':
-            data = load_data()
-            self._send_json(data.get('library', []))
+            self._send_json(store.songs())
         elif path == '/settings/parental':
-            self._send_json(get_parental_controls())
+            self._send_json(store.parental_controls())
         elif self.path == '/usage/today':
-            self._send_json(get_daily_usage())
+            self._send_json(store.daily_usage())
         # Debug endpoints
         elif path == '/debug/i2c':
             self._send_json(debug_get_i2c_devices())
@@ -1101,140 +834,43 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_error(500, str(e))
 
+    def _send_bad_request(self, problem):
+        self._send_json({"error": str(problem)}, 400)
+
     def do_PUT(self):
-        if self.path == '/settings/parental':
-            body = self._read_body()
-            updated = update_parental_controls(body)
-            self._send_json(updated)
-            return
-        
-        if self.path.startswith('/chips/'):
-            chip_id = self.path.split('/')[2]
-            body = self._read_body()
-            
-            with _data_lock:
-                if os.path.exists(DATA_FILE):
-                    with open(DATA_FILE, 'r') as f:
-                        data = json.load(f)
-                else:
+        try:
+            if self.path == '/settings/parental':
+                self._send_json(store.update_parental_controls(self._read_body()))
+            elif self.path.startswith('/chips/'):
+                chip = store.update_chip(self.path.split('/')[2], self._read_body())
+                if chip is None:
                     self.send_error(404)
-                    return
-                
-                for chip in data.get('chips', []):
-                    if chip['id'] == chip_id:
-                        if 'name' in body:
-                            chip['name'] = body['name']
-                        if 'song_id' in body:
-                            chip['song_id'] = body['song_id']
-                            # Find song name and URI from library
-                            chip['song_name'] = None
-                            for song in data.get('library', []):
-                                if song['id'] == body['song_id']:
-                                    chip['song_name'] = song['name']
-                                    break
-                        save_data_unlocked(data)
-                        log(f"Updated chip {chip_id}: {chip}")
-                        self._send_json(chip)
-                        return
-                
-            self.send_error(404)
-            
-        elif self.path.startswith('/library/'):
-            song_id = self.path.split('/')[2]
-            body = self._read_body()
-            
-            with _data_lock:
-                if os.path.exists(DATA_FILE):
-                    with open(DATA_FILE, 'r') as f:
-                        data = json.load(f)
                 else:
+                    self._send_json(chip)
+            elif self.path.startswith('/library/'):
+                song = store.update_song(self.path.split('/')[2], self._read_body())
+                if song is None:
                     self.send_error(404)
-                    return
-                
-                for song in data.get('library', []):
-                    if song['id'] == song_id:
-                        song['name'] = body.get('name', song['name'])
-                        song['uri'] = body.get('uri', song['uri'])
-                        save_data_unlocked(data)
-                        log(f"Updated song {song_id}: {song}")
-                        self._send_json(song)
-                        return
-                
-            self.send_error(404)
-        else:
-            self.send_error(404)
+                else:
+                    self._send_json(song)
+            else:
+                self.send_error(404)
+        except ValueError as problem:  # a value of the wrong kind, or a body that isn't JSON
+            self._send_bad_request(problem)
 
     def do_DELETE(self):
         if '/chips/' in self.path and self.path.endswith('/assignment'):
-            chip_id = self.path.split('/')[2]
-            
-            with _data_lock:
-                if os.path.exists(DATA_FILE):
-                    with open(DATA_FILE, 'r') as f:
-                        data = json.load(f)
-                else:
-                    self.send_error(404)
-                    return
-                
-                for chip in data.get('chips', []):
-                    if chip['id'] == chip_id:
-                        chip['song_id'] = None
-                        chip['song_name'] = None
-                        save_data_unlocked(data)
-                        log(f"Reset assignment for chip {chip_id}")
-                        self._send_ok(204)
-                        return
-                
-            self.send_error(404)
-        
+            found = store.clear_chip_assignment(self.path.split('/')[2])
         elif self.path.startswith('/chips/'):
             # Delete a chip: DELETE /chips/{chip_id}
-            chip_id = self.path.split('/')[2]
-            
-            with _data_lock:
-                if os.path.exists(DATA_FILE):
-                    with open(DATA_FILE, 'r') as f:
-                        data = json.load(f)
-                else:
-                    self.send_error(404)
-                    return
-                
-                for i, chip in enumerate(data.get('chips', [])):
-                    if chip['id'] == chip_id:
-                        data['chips'].pop(i)
-                        save_data_unlocked(data)
-                        log(f"Deleted chip {chip_id}")
-                        self._send_ok(204)
-                        return
-                
-            self.send_error(404)
-            
+            found = store.delete_chip(self.path.split('/')[2])
         elif self.path.startswith('/library/'):
-            song_id = self.path.split('/')[2]
-            
-            with _data_lock:
-                if os.path.exists(DATA_FILE):
-                    with open(DATA_FILE, 'r') as f:
-                        data = json.load(f)
-                else:
-                    self.send_error(404)
-                    return
-                
-                for i, song in enumerate(data.get('library', [])):
-                    if song['id'] == song_id:
-                        data['library'].pop(i)
-                        # Cascade: clear song from any chips that reference it
-                        for chip in data.get('chips', []):
-                            if chip.get('song_id') == song_id:
-                                chip['song_id'] = None
-                                chip['song_name'] = None
-                                log(f"Cleared song {song_id} from chip {chip['id']}")
-                        save_data_unlocked(data)
-                        log(f"Deleted song {song_id}")
-                        self._send_ok(204)
-                        return
-                
-            self.send_error(404)
+            # Chips that played this song are left with no song
+            found = store.delete_song(self.path.split('/')[2])
+        else:
+            found = False
+        if found:
+            self._send_ok(204)
         else:
             self.send_error(404)
 
@@ -1249,35 +885,28 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "uid is required"}, 400)
                 return
             
-            new_chip = register_new_chip(uid, name)
+            try:
+                new_chip = store.register_chip(uid, name)
+            except ValueError as problem:
+                self._send_bad_request(problem)
+                return
             self._send_json(new_chip, 201)
             
         elif self.path == '/library':
-            body = self._read_body()
-            new_song = {
-                "id": f"song{uuid.uuid4().hex[:6]}",
-                "name": body.get('name', ''),
-                "uri": body.get('uri', ''),
-            }
-            
-            with _data_lock:
-                if os.path.exists(DATA_FILE):
-                    with open(DATA_FILE, 'r') as f:
-                        data = json.load(f)
-                else:
-                    data = {'chips': [], 'library': []}
-                
-                data['library'].append(new_song)
-                save_data_unlocked(data)
-            
-            log(f"Added song: {new_song}")
+            try:
+                body = self._read_body()
+                new_song = store.add_song(body.get('name', ''), body.get('uri', ''))
+            except (ValueError, AttributeError) as problem:  # bad JSON, or a body that isn't an object
+                self._send_bad_request(problem)
+                return
             self._send_json(new_song, 201)
         
         elif self.path == '/usage/add':
-            body = self._read_body()
-            seconds = body.get('seconds', 0)
-            updated = add_daily_usage(seconds)
-            self._send_json(updated)
+            try:
+                seconds = self._read_body().get('seconds', 0)
+                self._send_json(store.add_daily_usage(seconds))
+            except (ValueError, AttributeError) as problem:
+                self._send_bad_request(problem)
             
         elif self.path == '/files':
             # Handle multipart file upload
@@ -1302,7 +931,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                     display_name = f"[UPLOAD] {original_name}"
 
                     # Add to library automatically
-                    add_to_library(uri, display_name)
+                    store.add_song(display_name, uri)
 
                     log(f"Uploaded file: {filepath} (added to library as '{display_name}')")
                     self._send_json({"uri": uri, "name": display_name}, 201)
@@ -1312,7 +941,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             file_id = uuid.uuid4().hex[:8]
             uri = f"file://{UPLOADS_DIR}/{file_id}.mp3"
             display_name = f"[UPLOAD] {file_id}"
-            add_to_library(uri, display_name)
+            store.add_song(display_name, uri)
             self._send_json({"uri": uri, "name": display_name}, 201)
         
         # Debug POST endpoints
@@ -1394,6 +1023,7 @@ def run_server_blocking(port=8080, host='0.0.0.0'):
     Use this for standalone server service mode where the server
     is the main process and should run until terminated.
     """
+    start_storage()
     server = ThreadPoolHTTPServer((host, port), SpeakerHandler, max_workers=2)
     log_success(f"HTTP Server started on http://{host}:{port}")
     log(f"  - Data file: {DATA_FILE}")

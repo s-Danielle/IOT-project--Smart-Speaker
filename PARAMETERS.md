@@ -135,7 +135,8 @@ Defined in `Main/config/paths.py`:
 
 | Path | Description |
 |------|-------------|
-| `TAGS_JSON` | `Main/config/tags.json` - old NFC chip list (chips and songs now live in `Main/server_data.json`, owned by the server) |
+| `TAGS_JSON` | `Main/config/tags.json` - old NFC chip list. It is imported once, on the very first run, into the data file below |
+| `DATA_FILE` | `Main/server_data.json` - chips, songs, parental controls and daily usage, owned by the server (`Main/storage/`). Each save keeps the previous version as `server_data.json.bak`; a damaged file is kept as `server_data.json.corrupt-<time>` (the newest 3) |
 | `SOUNDS_DIR` | `Main/assets/sounds/` - Audio feedback files |
 | `RECORDINGS_DIR` | `Main/local_files/recordings/` - User recordings |
 

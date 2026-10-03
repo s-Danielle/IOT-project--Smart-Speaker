@@ -89,6 +89,14 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 37 | The sound card powers up loud | The volume is lowered to `VOLUME_DEFAULT` or the parental limit at start-up, never raised |
 | 38 | The server (root) creates the recordings folder | It hands `recordings` and `uploads` to the speaker's user, so recordings can be saved |
 | 39 | The Spotify login or lookup fails | Mopidy now logs Mopidy-Spotify's messages and the system log survives a reboot, so the cause can be read afterwards (`docs/SPOTIFY.md`) |
+| 40 | Power is cut, or the program crashes, while the data file is being saved | The new content is written to a temporary file and renamed over the real one, and the previous version is kept as `server_data.json.bak`. A half-written file can no longer replace the good one |
+| 41 | The data file is damaged or missing (hand editing, a full SD card) | The server puts the last good copy (`.bak`) back at start-up (or on the next read), logs `[STORAGE]`, and keeps the damaged file as `server_data.json.corrupt-<time>` (the newest 3). If there is no good copy it starts empty and keeps the damaged file |
+| 42 | A chip that was deleted in the app came back after a restart | The old `config/tags.json` is imported only on the very first run, not at every start |
+| 43 | A chip is given a song that is not in the library | The server answers 400 and leaves the chip alone (it used to store a dead link, and the chip then played nothing) |
+| 44 | A song is renamed | Every chip that uses it shows the new name (the name always comes from the song) |
+| 45 | The app sends a setting of the wrong kind (`"volume_limit": "loud"`, a time like `25:00`) | The server answers 400 with the reason, and nothing is saved |
+| 46 | A chip number in lower case (older tools wrote it that way) | Chip numbers are compared without regard to case, so it is the same chip |
+| 47 | The app asks for today's usage on a new day | It reports 0 seconds without rewriting the data file (it used to rewrite the whole file) |
 
 ---
 
