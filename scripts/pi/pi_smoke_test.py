@@ -153,13 +153,13 @@ def check_i2c(report):
     else:
         report.add("PASS", "LED chip 0x21", "answers (0x%02x)" % value)
     # The NFC reader is NOT probed: its thread polls it all day and a stray read could confuse it.
-    ok, text = recent_log("smart_speaker", "6 hours ago")
-    if not ok:
-        report.add("SKIP", "NFC reader", "controller log not readable here (run with sudo)")
+    text, where = controller_log()
+    if where is None:
+        report.add("SKIP", "NFC reader", "the controller log is not readable here (run with sudo)")
     elif "PN532 initialized successfully" in text:
-        report.add("PASS", "NFC reader", "the controller log says the PN532 started")
+        report.add("PASS", "NFC reader", "the controller log (%s) says the PN532 started" % where)
     else:
-        report.add("WARN", "NFC reader", "no 'PN532 initialized' line in the controller log of the last 6 hours")
+        report.add("WARN", "NFC reader", "no 'PN532 initialized' line in the controller log (%s)" % where)
 
 
 # --------------------------------------------------------------------------
@@ -168,10 +168,29 @@ def check_i2c(report):
 
 
 def recent_log(unit, since):
-    rc, out = sh(["journalctl", "-u", unit, "--since", since, "--no-pager", "-o", "short-iso"], timeout=30)
-    if rc != 0 or "not seeing messages from other users" in out:
+    """Log text of a unit. `since` is a journalctl time such as '10 min ago',
+    or 'boot' for this boot only. (The Pi has no clock battery, so early log
+    times can be weeks off: 'this boot' is the safe way to ask.)"""
+    cmd = ["journalctl", "-u", unit, "--no-pager", "-o", "short-iso"]
+    cmd += ["-b"] if since == "boot" else ["--since", since]
+    rc, out = sh(cmd, timeout=30)
+    if rc != 0 or re.search(r"not seeing messages from other users|insufficient permissions", out):
         return False, ""
     return True, out
+
+
+def controller_log():
+    """(text, where) for the controller's log: this boot's journal if it has anything,
+    else the end of its log file. (None for `where` means nothing was readable.)"""
+    ok, text = recent_log("smart_speaker", "boot")
+    if ok and len(text.splitlines()) > 2 and "-- No entries --" not in text:
+        return text, "this boot's journal"
+    for path in ("/var/log/smart_speaker/controller.log", "/var/log/smart_speaker.log"):
+        if os.access(path, os.R_OK):
+            rc, out = sh(["tail", "-n", "3000", path])
+            if rc == 0:
+                return out, os.path.basename(path)
+    return "", None
 
 
 def check_logs(report, minutes=10):

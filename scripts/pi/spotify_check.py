@@ -403,7 +403,7 @@ def main():
     parser.add_argument("--bogus", help="a link that should not exist")
     parser.add_argument("--no-ask", action="store_true", help="do not ask for album/playlist links")
     parser.add_argument("--yes", action="store_true", help="do not pause before the first sound")
-    parser.add_argument("--label", default="check", help="short name for the log entry, e.g. 'baseline at 770ceae'")
+    parser.add_argument("--label", default="check", help="short name for the log entry, e.g. 'baseline at 45a4eae'")
     parser.add_argument("--json", metavar="PATH", help="also write the results as JSON")
     args = parser.parse_args()
 

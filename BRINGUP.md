@@ -43,12 +43,12 @@ Nothing has been pushed to GitHub. Step 3 needs the branch `pi/audio-stack` on G
 
 ## Step 2: power on and test the Pi as it is today (about 60 minutes)
 
-The Pi still runs the old code (commit 770ceae). We want to know what works before we change anything.
+The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind GitHub's `main` (a read-only look on Oct 3 showed this). We want to know what works before we change anything.
 
 - [ ] **2.1** Power on and watch Light 1 for about 90 seconds (yellow pulse, then blue or green). Tell me anything odd, especially lights flickering or going dark every few seconds.
-- [ ] **2.2** *On this computer*, in the repo folder, copy the helper scripts to the Pi (it only writes `/tmp/pi` on the Pi):
+- [ ] **2.2** *On this computer*, in the repo folder, copy the helper scripts to the Pi (it only writes `/tmp/pi` on the Pi). Use `rpi2.local`: plain `rpi2` does not resolve from this computer.
   ```
-  scripts/pi/push_to_pi.sh iot-proj@<host>
+  scripts/pi/push_to_pi.sh iot-proj@rpi2.local
   ```
 - [ ] **2.3** On the Pi, collect the facts (sudo is only used to read root-only files and the Mopidy log; nothing is changed):
   ```
@@ -64,7 +64,7 @@ The Pi still runs the old code (commit 770ceae). We want to know what works befo
   - [ ] open the app
 - [ ] **2.5** Test Spotify. **Turn the speaker volume down first.** Nothing else may play on that Spotify account meanwhile.
   ```
-  sudo python3 /tmp/pi/spotify_check.py --label "baseline at 770ceae" > /tmp/spotify.txt
+  sudo python3 /tmp/pi/spotify_check.py --label "baseline at 45a4eae" > /tmp/spotify.txt
   ```
   It asks for an album link and two playlist links (one you own, one you don't). Press Enter to skip any of them. It counts down 5 seconds, then plays about 5 seconds from each link. The progress shows on screen and the results go to the file.
 - [ ] **2.6** Back everything up (it asks for your sudo password for a few root-only files):
@@ -77,7 +77,16 @@ The Pi still runs the old code (commit 770ceae). We want to know what works befo
 
 ## Step 3: bring over the audio changes (about 45 minutes)
 
-Part A changes settings only. The old code still runs, so a problem with the shared audio shows up before any new code is involved.
+**Part 0: catch the Pi up to GitHub's `main` (recommended, about 10 minutes)**
+
+The Pi is 4 commits behind `main`. All four are from Aug 13 (the monotonic-clock change, quieter logging and a Mopidy-connection fix), and none of them has run on the Pi yet. Doing this as its own small step tells us whether a problem comes from them or from the audio changes. This is the same script as in Part B, which needs the code on GitHub.
+- [ ] **3.0** Preview, then switch, then repeat the quick physical test from 2.4:
+  ```
+  bash /tmp/pi/pi_update.sh --dry-run main
+  bash /tmp/pi/pi_update.sh main
+  ```
+
+Part A changes settings only. The code from Part 0 still runs, so a problem with the shared audio shows up before the new audio code is involved.
 
 **Part A: sound card sharing**
 - [ ] **3.1** Preview. It changes nothing; read what it says it would do:
@@ -191,4 +200,4 @@ sudo systemctl stop smart_speaker smart_speaker_health
 | back up / list / restore | `bash /tmp/pi/pi_backup.sh`, `--list`, `--restore <folder> --dry-run` |
 | read the logs | `journalctl -u smart_speaker -u mopidy -n 100`, `/var/log/smart_speaker/controller.log` |
 
-If `/tmp/pi` is gone after a reboot, run `scripts/pi/push_to_pi.sh iot-proj@<host>` again on this computer.
+If `/tmp/pi` is gone after a reboot, run `scripts/pi/push_to_pi.sh iot-proj@rpi2.local` again on this computer.

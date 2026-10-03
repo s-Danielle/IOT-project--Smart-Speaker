@@ -311,30 +311,44 @@ done
 [ "$FOUND_CREDS" -eq 0 ] && echo "  none found (or not readable by this user)"
 summ "Spotify credentials.json" "$([ "$FOUND_CREDS" -eq 1 ] && echo present || echo 'none found')"
 echo
-echo "Mopidy log, last $DAYS days: how often each known problem appears"
-if [ "$IS_ROOT" -eq 1 ] || journalctl -u mopidy -n 1 --no-pager 2>&1 | grep -qv 'not seeing messages'; then
-    JLOG="$(journalctl -u mopidy --since "$DAYS days ago" --no-pager -o short-iso 2>&1)"
+# The Pi has no clock battery. Early in a boot its clock can be weeks off, and the log lines get
+# those wrong times. So look at "this boot" and "the boot before" as well as the last N days.
+mopidy_log_scan() {   # mopidy_log_scan "label" <journalctl time options>
+    local label="$1"; shift
+    local log
+    log="$(journalctl -u mopidy "$@" --no-pager -o short-iso 2>&1)"
+    echo "Mopidy log, $label: how often each known problem appears"
+    if echo "$log" | grep -qE 'not seeing messages from other users|insufficient permissions'; then
+        note "journal not readable (run with sudo)"; echo; return
+    fi
+    if echo "$log" | grep -qiE 'data from the specified boot|no such boot'; then
+        echo "  (that boot is not in the journal)"; echo; return
+    fi
+    if [ "$(echo "$log" | grep -vc -- '-- No entries --')" -le 0 ]; then
+        echo "  (no entries)"; echo; return
+    fi
     for pat in 'login5' 'INVALID_CREDENTIALS' ' 401' ' 403' ' 429' 'spotifyaudiosrc' 'xrun' 'underrun' 'Traceback' 'Resource not found'; do
-        printf '  %-22s %s\n' "$pat" "$(echo "$JLOG" | grep -c -- "$pat")"
+        printf '  %-22s %s\n' "$pat" "$(echo "$log" | grep -c -- "$pat")"
     done
     echo "  Last 20 matching lines (secrets masked):"
-    echo "$JLOG" | grep -E 'login5|INVALID_CREDENTIALS| 401| 403| 429|spotifyaudiosrc|xrun|underrun|Traceback|Resource not found|ERROR|CRITICAL' | tail -n 20 | mask | sed 's/^/    /'
-    summ "Mopidy log: login5 problems ($DAYS d)" "$(echo "$JLOG" | grep -c 'login5')"
-else
-    note "journal not readable (run with sudo)"
-fi
+    echo "$log" | grep -E 'login5|INVALID_CREDENTIALS| 401| 403| 429|spotifyaudiosrc|xrun|underrun|Traceback|Resource not found|ERROR|CRITICAL' | tail -n 20 | mask | sed 's/^/    /'
+    echo "  First 12 lines of that log (start-up messages, masked):"
+    echo "$log" | head -n 12 | mask | sed 's/^/    /'
+    summ "Mopidy log ($label): login5 lines" "$(echo "$log" | grep -c 'login5')"
+    echo
+}
+mopidy_log_scan "this boot" -b
+mopidy_log_scan "the boot before" -b -1
+mopidy_log_scan "last $DAYS days" --since "$DAYS days ago"
 
 # ---- 10. The speaker's own API and data -------------------------------------------------
 hr "SPEAKER API AND DATA"
+# Only /status is called. The data endpoints are left alone: the first data request after a
+# server start can trigger the server's one-time chip seeding, and this report must not change anything.
 if command -v curl >/dev/null 2>&1; then
     runsh "curl -s -m 5 http://localhost:8080/status"
-    for ep in chips library; do
-        n="$(curl -s -m 5 "http://localhost:8080/$ep" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null)"
-        kv "Number of $ep" "${n:-API did not answer}"
-        summ "API $ep count" "${n:-no answer}"
-    done
 fi
-for f in "$REPO"/Main/server_data.json*; do
+for f in "$REPO"/Main/server_data.json* "$REPO"/Main/server_data.db*; do
     [ -f "$f" ] && stat -c '  %n  %s bytes  modified %y' "$f" | cut -c1-120
 done
 if [ -f "$REPO/Main/server_data.json" ]; then
@@ -342,7 +356,15 @@ if [ -f "$REPO/Main/server_data.json" ]; then
 import json, sys
 try:
     data = json.load(open(sys.argv[1]))
-    print("  server_data.json is valid JSON: %d chips, %d songs" % (len(data.get("chips", [])), len(data.get("library", []))))
+    chips, library = data.get("chips", []), data.get("library", [])
+    print("  server_data.json is valid JSON: %d chips, %d songs" % (len(chips), len(library)))
+    kinds = {}
+    for song in library:
+        kind = (song.get("uri") or "").split(":")[0] + ":" + ((song.get("uri") or "").split(":")[1] if (song.get("uri") or "").startswith("spotify:") else "")
+        kinds[kind] = kinds.get(kind, 0) + 1
+    print("  kinds of song links: %s" % (", ".join("%s x%d" % kv for kv in sorted(kinds.items())) or "none"))
+    print("  parental settings: %s" % ("set" if data.get("parental_controls") else "empty (defaults)"))
+    print("  daily usage record: %s" % (data.get("daily_usage") or "none"))
 except Exception as exc:
     print("  server_data.json is NOT valid JSON: %s" % exc)
 PY
