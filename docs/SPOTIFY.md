@@ -2,7 +2,7 @@
 
 How it works, what has broken, and what we tried. We keep this up to date for the whole project, so there is something to show even if the cause turns out to be outside our code.
 
-**Where things stand today:** on Oct 3 Spotify passed the full check (`spotify_check.py`) on the Pi, on the old code: a song starts playing about 3.4 seconds after Play (see the baseline entry in the log). So streaming works today even though upstream has had two problems (login for streaming since Aug 10, and a Spotify-side error reported on Sep 29). The old logs show what went wrong the last time the speaker was used (Sep 5): every Spotify song failed at the very first step, and our code didn't notice for a minute. What made that first step fail is not proven (see the log below). Only a track link has been tried so far; albums and playlists (yours and other people's) are still to be tried.
+**Where things stand today:** on Oct 3 Spotify passed the full check (`spotify_check.py`) on the Pi, first on the old code (a song starts playing about 3.4 seconds after Play) and again after the sound-sharing change and the new code (2.3 seconds); see the first two entries in the log. So streaming works today even though upstream has had two problems (login for streaming since Aug 10, and a Spotify-side error reported on Sep 29). The old logs show what went wrong the last time the speaker was used (Sep 5): every Spotify song failed at the very first step, and our code didn't notice for a minute. What made that first step fail is not proven (see the log below). Only a track link has been tried so far; albums and playlists (yours and other people's) are still to be tried.
 
 We fix what is ours: our code, our config files and our scripts. We don't patch Spotify, Mopidy or librespot.
 
@@ -84,6 +84,20 @@ Never paste `credentials.json` anywhere. The Mopidy-Spotify README also says a m
 ## Log
 
 Newest entry first. Each entry says what we saw, what we tried and what happened. `spotify_check.py` prints a ready-made entry to paste here.
+
+### 2026-10-03 16:34: after the sound-sharing change and the new code: Spotify still passes
+
+Step 3 of the bring-up, run with sudo on the Pi. Part A (shared sound card, `pi_install_audio.sh`) and then Part B (`pi_update.sh pi/audio-stack`, then `pi_install_audio.sh --mopidy-conf`). Both runs heard the test tone and the Spotify song.
+
+| Test | After Part A (the old code, shared sound card) | After Part B (the new code and Mopidy settings) |
+|---|---|---|
+| local file (control) | PASS, first sound 1.3s | PASS, first sound 1.1s |
+| known Spotify track | PASS, lookup 0.2s, first sound 2.6s | PASS, lookup 0.1s, first sound 2.3s |
+| made-up link (should fail) | refused after 0.2s | refused after 0.2s |
+
+- **Verdict:** no worse than the baseline (3.4 s). Sharing the sound card and moving the volume to the sound card's own `PCM` control did not hurt Spotify. It starts slightly faster; the cause isn't proven (a few tenths of a second is within the normal spread).
+- **Nothing in Mopidy's log** matched a known Spotify error, in either run.
+- **Not tested yet:** a beep over a Spotify song (step 3.8), albums and playlists, and 20 minutes of continuous play (step 4.8).
 
 ### 2026-10-03 14:13: baseline at 45a4eae: Spotify passes
 
