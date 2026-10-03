@@ -66,7 +66,12 @@ def action_play(device_state: DeviceState, audio_player, ui, chip_store=None) ->
         return device_state
     
     log_action(f"Starting playback: {device_state.loaded_chip.name}")
-    audio_player.play_uri(device_state.loaded_chip.uri)
+    if not audio_player.play_uri(device_state.loaded_chip.uri):
+        # Say so now (error beep and light) instead of a minute of silent "PLAYING"
+        reason = getattr(audio_player, "last_error", None) or "Mopidy could not start it"
+        log_error(f"Cannot play '{device_state.loaded_chip.name}': {reason}")
+        ui.on_error()
+        return device_state
     device_state.state = State.PLAYING
     
     ui.on_play()
@@ -77,7 +82,10 @@ def action_play(device_state: DeviceState, audio_player, ui, chip_store=None) ->
 def action_resume(device_state: DeviceState, audio_player, ui) -> DeviceState:
     """Resume paused playback"""
     log_action("Resuming playback")
-    audio_player.resume()
+    if not audio_player.resume():
+        log_error("Cannot resume: Mopidy could not be reached")
+        ui.on_error()
+        return device_state
     device_state.state = State.PLAYING
     
     ui.on_play()

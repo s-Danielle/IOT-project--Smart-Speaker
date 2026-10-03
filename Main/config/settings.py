@@ -13,7 +13,10 @@ LONG_PRESS_REBOOT_DURATION = 5.0  # Hold Volume Up for 5s to reboot
 LONG_PRESS_RESTART_SERVICES_DURATION = 5.0  # Hold Volume Down for 5s to restart services
 
 # Playback monitoring (handles variable Spotify loading times)
-MAX_WAIT_FOR_PLAYBACK = 60.0  # Max seconds to wait for Mopidy to confirm playback started
+# A Spotify song starts about 3.4 s after Play (measured on the Pi on 2026-10-03, see docs/SPOTIFY.md),
+# and up to ~6 s on the first play after boot. 20 s is several times that; a link that has not started
+# by then is not going to, so we say so (error beep) instead of sitting silent.
+MAX_WAIT_FOR_PLAYBACK = 20.0  # Max seconds to wait for Mopidy to confirm playback started
 MIN_PLAYBACK_DURATION = 2.0   # Min seconds of confirmed playback before considering "finished"
 
 # I2C addresses

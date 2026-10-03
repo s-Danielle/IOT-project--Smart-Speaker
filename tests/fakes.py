@@ -276,17 +276,27 @@ class FakeButtons:
 
 
 class FakeAudio:
-    """AudioPlayer. `play_ok` is what play_uri returns; `playing` is what Mopidy says."""
+    """AudioPlayer.
+
+    `play_ok`: what play_uri returns (False = Mopidy refused the link).
+    `confirms`: whether Mopidy ever says "play" afterwards (False = the song never starts).
+    `playing`: what Mopidy says right now.
+    """
 
     def __init__(self):
         self.calls = []
         self.play_ok = True
+        self.confirms = True
         self.playing = False
+        self.last_error = None
 
     def play_uri(self, uri):
         self.calls.append(("play_uri", uri))
         if self.play_ok:
-            self.playing = True
+            self.last_error = None
+            self.playing = self.confirms
+        else:
+            self.last_error = "[50@0] {add} directory or file not found"
         return self.play_ok
 
     def pause(self):
@@ -295,7 +305,8 @@ class FakeAudio:
 
     def resume(self):
         self.calls.append(("resume",))
-        self.playing = True
+        self.playing = self.confirms
+        return True
 
     def stop(self):
         self.calls.append(("stop",))
@@ -376,6 +387,31 @@ class FakeMic:
 
     def is_held(self):
         return self.owner is not None
+
+
+class FakeVoice:
+    """VoiceCommand. Set `command` to what the speaker "hears" when PTT is released."""
+
+    def __init__(self, command=None):
+        self.command = command
+        self._recording = False
+
+    def start_recording(self):
+        self._recording = True
+        return True
+
+    def is_recording(self):
+        return self._recording
+
+    def stop_and_parse(self):
+        self._recording = False
+        return self.command
+
+    def cancel_recording(self):
+        self._recording = False
+
+    def get_easter_config(self):
+        return {}
 
 
 class FakeRecorder:

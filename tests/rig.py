@@ -97,6 +97,12 @@ class Rig:
         self.press(button, held)
         self.release(button)
 
+    def say(self, command):
+        """Hold PTT, "say" a command, let go. Needs the rig to be built with voice_command=FakeVoice()."""
+        self.controller._voice_command.command = command
+        self.press(ButtonID.PTT)
+        self.release(ButtonID.PTT)
+
     def play(self):
         self.click(ButtonID.PLAY_PAUSE)
 

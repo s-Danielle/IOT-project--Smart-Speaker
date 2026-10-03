@@ -11,6 +11,7 @@ from utils.hardware_health import HardwareHealthManager
 # MPD client library
 try:
     from mpd import MPDClient
+    from mpd.base import CommandError as MPDCommandError
     from mpd.base import ConnectionError as MPDConnectionError
 except ImportError:
     raise ImportError("python-mpd2 library is required. Install with: pip install python-mpd2")
@@ -27,6 +28,7 @@ class AudioPlayer:
         self._port = MPD_PORT
         self._connected = False
         self._current_uri = None
+        self.last_error = None  # why Mopidy last refused a command, for the caller to log
         
         # Local state cache to minimize Mopidy requests
         self._cached_state = "stop"      # "play", "pause", "stop"
@@ -86,6 +88,10 @@ class AudioPlayer:
                     result = func(*args, **kwargs)
                     self._health.report_success()
                     return True if _none_is_success and result is None else result
+                except MPDCommandError as e:
+                    self.last_error = str(e)
+                    log_error(f"Mopidy refused the command after reconnect: {e}")
+                    return None
                 except Exception as e:
                     if self._health.report_error(e):
                         log_error(f"MPD command error after reconnect: {e}")
@@ -94,6 +100,12 @@ class AudioPlayer:
             else:
                 # Connection failed error already logged in _ensure_connected
                 return None
+        except MPDCommandError as e:
+            # Mopidy answered, but refused this command (for example "add" for a link it
+            # cannot find). The connection is fine, so keep it, and remember why.
+            self.last_error = str(e)
+            log_error(f"Mopidy refused the command: {e}")
+            return None
         except Exception as e:
             # Other errors (e.g., timeout) - also reset connection state
             if self._health.report_error(e):
@@ -101,16 +113,29 @@ class AudioPlayer:
             self._connected = False  # Reset so next call attempts reconnection
             return None
     
-    def play_uri(self, uri: str):
-        """Play audio from URI (Spotify, local file, etc.)"""
+    def play_uri(self, uri: str) -> bool:
+        """Play audio from URI (Spotify, local file, etc.).
+
+        Returns True if Mopidy accepted the link, False if it could not be started
+        (Mopidy refused the link, or could not be reached). The reason is in
+        `last_error`. True does not mean sound yet: a Spotify song takes a few
+        seconds to start, and the controller waits for that.
+        """
         log_audio(f"Playing URI: {uri}")
         self._current_uri = uri
-        
+        self.last_error = None
+
         # Clear current tracklist and add new track
-        self._execute(self._client.clear)
-        self._execute(self._client.add, uri)
-        self._execute(self._client.play)
+        for command, args in ((self._client.clear, ()), (self._client.add, (uri,)), (self._client.play, ())):
+            if self._execute(command, *args, _none_is_success=True) is None:
+                reason = self.last_error or "Mopidy could not be reached"
+                self.last_error = reason
+                log_error(f"Could not start {uri}: {reason}")
+                self._current_uri = None
+                self._cached_state = "stop"
+                return False
         self._cached_state = "play"  # Update cache
+        return True
     
     def pause(self):
         """Pause current playback"""
@@ -118,11 +143,13 @@ class AudioPlayer:
         self._execute(self._client.pause, 1)  # 1 = pause
         self._cached_state = "pause"  # Update cache
     
-    def resume(self):
-        """Resume paused playback"""
+    def resume(self) -> bool:
+        """Resume paused playback. Returns False if Mopidy could not be reached."""
         log_audio("Resuming playback")
-        self._execute(self._client.pause, 0)  # 0 = resume
+        if self._execute(self._client.pause, 0, _none_is_success=True) is None:  # 0 = resume
+            return False
         self._cached_state = "play"  # Update cache
+        return True
     
     def stop(self):
         """Stop playback"""
