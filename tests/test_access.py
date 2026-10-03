@@ -455,3 +455,31 @@ def test_if_the_token_cannot_be_saved_remote_changes_are_refused_and_it_says_so(
     api.module.start_security()
     assert api.module.API_TOKEN  # a token for this run that nobody can read
     assert any(c == "ERROR" and "could not save" in m for c, m in lines)
+
+
+# ---------------------------------------------------------------------------
+# git run from the app's Developer Tools
+# ---------------------------------------------------------------------------
+
+
+def test_git_is_run_as_the_owner_of_the_program_folder_when_the_server_is_root(api):
+    command = api.module.git_command(["pull"], folder="/home/iot-proj/repo", euid=0, owner_of=lambda path: "iot-proj")
+    assert command == ["sudo", "-u", "iot-proj", "-H", "git", "pull"]
+
+
+def test_git_is_run_plainly_by_a_normal_user_or_when_root_owns_the_folder(api):
+    assert api.module.git_command(["status"], folder="/x", euid=1000, owner_of=lambda p: "iot-proj") == ["git", "status"]
+    assert api.module.git_command(["status"], folder="/x", euid=0, owner_of=lambda p: "root") == ["git", "status"]
+
+
+def test_git_falls_back_to_plain_when_the_owner_cannot_be_found(api):
+    def unknown(path):
+        raise KeyError("no such user")
+
+    assert api.module.git_command(["pull"], folder="/x", euid=0, owner_of=unknown) == ["git", "pull"]
+
+
+def test_all_three_git_calls_use_that_command(api):
+    import inspect
+    source = inspect.getsource(api.module)
+    assert "['git'," not in source.replace("['git'] + list(args)", "")

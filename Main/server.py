@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse, unquote
 import functools
 import json
+import pwd
 import mimetypes
 import uuid
 import os
@@ -265,12 +266,31 @@ def debug_get_logs(lines: int = 100) -> dict:
         return {"logs": [], "error": str(e)}
 
 
+def git_command(args, folder=None, euid=None, owner_of=None) -> list:
+    """The command that runs git in the program folder, as the user that owns that folder.
+
+    The server runs as root. Git run by root in a folder owned by someone else either refuses
+    ("dubious ownership") or, worse, leaves root-owned files inside the speaker's repository, and the
+    next pi_update.sh (run as the speaker's user) then fails on them.
+    """
+    folder = folder or PROJECT_DIR
+    euid = os.geteuid() if euid is None and hasattr(os, 'geteuid') else euid
+    if euid == 0:
+        try:
+            owner = (owner_of or (lambda path: pwd.getpwuid(os.stat(path).st_uid).pw_name))(folder)
+        except (KeyError, OSError):
+            owner = 'root'
+        if owner != 'root':
+            return ['sudo', '-u', owner, '-H', 'git'] + list(args)
+    return ['git'] + list(args)
+
+
 def debug_get_git_status() -> dict:
     """Get git branch and status."""
     try:
         # Get current branch
         branch_result = subprocess.run(
-            ['git', 'branch', '--show-current'],
+            git_command(['branch', '--show-current']),
             cwd=PROJECT_DIR,
             capture_output=True, text=True, timeout=10
         )
@@ -278,7 +298,7 @@ def debug_get_git_status() -> dict:
         
         # Get status
         status_result = subprocess.run(
-            ['git', 'status', '--short'],
+            git_command(['status', '--short']),
             cwd=PROJECT_DIR,
             capture_output=True, text=True, timeout=10
         )
@@ -293,7 +313,7 @@ def debug_git_pull() -> dict:
     """Pull latest code from git."""
     try:
         result = subprocess.run(
-            ['git', 'pull'],
+            git_command(['pull']),
             cwd=PROJECT_DIR,
             capture_output=True, text=True, timeout=60
         )

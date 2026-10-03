@@ -113,6 +113,7 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 61 | The speaker sets up WiFi from a phone that just joined the hotspot | The WiFi setup routes are open while the hotspot is up, so no token is needed; everything else (reboot, forget WiFi, logs) still is |
 | 62 | The token cannot be saved (the program folder is read-only) | The server logs an error and keeps a token nobody can read, so changes from other devices are refused until it is fixed. The controller and health monitor, on the speaker itself, are unaffected |
 | 63 | `/debug/run-main` (started a second controller next to the service, fighting it for the buttons and the sound card) | Removed |
+| 64 | The app's Developer Tools run `git pull` or `git status` | The server runs as root; it now runs git as the owner of the program folder (`sudo -u iot-proj -H git ...`), so git does not refuse over "dubious ownership" and does not leave root-owned files in the repository for the next `pi_update.sh` to trip over |
 
 ---
 
