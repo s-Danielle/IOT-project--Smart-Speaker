@@ -35,6 +35,7 @@ flutter_app/.pub-cache/
 flutter_app/.pub/
 flutter_app/android/.gradle/
 flutter_app/android/local.properties
+flutter_app/local.properties
 flutter_app/android/gradle/wrapper/gradle-wrapper.jar
 flutter_app/*.iml
 flutter_app/.idea/
@@ -58,6 +59,13 @@ Main/local_files/uploads/*
 # Uploads from server
 tmp-server/uploads/
 tmp-server/data.json
+
+# Chips, library and settings live on the Pi, not in git. This covers the
+# JSON file, its .bak, the SQLite database (and its -wal/-shm files) and
+# the old JSON file kept after the one-time import.
+Main/server_data.json*
+Main/server_data.db*
+*.migrated-*
 
 # Deployed Flutter web bundle (rsync'd to the Pi by scripts/deploy_web.sh,
 # never committed). Keep only the placeholder page.
