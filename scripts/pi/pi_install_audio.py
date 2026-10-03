@@ -273,7 +273,7 @@ class Setup:
         if self.dry:
             self.act("Check that alsaaudio imports in the venv")
             return
-        rc, out = self.run([str(self.venv_python), "-c", "import alsaaudio; print("alsaaudio imports")"],
+        rc, out = self.run([str(self.venv_python), "-c", "import alsaaudio; print('alsaaudio imports')"],
                            "Check that it imports", user=self.app_user, changes=False)
         if rc != 0:
             self.fail("alsaaudio still does not import in the venv.")
