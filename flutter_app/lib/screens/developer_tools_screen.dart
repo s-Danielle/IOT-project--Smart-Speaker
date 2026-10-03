@@ -21,7 +21,6 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
   bool _loadingLogs = false;
   bool _loadingSpeaker = false;
   bool _showLogs = false;
-  String? _actionStatus;
   
   // WiFi state
   Map<String, dynamic>? _wifiStatus;
@@ -420,7 +419,6 @@ class _DeveloperToolsScreenState extends State<DeveloperToolsScreen> {
   }
 
   void _showActionStatus(String status) {
-    setState(() => _actionStatus = status);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(status)),
     );

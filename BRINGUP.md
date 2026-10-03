@@ -273,9 +273,9 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
 
 ## Step 6: the app: the token, the status and the fixes (about 45 minutes)
 
-Do this after step 5, because the app talks to the new server. The app code was written without being able to compile it on the development computer (Flutter was not run), so **6.1 comes first**.
+Do this after step 5, because the app talks to the new server. The app code could not be built on the development computer (Flutter was not run there). I did run Dart's analyzer over `flutter_app/lib` on a scratch copy and it reported **no issues**, which catches mistakes in types and names but is not the same as a build, so 6.1 is still yours to run.
 
-- [ ] **6.1** *On this computer.* Check the app code compiles: `cd flutter_app && flutter analyze`. It must say "No issues found". If it prints errors, paste them to me and I fix them before you build anything. (I did not run it: it downloads packages into your home folder, which I did not want to do without asking.)
+- [ ] **6.1** *On this computer.* Check the app compiles: `cd flutter_app && flutter analyze`. It should say "No issues found". If it prints errors, paste them to me and I fix them before you build anything.
 - [ ] **6.2** *On this computer.* Build the web app and put it on the Pi (this only replaces the web app's files in `Main/web_app` on the Pi; no service restarts):
   ```
   scripts/deploy_web.sh iot-proj@rpi2.local
