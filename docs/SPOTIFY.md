@@ -2,7 +2,7 @@
 
 How it works, what has broken, and what we tried. We keep this up to date for the whole project, so there is something to show even if the cause turns out to be outside our code.
 
-**Where things stand today:** on Oct 3 a Spotify song played fine on the Pi, on the old code, the first time we tried it. So streaming works today even though upstream has had two problems (login for streaming since Aug 10, and a Spotify-side error reported on Sep 29). The old logs show what went wrong the last time the speaker was used (Sep 5): every Spotify song failed at the very first step, and our code didn't notice for a minute. What made that first step fail is not proven (see the log below). The full test (`spotify_check.py`) has not been run yet: it is step 2 in the plan, and it will measure how long a song takes to start and which kinds of link work.
+**Where things stand today:** on Oct 3 Spotify passed the full check (`spotify_check.py`) on the Pi, on the old code: a song starts playing about 3.4 seconds after Play (see the baseline entry in the log). So streaming works today even though upstream has had two problems (login for streaming since Aug 10, and a Spotify-side error reported on Sep 29). The old logs show what went wrong the last time the speaker was used (Sep 5): every Spotify song failed at the very first step, and our code didn't notice for a minute. What made that first step fail is not proven (see the log below). Only a track link has been tried so far; albums and playlists (yours and other people's) are still to be tried.
 
 We fix what is ours: our code, our config files and our scripts. We don't patch Spotify, Mopidy or librespot.
 
@@ -84,6 +84,22 @@ Never paste `credentials.json` anywhere. The Mopidy-Spotify README also says a m
 ## Log
 
 Newest entry first. Each entry says what we saw, what we tried and what happened. `spotify_check.py` prints a ready-made entry to paste here.
+
+### 2026-10-03 14:13: baseline at 45a4eae: Spotify passes
+
+The fixed `spotify_check.py`, run with sudo on the Pi (old code, nothing changed since the morning). Both the test tone and the Spotify song were heard.
+
+| Test | Link | Result | Lookup | First sound | Progress |
+|---|---|---|---|---|---|
+| local file (control: a quiet 6-second test tone) | made by the script | PASS | 0.1s | 0.9s | 4.3s |
+| known Spotify track | `spotify:track:5hnyJvgoWiQUYZttV4wXy6` | PASS | 0.0s | 3.4s | 4.2s |
+| made-up link (should fail) | `spotify:track:0000000000000000000000` | FAILED AS EXPECTED | 0.3s | - | 0.0s |
+
+- **Verdict:** the Spotify track plays. The credentials file was seen this time (321 bytes, modified 2026-08-13, owner `mopidy`, mode 600).
+- **How long a song takes to start:** about 3.4 seconds from `play` to the first sound. The controller log of the 12:30 play shows the same 3.4 seconds (plus a 2-second lookup, because the song hadn't been looked up before). The lookup here was 0.0 seconds because Mopidy remembered the song from the failed run at 13:07. So the controller can give up much sooner than its 60 seconds: 15 to 20 seconds is more than four times the typical start.
+- **A lookup that really asks Spotify takes a while:** the made-up link was refused after 0.3 seconds, and a first lookup of a real song took 2 seconds. On Sep 5 the refusals took 0.014 to 0.063 seconds, too fast for a real request. That supports the idea that Mopidy didn't ask Spotify at all that evening (its Spotify part not logged in or not running, or no network), though the logs from that day are gone.
+- **Nothing in Mopidy's log** matched a known Spotify error.
+- **Decision:** the plan's Spotify gate is passed. We go on to step 3. Re-run this check after each change (steps 3 and 4) and compare with this table.
 
 ### 2026-10-03: first report and first run of spotify_check.py
 

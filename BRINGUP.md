@@ -50,11 +50,11 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
 **Where we are (Oct 3):** the Pi is on, on the same WiFi as this computer, and a Spotify song played fine on the old code. So 2.5 is now about measuring (how long a song takes to start, which kinds of link work) rather than finding a failure.
 
 - [ ] **2.1** Power on and watch Light 1 for about 90 seconds (yellow pulse, then blue or green). Tell me anything odd, especially lights flickering or going dark every few seconds.
-- [ ] **2.2** *On this computer*, in the repo folder, copy the helper scripts to the Pi (it only writes `/tmp/pi` on the Pi). Use `rpi2.local`: plain `rpi2` does not resolve from this computer.
+- [x] **2.2** *On this computer*, in the repo folder, copy the helper scripts to the Pi (it only writes `/tmp/pi` on the Pi). Use `rpi2.local`: plain `rpi2` does not resolve from this computer.
   ```
   scripts/pi/push_to_pi.sh iot-proj@rpi2.local
   ```
-- [ ] **2.3** On the Pi, collect the facts (sudo is only used to read root-only files and the Mopidy log; nothing is changed):
+- [x] **2.3** On the Pi, collect the facts (sudo is only used to read root-only files and the Mopidy log; nothing is changed):
   ```
   sudo bash /tmp/pi/pi_report.sh > /tmp/report.txt
   ```
@@ -66,13 +66,15 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
   - [ ] PTT
   - [ ] record and save
   - [ ] open the app
-- [ ] **2.5** Test Spotify. **Turn the speaker volume down first.** Nothing else may play on that Spotify account meanwhile.
+- [x] **2.5** Test Spotify. **Turn the speaker volume down first.** Nothing else may play on that Spotify account meanwhile.
   ```
   sudo python3 /tmp/pi/spotify_check.py --label "baseline at 45a4eae" > /tmp/spotify.txt
   ```
   It asks for an album link and two playlist links (one you own, one you don't). Press Enter to skip any of them. It counts down 5 seconds, then plays about 5 seconds from each link. The progress shows on screen and the results go to the file.
 
   **Oct 3:** the first version said "PLAYBACK FAILED" because it didn't wait for Spotify to load, and it was run without `sudo`. It's fixed. Copy the scripts again (2.2), then run it with `sudo`. A Spotify song takes a few seconds to start, so each Spotify link now takes about 10 seconds. If there's no local song it plays a quiet test tone as the control.
+
+  **Result (Oct 3, 14:13): pass.** The test tone and the Spotify song both played; the song started about 3.4 seconds after the play command. Details are in [docs/SPOTIFY.md](docs/SPOTIFY.md). Re-run it after each change in steps 3 and 4 and compare.
 - [ ] **2.6** Back everything up (it asks for your sudo password for a few root-only files):
   ```
   bash /tmp/pi/pi_backup.sh
