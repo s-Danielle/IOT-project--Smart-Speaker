@@ -2,6 +2,7 @@
 
 import pytest
 
+import fakes
 from core.state import State
 from hardware.buttons import ButtonID
 from rig import Rig
@@ -88,6 +89,20 @@ def test_saved_chime_is_not_cut_off_while_record_is_still_held(rig):
     rig.buttons.hold(ButtonID.RECORD, 0.5)  # ...and the finger is still down half a second later
     rig.step(3)
     assert "play_record_start" not in rig.ui._sounds.names()
+
+
+def test_recording_shows_the_red_light(rig):
+    # The red recording light was never switched on: nothing called the UI when recording began.
+    start_recording(rig)
+    assert "on_recording" in rig.ui_calls()
+
+
+def test_shutdown_switches_the_leds_off(monkeypatch):
+    ptt_leds = fakes.CallLog()
+    rig = Rig(monkeypatch, ptt_leds=ptt_leds, voice_command=fakes.FakeVoice())
+    rig.controller.shutdown()
+    assert "shutdown" in rig.ui_calls()  # the speaker light
+    assert ("off", 2) in ptt_leds.calls  # the PTT light
 
 
 def test_record_works_normally_again_after_a_save(rig):

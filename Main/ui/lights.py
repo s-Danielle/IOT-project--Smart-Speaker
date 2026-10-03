@@ -18,26 +18,30 @@ class Lights:
     """
     High-level LED state management for speaker/player feedback.
     Controls Light 3 (Divided LED) on PCF8574.
-    
+
     This class implements the interface already called by UIController:
     - show_idle(), show_chip_loaded(), show_playing(), show_paused()
     - show_recording(), show_success(), show_error(), show_volume()
-    
+
     Color scheme (R/G/B only):
     - GREEN: Playing
     - BLUE: Idle/Pause
     - RED: Recording
     - RED blinking: Error
+
+    The light has a solid colour for the current state. Every flash (volume, error,
+    saved...) goes back to that colour when it ends, instead of switching the light off.
     """
-    
+
     LIGHT = 3  # Speaker uses Light 3 (divided LED)
-    
+
     def __init__(self, leds=None):
         """Initialize lights controller"""
         self._leds = None
         self._enabled = False
         self._flash_thread = None
-        
+        self._base = Colors.OFF  # the solid colour to come back to after a flash
+
         try:
             self._leds = leds or RGBLeds()
             self._enabled = True
@@ -45,80 +49,88 @@ class Lights:
         except Exception as e:
             log(f"[LIGHTS] Failed to initialize: {e} - LEDs disabled")
             self._enabled = False
-    
+
     # =========================================================================
     # SOLID STATES
     # =========================================================================
-    
+
+    def _show(self, color: tuple):
+        """Make `color` the solid colour of the current state and show it."""
+        self._base = color
+        self._leds.set_light(self.LIGHT, color)
+
     def show_idle(self):
         """Chip cleared / Idle - blue solid"""
         if self._enabled:
-            self._leds.set_light(self.LIGHT, Colors.BLUE)
-    
+            self._show(Colors.BLUE)
+
     def show_chip_loaded(self):
         """Chip scanned/loaded - green flash then blue (idle)"""
         if self._enabled:
-            self._flash(Colors.GREEN, duration=0.2, return_to=Colors.BLUE)
-    
+            self._base = Colors.BLUE
+            self._flash(Colors.GREEN, duration=0.2)
+
     def show_playing(self):
         """Playing - green solid"""
         if self._enabled:
-            self._leds.set_light(self.LIGHT, Colors.GREEN)
-    
+            self._show(Colors.GREEN)
+
     def show_paused(self):
         """Paused - blue solid"""
         if self._enabled:
-            self._leds.set_light(self.LIGHT, Colors.BLUE)
-    
+            self._show(Colors.BLUE)
+
     def show_recording(self):
         """Recording - red solid"""
         if self._enabled:
-            self._leds.set_light(self.LIGHT, Colors.RED)
-    
+            self._show(Colors.RED)
+
     # =========================================================================
     # FLASH PATTERNS
     # =========================================================================
-    
+
     def show_success(self):
-        """Success (recording saved) - green flash"""
+        """Success (recording saved) - green flash, then back to blue (chip loaded / paused)"""
         if self._enabled:
+            self._base = Colors.BLUE
             self._flash(Colors.GREEN, duration=0.5)
-    
+
     def show_error(self):
         """Error or blocked action - red triple flash"""
         if self._enabled:
             self._multi_flash(Colors.RED, times=3, on_time=0.1, off_time=0.1)
-    
+
     def show_volume(self, volume: int):
         """Volume change - blue brief flash"""
         if self._enabled:
             self._flash(Colors.BLUE, duration=0.1)
-    
+
     def off(self):
         """Turn off speaker LED"""
         if self._enabled:
+            self._base = Colors.OFF
             self._leds.off(self.LIGHT)
-    
+
     # =========================================================================
     # FLASH HELPERS (non-blocking)
     # =========================================================================
-    
-    def _flash(self, color: tuple, duration: float = 0.2, return_to: tuple = None):
-        """Single flash then off or return to color (non-blocking)"""
+
+    @staticmethod
+    def _run_in_background(work):
+        """Run `work` on its own thread so it never blocks the main loop."""
+        threading.Thread(target=work, daemon=True).start()
+
+    def _flash(self, color: tuple, duration: float = 0.2):
+        """Single flash, then back to the solid colour (non-blocking)"""
         def do_flash():
             self._leds.set_light(self.LIGHT, color)
             time.sleep(duration)
-            if return_to:
-                self._leds.set_light(self.LIGHT, return_to)
-            else:
-                self._leds.off(self.LIGHT)
-        
-        # Run in background thread so it doesn't block
-        thread = threading.Thread(target=do_flash, daemon=True)
-        thread.start()
-    
+            self._leds.set_light(self.LIGHT, self._base)  # read now: the state may have changed meanwhile
+
+        self._run_in_background(do_flash)
+
     def _multi_flash(self, color: tuple, times: int = 3, on_time: float = 0.1, off_time: float = 0.1):
-        """Multiple flashes (non-blocking)"""
+        """Multiple flashes, then back to the solid colour (non-blocking)"""
         def do_multi():
             for i in range(times):
                 self._leds.set_light(self.LIGHT, color)
@@ -126,6 +138,6 @@ class Lights:
                 self._leds.off(self.LIGHT)
                 if i < times - 1:
                     time.sleep(off_time)
-        
-        thread = threading.Thread(target=do_multi, daemon=True)
-        thread.start()
+            self._leds.set_light(self.LIGHT, self._base)
+
+        self._run_in_background(do_multi)

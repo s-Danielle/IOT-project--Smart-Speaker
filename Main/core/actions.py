@@ -166,7 +166,8 @@ def action_start_recording(device_state: DeviceState, recorder, ui) -> DeviceSta
         return device_state
     
     device_state.state = State.RECORDING
-    # Don't play countdown again - it already played during the hold
+    # Don't play the countdown again - it already played during the hold. Only show the red light.
+    ui.on_recording()
     # Just log the start
     log_action("Recording started")
     log_state(f"→ {device_state.state}")

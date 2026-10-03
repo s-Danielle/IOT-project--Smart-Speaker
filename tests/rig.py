@@ -27,16 +27,16 @@ def chip(uid, name="Chip", uri=SONG, chip_id="chip-1"):
 class Rig:
     """Build with Rig(monkeypatch). Parental controls are off until set_parental()."""
 
-    def __init__(self, monkeypatch, chips=None, voice_command=None, ptt_leds=None):
+    def __init__(self, monkeypatch, chips=None, voice_command=None, ptt_leds=None, volume=50, parental=None):
         self.nfc = fakes.FakeNFC()
         self.chip_store = fakes.FakeChipStore(chips if chips is not None else {"AA": chip("AA"), "BB": chip("BB", "Other", chip_id="chip-2")})
         self.buttons = fakes.FakeButtons()
         self.audio = fakes.FakeAudio()
-        self.mixer = fakes.FakeMixer(volume=50)
+        self.mixer = fakes.FakeMixer(volume=volume)
         self.ui = fakes.FakeUI()
         self.mic = fakes.FakeMic()
         self.recorder = fakes.FakeRecorder()
-        self.parental = dict(NO_LIMITS)
+        self.parental = dict(parental) if parental is not None else dict(NO_LIMITS)
         self.usage_today = 0
         self.usage_added = []
         monkeypatch.setattr(controller_module, "get_parental_controls", lambda: self.parental)

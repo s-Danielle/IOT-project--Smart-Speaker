@@ -29,6 +29,7 @@ from config.settings import (
     PTT_ENABLED,
     MAX_RECORDING_DURATION,
     MIN_DISK_SPACE_MB,
+    VOLUME_DEFAULT,
 )
 from utils.logger import log, log_state, log_event, log_error, log_button
 from typing import Optional
@@ -123,6 +124,8 @@ class Controller:
         # Track last volume limit check time (check periodically, not every loop)
         self._last_volume_limit_check: float = 0.0
         
+        self._apply_safe_startup_volume()
+
         log_state(f"Initial state: {self.device_state.state}")
         log("=" * 60)
         log("READY - Waiting for input...")
@@ -181,6 +184,12 @@ class Controller:
         self._mic.release(restore=False)
         self._update_playback_usage()  # count the music played so far
         self._audio.close()
+        try:
+            self._ui.shutdown()  # speaker LED off
+            if self._ptt_leds is not None:
+                self._ptt_leds.off(2)
+        except Exception as e:
+            log_error(f"Could not switch the LEDs off: {e}")
         log("Goodbye!")
     
     def stop(self):
@@ -515,6 +524,22 @@ class Controller:
         except Exception as e:
             log_error(f"[PARENTAL] Error checking volume limit: {e}")
     
+    def _apply_safe_startup_volume(self):
+        """Never start louder than the default volume or the parental cap.
+
+        The sound card powers up at a loud level and nothing set the volume at start-up, so the
+        first sound after a boot could be much louder than the buttons ever allow. This only ever
+        lowers the volume: if it is already quieter, it is left alone.
+        """
+        try:
+            limit = min(VOLUME_DEFAULT, self._get_volume_limit())
+            current = self._mixer.get_volume()
+            if current > limit:
+                log_event(f"[VOLUME] Start-up volume {current}% is above {limit}% - lowering it")
+                self._mixer.set_volume(limit)
+        except Exception as e:
+            log_error(f"[VOLUME] Could not set the start-up volume: {e}")
+
     def _check_daily_limit(self) -> bool:
         """Check if playback is blocked due to daily usage limit.
         Returns True if blocked, False if allowed.

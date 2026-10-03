@@ -2,8 +2,6 @@
 Card playback volume via the ALSA mixer (not Mopidy).
 """
 
-import alsaaudio
-
 from config.settings import (
     ALSA_CARD,
     ALSA_VOLUME_CONTROL,
@@ -12,19 +10,34 @@ from config.settings import (
 )
 from utils.logger import log_audio, log_error
 
+try:
+    import alsaaudio
+    ALSAAudioError = alsaaudio.ALSAAudioError
+except ImportError:
+    # pyalsaaudio is not installed. The speaker still runs; the volume buttons do nothing,
+    # instead of the whole controller crashing at start-up.
+    alsaaudio = None
+    ALSAAudioError = RuntimeError
+
 
 class Mixer:
     """0-100 volume on the card's PCM control."""
 
     def __init__(self):
         self._mixer = None
+        if alsaaudio is None:
+            log_error(
+                "pyalsaaudio is not installed - the volume buttons will do nothing. "
+                "Install it with: pip install pyalsaaudio (needs libasound2-dev)"
+            )
+            return
         try:
             self._mixer = alsaaudio.Mixer(ALSA_VOLUME_CONTROL, cardindex=ALSA_CARD)
             log_audio(
                 f"Mixer initialized ({ALSA_VOLUME_CONTROL} on card {ALSA_CARD}, "
                 f"volume {self._read_volume()})"
             )
-        except alsaaudio.ALSAAudioError as e:
+        except ALSAAudioError as e:
             log_error(
                 f"Cannot open ALSA mixer '{ALSA_VOLUME_CONTROL}' on card {ALSA_CARD}: {e}"
             )
@@ -41,7 +54,7 @@ class Mixer:
             return VOLUME_DEFAULT
         try:
             return self._read_volume()
-        except alsaaudio.ALSAAudioError as e:
+        except ALSAAudioError as e:
             log_error(f"Failed to read volume: {e}")
             return VOLUME_DEFAULT
 
@@ -55,7 +68,7 @@ class Mixer:
             self._mixer.setvolume(volume)
             log_audio(f"Volume set to {volume}")
             return True
-        except alsaaudio.ALSAAudioError as e:
+        except ALSAAudioError as e:
             log_error(f"Failed to set volume to {volume}: {e}")
             return False
 

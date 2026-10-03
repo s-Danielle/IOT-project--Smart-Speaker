@@ -59,6 +59,15 @@ class UIController:
         self._sounds.play_record_start()
         self._lights.show_recording()
     
+    def on_recording(self):
+        """Recording is running: the red light only (the countdown already played during the hold)"""
+        log_event("🎙️  RECORDING")
+        self._lights.show_recording()
+
+    def shutdown(self):
+        """The program is ending: switch the speaker LED off"""
+        self._lights.off()
+
     def on_record_saved(self):
         """Feedback when recording is saved"""
         log_event("💾 RECORDING SAVED")
