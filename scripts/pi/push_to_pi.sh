@@ -38,7 +38,7 @@ git -C "$REPO" rev-parse HEAD > "$BUNDLE/pi/BUNDLE_COMMIT" 2>/dev/null || echo u
 chmod +x "$BUNDLE"/pi/*.sh "$BUNDLE"/pi/*.py 2>/dev/null || true
 
 echo "==> Copying to $TARGET:/tmp/pi ..."
-ssh "$TARGET" 'rm -rf /tmp/pi'
+ssh "$TARGET" 'rm -rf /tmp/pi 2>/dev/null || sudo -n rm -rf /tmp/pi'
 scp -r "$BUNDLE/pi" "$TARGET:/tmp/"
 
 echo ""

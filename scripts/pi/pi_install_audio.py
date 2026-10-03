@@ -38,6 +38,7 @@ import sys
 import time
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ini_edit  # noqa: E402

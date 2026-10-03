@@ -37,6 +37,7 @@ import urllib.request
 import wave
 from urllib.parse import unquote, urlparse
 
+sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pi_common import (  # noqa: E402
