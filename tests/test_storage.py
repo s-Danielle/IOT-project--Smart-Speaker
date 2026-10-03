@@ -133,6 +133,48 @@ def test_find_chip_by_number(store):
     assert store.find_chip_by_uid("ZZ99") is None
 
 
+def test_lookup_gives_the_chip_with_its_songs_link(store):
+    chip = store.register_chip("AA11", "Bedtime")
+    song = store.add_song("Lullaby", "spotify:track:1")
+    store.update_chip(chip["id"], {"song_id": song["id"]})
+    found = store.lookup_chip("AA11")
+    assert found["id"] == chip["id"] and found["name"] == "Bedtime"
+    assert found["song_id"] == song["id"] and found["song_name"] == "Lullaby"
+    assert found["uri"] == "spotify:track:1"
+
+
+def test_lookup_of_a_chip_with_no_song_has_an_empty_link(store):
+    store.register_chip("AA11")
+    found = store.lookup_chip("AA11")
+    assert found["uri"] == "" and found["song_id"] is None and found["song_name"] is None
+
+
+def test_lookup_follows_a_changed_song_link(store):
+    chip = store.register_chip("AA11")
+    song = store.add_song("S", "spotify:track:1")
+    store.update_chip(chip["id"], {"song_id": song["id"]})
+    store.update_song(song["id"], {"uri": "spotify:track:2"})
+    assert store.lookup_chip("AA11")["uri"] == "spotify:track:2"
+
+
+def test_lookup_ignores_the_case_of_the_chip_number(store):
+    chip = store.register_chip("e41c9dbb")
+    assert store.lookup_chip("E41C9DBB")["id"] == chip["id"]
+
+
+def test_lookup_of_a_chip_we_have_not_seen(store):
+    assert store.lookup_chip("ZZ99") is None
+    assert store.chips() == []  # looking never registers
+
+
+def test_lookup_when_the_song_is_gone_has_no_link(path, clock):
+    import json as _json
+    with open(path, "w") as f:
+        _json.dump({"chips": [{"id": "c1", "uid": "AA", "name": "N", "song_id": "song-gone", "song_name": "Old"}], "library": []}, f)
+    found = JsonStore(path, today=clock).lookup_chip("AA")
+    assert found["uri"] == "" and found["song_name"] is None
+
+
 def test_assigning_a_song_shows_its_name(store):
     chip = store.register_chip("AA11")
     song = store.add_song("Lullaby", "spotify:track:1")

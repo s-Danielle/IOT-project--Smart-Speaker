@@ -4,88 +4,10 @@ The server listens on 127.0.0.1 on a free port for the length of each test, and 
 a temporary folder. Nothing on the speaker's own folders or network is touched.
 """
 
-import importlib
 import json
 import os
-import sys
-import threading
-import urllib.error
-import urllib.request
-
-import pytest
 
 from storage import JsonStore
-
-
-@pytest.fixture(scope="module")
-def server_module(tmp_path_factory):
-    """Import server.py without letting it create folders in the program's own directory."""
-    from utils import shared_dirs
-
-    made = []
-    real_ensure, real_makedirs = shared_dirs.ensure_shared_dir, os.makedirs
-    shared_dirs.ensure_shared_dir = lambda *a, **k: made.append(a)
-    os.makedirs = lambda *a, **k: made.append(a)
-    sys.modules.pop("server", None)
-    try:
-        module = importlib.import_module("server")
-    finally:
-        shared_dirs.ensure_shared_dir, os.makedirs = real_ensure, real_makedirs
-    yield module
-    sys.modules.pop("server", None)
-
-
-@pytest.fixture
-def api(server_module, tmp_path, monkeypatch):
-    uploads = tmp_path / "uploads"
-    uploads.mkdir()
-    store = JsonStore(str(tmp_path / "server_data.json"), today=lambda: "2026-10-03")
-    monkeypatch.setattr(server_module, "store", store)
-    monkeypatch.setattr(server_module, "DATA_FILE", store.path)
-    monkeypatch.setattr(server_module, "UPLOADS_DIR", str(uploads))
-    monkeypatch.setattr(server_module, "OLD_TAGS_FILE", str(tmp_path / "tags.json"))
-    httpd = server_module.ThreadPoolHTTPServer(("127.0.0.1", 0), server_module.SpeakerHandler, max_workers=2)
-    thread = threading.Thread(target=lambda: httpd.serve_forever(poll_interval=0.02), daemon=True)
-    thread.start()
-    client = Client("http://127.0.0.1:%d" % httpd.server_address[1])
-    client.store = store
-    client.module = server_module
-    client.tmp = tmp_path
-    yield client
-    httpd.shutdown()
-    httpd.server_close()
-    thread.join(timeout=5)
-
-
-class Client:
-    def call(self, method, path, body=None, raw=None, headers=None):
-        data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
-        request = urllib.request.Request(self.base + path, data=data, method=method, headers=headers or {})
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                payload = response.read()
-                return response.status, (json.loads(payload) if payload else None)
-        except urllib.error.HTTPError as error:
-            payload = error.read()
-            try:
-                return error.code, json.loads(payload)
-            except ValueError:
-                return error.code, None
-
-    def __init__(self, base):
-        self.base = base
-
-    def get(self, path):
-        return self.call("GET", path)
-
-    def post(self, path, body=None, **kw):
-        return self.call("POST", path, body, **kw)
-
-    def put(self, path, body=None, **kw):
-        return self.call("PUT", path, body, **kw)
-
-    def delete(self, path):
-        return self.call("DELETE", path)
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +37,36 @@ def test_registering_a_known_chip_again_gives_the_same_chip(api):
 def test_a_chip_without_a_number_is_a_bad_request(api):
     status, body = api.post("/chips", {"name": "x"})
     assert status == 400 and "uid" in body["error"]
+
+
+def test_lookup_by_number_gives_the_chip_and_its_songs_link(api):
+    chip = api.post("/chips", {"uid": "04A1B2C3", "name": "Bedtime"})[1]
+    api.put("/chips/" + chip["id"], {"song_id": "song001"})
+    status, found = api.get("/chips/lookup?uid=04A1B2C3")
+    assert status == 200
+    assert found["id"] == chip["id"] and found["name"] == "Bedtime" and found["song_name"] == "Surprise"
+    assert found["uri"] == "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"
+
+
+def test_lookup_of_a_chip_with_no_song(api):
+    api.post("/chips", {"uid": "AA11"})
+    assert api.get("/chips/lookup?uid=AA11")[1]["uri"] == ""
+
+
+def test_lookup_ignores_case_and_url_escapes(api):
+    api.post("/chips", {"uid": "04:A1 B2&C3"})
+    assert api.get("/chips/lookup?uid=04%3Aa1+b2%26c3")[0] == 200
+
+
+def test_lookup_of_an_unknown_chip_is_a_404_and_registers_nothing(api):
+    status, body = api.get("/chips/lookup?uid=ZZ99")
+    assert status == 404 and body == {"error": "unknown chip"}
+    assert api.get("/chips") == (200, [])
+
+
+def test_lookup_needs_a_number(api):
+    assert api.get("/chips/lookup")[0] == 400
+    assert api.get("/chips/lookup?uid=")[0] == 400
 
 
 def test_giving_a_chip_a_song_and_a_name(api):

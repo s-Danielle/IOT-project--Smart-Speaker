@@ -748,6 +748,17 @@ class SpeakerHandler(BaseHTTPRequestHandler):
                 for name, h in manager.get_all_status().items()
             }
             self._send_json(health_data)
+        elif path == '/chips/lookup':
+            # One chip by its number, with the link of its song: GET /chips/lookup?uid=04A1B2C3
+            uid = parse_qs(parsed.query).get('uid', [''])[0]
+            if not uid:
+                self._send_json({"error": "uid is required"}, 400)
+                return
+            chip = store.lookup_chip(uid)
+            if chip is None:
+                self._send_json({"error": "unknown chip"}, 404)
+            else:
+                self._send_json(chip)
         elif path == '/chips':
             self._send_json(store.chips())
         elif path == '/library':

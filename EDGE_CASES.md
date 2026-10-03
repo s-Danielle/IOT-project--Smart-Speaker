@@ -97,6 +97,7 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 45 | The app sends a setting of the wrong kind (`"volume_limit": "loud"`, a time like `25:00`) | The server answers 400 with the reason, and nothing is saved |
 | 46 | A chip number in lower case (older tools wrote it that way) | Chip numbers are compared without regard to case, so it is the same chip |
 | 47 | The app asks for today's usage on a new day | It reports 0 seconds without rewriting the data file (it used to rewrite the whole file) |
+| 48 | A chip is tapped | The controller asks the server about that one chip (`GET /chips/lookup?uid=`) and gets the chip with its song link. It used to download the whole chip list and the whole library on every tap. A server that cannot be reached is an error (the chip is not re-registered), and an unknown chip is registered |
 
 ---
 

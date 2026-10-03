@@ -105,6 +105,22 @@ class JsonStore:
     def find_chip_by_uid(self, uid):
         return next((c for c in self.chips() if rules.same_uid(c.get("uid"), uid)), None)
 
+    def lookup_chip(self, uid):
+        """What the speaker needs when a chip is tapped: the chip plus the link of its song.
+
+        One read, so the chip and its song always belong together. 'uri' is '' when the chip has
+        no song. Returns None for a chip we have not seen.
+        """
+        data, _ = self._load()
+        uris = {s["id"]: s.get("uri", "") for s in data["library"]}
+        names = {s["id"]: s.get("name") for s in data["library"]}
+        for chip in data["chips"]:
+            if rules.same_uid(chip.get("uid"), uid):
+                result = self._chip_view(chip, names)
+                result["uri"] = uris.get(chip.get("song_id"), "") if chip.get("song_id") else ""
+                return result
+        return None
+
     def register_chip(self, uid, name=None) -> dict:
         """Add a chip that was scanned for the first time. A chip that is already known is returned as it is."""
         if not isinstance(uid, str) or not uid:

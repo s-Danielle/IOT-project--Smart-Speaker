@@ -7,7 +7,6 @@ import pytest
 import fakes
 from core import actions
 from core.state import ChipData, DeviceState, State
-from hardware.chip_store import ChipStore
 
 
 class FakeResponse:
@@ -92,25 +91,3 @@ def test_clear_while_paused_stops_and_unloads_the_song(server):
     state = actions.action_voice_clear_assignment(loaded(state=State.PAUSED), audio, fakes.FakeUI())
     assert state.state == State.IDLE_CHIP_LOADED
     assert audio.names() == ["stop"]
-
-
-# The chip's id has to survive the lookup, or "clear" cannot name the chip to the server.
-
-
-def test_lookup_keeps_the_id_of_a_known_chip():
-    store = ChipStore()
-    chips = [{"id": "chip-9", "uid": "AA", "name": "N", "song_id": "s1", "song_name": "S"}]
-    library = [{"id": "s1", "uri": "spotify:track:x"}]
-    store._http_get = lambda endpoint: chips if endpoint == "/chips" else library
-    result = store.lookup("AA")
-    assert result["id"] == "chip-9"
-    assert result["uri"] == "spotify:track:x"
-
-
-def test_lookup_keeps_the_id_of_a_new_chip():
-    store = ChipStore()
-    store._http_get = lambda endpoint: []
-    store._http_post = lambda endpoint, data: {"id": "chip-10", "name": "Chip 4"}
-    result = store.lookup("ZZ")
-    assert result["id"] == "chip-10"
-    assert result["is_new"] is True

@@ -3,7 +3,7 @@ Chip/Tag data lookup - fetches data from local HTTP server
 
 When an NFC chip is scanned:
 1. Look up by UID via HTTP API call to local server
-2. If found, get the song_id and resolve URI from library
+2. If found, the server answers with the chip and the link of its song
 3. If not found, register as new chip via HTTP API (so it appears in the app)
 
 This approach avoids consistency issues by ensuring all data access
@@ -12,6 +12,7 @@ goes through the centralized HTTP server.
 
 from typing import Optional, Dict, Any
 import json
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -63,9 +64,33 @@ class ChipStore:
             log_error(f"HTTP POST failed: {e}")
             return None
     
+    def _find_chip(self, uid: str):
+        """Ask the server about one chip, by number. One request.
+
+        Returns ('found', chip), ('unknown', None) or ('error', None). An unknown chip and a
+        server that cannot be reached are different things: the first is registered, the second
+        must not be.
+        """
+        url = f'{SERVER_BASE_URL}/chips/lookup?{urllib.parse.urlencode({"uid": uid})}'
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, method='GET'), timeout=5) as response:
+                return 'found', json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            try:
+                reason = json.loads(e.read().decode('utf-8')).get('error')
+            except Exception:
+                reason = None
+            if e.code == 404 and reason == 'unknown chip':
+                return 'unknown', None
+            log_error(f"Chip lookup failed: {e.code} {e.reason} (is the server the same version as the controller?)")
+            return 'error', None
+        except Exception as e:
+            log_error(f"Chip lookup failed: {e}")
+            return 'error', None
+
     def lookup(self, uid: str) -> Optional[Dict[str, Any]]:
         """
-        Look up chip data by UID via HTTP API call.
+        Look up chip data by UID with one request to the local server.
         Returns dict with uid, name, uri, etc.
         
         - If chip is unknown, it will be auto-registered and returned with uri=''
@@ -74,20 +99,12 @@ class ChipStore:
         
         Returns None only on error.
         """
-        # Get all chips and filter by UID client-side
-        chips = self._http_get('/chips')
-        if chips is None:
-            log_error("Failed to fetch chips from server")
+        outcome, chip_data = self._find_chip(uid)
+        if outcome == 'error':
+            log_error("Failed to look up the chip on the server")
             return None
         
-        # Find chip with matching UID
-        chip_data = None
-        for chip in chips:
-            if chip.get('uid') == uid:
-                chip_data = chip
-                break
-        
-        if chip_data is None:
+        if outcome == 'unknown':
             # Unknown chip - register it so it appears in the app
             log_nfc(f"New chip detected, registering: {uid[:30]}...")
             new_chip = self._http_post('/chips', {'uid': uid})
@@ -107,31 +124,20 @@ class ChipStore:
                 'is_new': True,  # Flag to indicate this was just registered
             }
         
-        # Resolve URI from library if chip has a song assigned
-        uri = ''
-        song_id = chip_data.get('song_id')
-        if song_id:
-            library = self._http_get('/library')
-            if library:
-                for song in library:
-                    if song.get('id') == song_id:
-                        uri = song.get('uri', '')
-                        break
-        
         result = {
             'id': chip_data.get('id'),  # the server's chip id (voice "clear" needs it)
             'uid': uid,
             'name': chip_data.get('name', 'Unknown'),
-            'uri': uri,
-            'song_id': song_id,
+            'uri': chip_data.get('uri', ''),  # the server resolves it from the song
+            'song_id': chip_data.get('song_id'),
             'song_name': chip_data.get('song_name', ''),
         }
         
         # Check if chip has a song assigned
-        if not uri:
+        if not result['uri']:
             log_nfc(f"Chip '{result['name']}' has no song assigned - use the app to assign one")
         else:
-            log_nfc(f"Found chip: {result['name']} -> {uri}")
+            log_nfc(f"Found chip: {result['name']} -> {result['uri']}")
         
         return result
     
