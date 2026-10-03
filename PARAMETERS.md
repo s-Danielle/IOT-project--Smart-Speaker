@@ -16,7 +16,7 @@ All parameters are defined in `Main/config/settings.py`
 | `RECORD_HOLD_DURATION` | 5.0 | seconds | How long to hold Record button to arm recording |
 | `CLEAR_CHIP_HOLD_DURATION` | 3.0 | seconds | How long to hold Stop button to clear chip |
 | `PLAY_LATEST_HOLD_DURATION` | 2.0 | seconds | How long to hold Play/Pause to play latest recording |
-| `MAX_WAIT_FOR_PLAYBACK` | 60.0 | seconds | Max time to wait for Mopidy to confirm playback started |
+| `MAX_WAIT_FOR_PLAYBACK` | 20.0 | seconds | Max time to wait for Mopidy to confirm playback started; after that the speaker shows an error. A Spotify song starts about 3.4 s after Play (measured, see `docs/SPOTIFY.md`) |
 | `MIN_PLAYBACK_DURATION` | 2.0 | seconds | Minimum playback time before considering track "finished" |
 | `STATUS_POLL_INTERVAL` | 0.5 | seconds | Minimum time between Mopidy status polls (caching) |
 
@@ -27,7 +27,7 @@ All parameters are defined in `Main/config/settings.py`
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `PCF8574_ADDRESS` | 0x20 | Button expander I2C address |
-| `PCF8574_RGB_ADDRESS` | 0x21 | RGB LED expander I2C address |
+| `LED_EXPANDER_ADDRESS` (in `Main/hardware/leds.py`) | 0x21 | RGB LED expander I2C address |
 | `PN532_I2C_ADDRESS` | 0x24 | NFC reader I2C address |
 
 ---
@@ -61,6 +61,8 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 
 **Note:** Light 3 is a "divided LED" - its red pin is on the button expander (0x20) at P6.
 
+**Shared state:** the controller, the PTT light, the health monitor and the WiFi service all drive these LEDs, and Light 1, Light 2 and half of Light 3 share one chip. They share one record of which pins are on, kept in `/tmp/smart_speaker_leds.json` (change the path with the `SPEAKER_LED_STATE` environment variable), so one program never switches off another one's light. On 0x20 only P6 is ever driven; P0-P5 (the buttons) are always written high.
+
 ---
 
 ## Volume Settings
@@ -72,15 +74,14 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 | `ALSA_CARD` | 0 | ALSA card index for volume (`seeed2micvoicec`) |
 | `ALSA_VOLUME_CONTROL` | "PCM" | Mixer control written by the volume buttons |
 
+At start-up the volume is lowered to `VOLUME_DEFAULT` or the parental volume limit, whichever is lower. It is never raised: if it is already quieter it is left alone.
+
 ---
 
 ## Audio Settings
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `SAMPLE_RATE` | 44100 | Audio sample rate in Hz |
-| `CHANNELS` | 1 | Number of audio channels (mono) |
-| `AUDIO_FORMAT` | "S16_LE" | Audio format (16-bit signed, little-endian) |
 | `FEEDBACK_PCM` | "feedback" | ALSA PCM for UI WAVs (`aplay -D feedback`) |
 
 ---
@@ -89,10 +90,9 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `SERVER_HOST` | "localhost" | REST API server bind address |
+| `SERVER_HOST` | "localhost" | Address the controller uses to reach the REST API server |
 | `SERVER_PORT` | 8080 | Internal API port (hardware ↔ server) |
 | `MOPIDY_HOST` | "localhost" | Mopidy server address |
-| `MOPIDY_PORT` | 6680 | Mopidy HTTP JSON-RPC port (deprecated) |
 | `MPD_PORT` | 6600 | MPD protocol port (used by python-mpd2) |
 
 ---
@@ -101,7 +101,7 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `NFC_TIMEOUT` | 0.05 | NFC read timeout in seconds (non-blocking) |
+| `NFC_TIMEOUT` | 0.3 | NFC read timeout in seconds. With no chip on the reader this is also the pace of the NFC thread. If the reader is missing the speaker still starts and retries every 5 s |
 
 ---
 
@@ -110,6 +110,8 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `RECORDING_DEVICE` | "" | ALSA recording device (empty = default) |
+| `MAX_RECORDING_DURATION` | 300.0 | Seconds; a recording that long is saved automatically |
+| `MIN_DISK_SPACE_MB` | 100 | Free disk space needed before a recording may start |
 
 ---
 
@@ -118,8 +120,10 @@ Buttons are connected to PCF8574 at address 0x20 (active-low logic).
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `PTT_ENABLED` | True | Enable/disable PTT feature |
-| `PTT_LISTEN_DURATION` | 2.5 | Seconds to listen for voice command |
+| `PTT_LISTEN_DURATION` | 5.0 | Seconds to listen for a voice command (fixed-length mode) |
 | `PTT_WAKE_PHRASE` | "hi speaker" | Required phrase before command |
+| `PTT_MAX_HOLD` | 10.0 | Seconds; holding PTT longer counts as letting go, so a stuck button cannot keep the mic open and the music paused |
+| `PTT_TRANSCRIBE_TIMEOUT` | 8.0 | Seconds to wait for the speech service in total; after that the command fails (the controller waits that long at most) |
 
 **Note:** PTT uses Google Speech API and requires an internet connection.
 
@@ -131,7 +135,7 @@ Defined in `Main/config/paths.py`:
 
 | Path | Description |
 |------|-------------|
-| `TAGS_JSON` | `Main/config/tags.json` - NFC chip to song mappings |
+| `TAGS_JSON` | `Main/config/tags.json` - old NFC chip list (chips and songs now live in `Main/server_data.json`, owned by the server) |
 | `SOUNDS_DIR` | `Main/assets/sounds/` - Audio feedback files |
 | `RECORDINGS_DIR` | `Main/local_files/recordings/` - User recordings |
 

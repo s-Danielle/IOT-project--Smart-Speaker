@@ -37,7 +37,7 @@ def test_units_that_write_a_log_file_run_unbuffered(unit):
         assert "Environment=PYTHONUNBUFFERED=1" in lines_of(unit)
 
 
-@pytest.mark.parametrize("script", sorted(SERVICES.glob("*.sh")), ids=lambda p: p.name)
+@pytest.mark.parametrize("script", sorted(SERVICES.glob("*.sh")) + [REPO / "Main" / "setup.sh"], ids=lambda p: p.name)
 def test_the_install_scripts_have_valid_syntax(script):
     # Syntax only (bash -n): nothing is run.
     result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)

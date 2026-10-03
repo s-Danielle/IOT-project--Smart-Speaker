@@ -2,7 +2,7 @@
 
 | # | Story Name | As a... | I want... | So That... |
 |---|------------|---------|-----------|------------|
-| 1 | NFC Playback | User | To scan an NFC chip and have music play instantly | I can start my favorite songs without using my phone |
+| 1 | NFC Playback | User | To scan an NFC chip to load it, then press Play to start its music | I can start my favorite songs without using my phone |
 | 2 | Chip Assignment | User | To assign songs to NFC chips via the mobile app | I can customize what each chip plays |
 | 3 | Voice Recording | User | To record audio messages and save them to chips | I can create personalized content for my children |
 | 4 | Physical Controls | User | To control playback using physical buttons | I can play, pause, and stop without a screen |
