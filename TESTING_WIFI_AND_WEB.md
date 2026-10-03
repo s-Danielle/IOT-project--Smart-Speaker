@@ -87,3 +87,16 @@ From a dev machine with Flutter installed:
 - [ ] Phone prompts for the WPA2 password when joining `SmartSpeaker-Setup`; joining with it works and the portal opens as usual
 - [ ] Variant: a password **shorter than 8 chars** logs a warning and falls back to an open AP (check `/var/log/smart_speaker_server.log` or the wifi log)
 - [ ] Cleanup: clear `AP_PASSWORD` and delete the hotspot profile again if you want an open AP afterwards
+
+## 6. The router comes back after the speaker (a power cut at home)
+
+This is what happens after a power cut: the speaker boots faster than the router, finds no network, and opens its setup hotspot. The speaker must not wait there for ever. While nobody is connected to the hotspot, it tries the saved network again every 2 minutes (`AP_RETRY_INTERVAL` in `Main/wifi_provisioner.py`). If somebody is connected to the hotspot, it leaves them alone.
+
+Setup: switch off the WiFi network the speaker has saved (or take its router out of range), then reboot the Pi.
+
+- [ ] Within ~45s of boot, `SmartSpeaker-Setup` appears and Light 1 pulses blue
+- [ ] **Do not join the hotspot.** Switch the home network back on
+- [ ] Within about 2.5 minutes the hotspot disappears by itself and Light 1 turns green
+- [ ] The speaker is reachable on the home network again (`http://rpi2.local:8080`), and **no reboot happened** (check `uptime`)
+- [ ] `/var/log/smart_speaker_wifi.log` says it tried the saved network again
+- [ ] Variant: switch the home network off again, reboot, and this time **join the hotspot** from a phone and stay connected. Switch the home network on. The speaker must **not** drop the hotspot under you; it keeps waiting for you to finish the setup

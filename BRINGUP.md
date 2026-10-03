@@ -166,6 +166,55 @@ sudo systemctl stop smart_speaker smart_speaker_health
 
 ---
 
+## Step 5: install the fixes (about 60 minutes)
+
+The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi pulls from there). Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is tested by 194 automatic tests on the development computer, but **none of it has run on the Pi yet**: the shared LED file on real I2C, the NFC reader retry, the WiFi retry, `setup.sh` and the saved system log are all untested on real hardware, so this step is where they get their first real run.
+
+**Part A: the code**
+- [ ] **5.1** Preview. It lists what changes and the system files it would install (log rotation, a saved system log). It changes nothing:
+  ```
+  bash /tmp/pi/pi_update.sh --dry-run pi/fixes
+  ```
+- [ ] **5.2** Switch the code (it installs, restarts and runs the quick check; the check must end green):
+  ```
+  bash /tmp/pi/pi_update.sh pi/fixes
+  ```
+- [ ] **5.3** Mopidy's settings gain a `[loglevels]` section (so Spotify's own messages reach the Mopidy log). Preview, then for real:
+  ```
+  bash /tmp/pi/pi_install_audio.sh --mopidy-conf --dry-run
+  bash /tmp/pi/pi_install_audio.sh --mopidy-conf
+  ```
+- [ ] **5.4** The logs are kept:
+  - [ ] `ls /var/log/smart_speaker/` shows `controller.log` (and the server and health logs)
+  - [ ] `ls /var/log/journal` exists (the system log now survives a reboot)
+  - [ ] `cat /etc/logrotate.d/smart_speaker` exists
+  - [ ] `ls -ld /home/iot-proj/IOT-project--Smart-Speaker/Main/local_files/recordings` is owned by `iot-proj`, not `root`
+- [ ] **5.5** `sudo reboot`, wait 90 seconds, then `journalctl --list-boots` shows two or more boots, and `python3 /tmp/pi/pi_smoke_test.py --stable-seconds 30` is green. (This is the first time the Pi keeps a log across a reboot.)
+
+**Part B: what you should now see and hear** (tell me pass or fail for each; paste the log lines for any fail with `journalctl -u smart_speaker -n 80`)
+- [ ] **5.6** Lights: with the health monitor running, watch all three lights for 60 seconds. No flicker, no light going dark for a moment. After a Vol+ or Vol- press, the speaker light (Light 3) goes back to its normal colour. (Before: it stayed dark.)
+- [ ] **5.7** A tap **loads** the chip (green flash and chime) and **Play** starts it. Tap the same chip again while it plays: the music must keep going.
+- [ ] **5.8** A song that can't start: in the app give a chip the made-up link `spotify:track:0000000000000000000000`, tap it and press Play. You should get the error sound and a red flash within a few seconds, and the speaker goes back to "chip loaded". (Before: 60 seconds of silent "playing".)
+- [ ] **5.9** Stop button: hold Stop for 3 seconds (the chip is unloaded). Then tap a chip, press Play, and short-press Stop: the music must stop. (Before: the first short press after a long press was ignored.)
+- [ ] **5.10** Recording: hold Record for 5 seconds (the recording light turns **red**), speak, short-press Record. You hear the "saved" chime to the end, and a `[RECORDING]` entry appears in the library. Hold Play for 2 seconds: it plays back.
+- [ ] **5.11** Parental controls, from the app, one at a time:
+  - [ ] cap the volume at 40, press Vol+ many times: it stops at 40
+  - [ ] set quiet hours around now: a chip tap + Play is refused with the error sound, and so is Play/Pause resuming a paused song
+  - [ ] set a daily limit of 2 minutes: after 2 minutes of music it is refused
+  - [ ] put every setting back to normal afterwards
+- [ ] **5.12** Voice: hold PTT and say "hi speaker, clear" with a chip loaded: the chip's song link is cleared (check the app) and only then the music stops. Say a command with the internet off or the microphone covered: the speaker answers within about 10 seconds and the buttons still work.
+- [ ] **5.13** The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
+
+**Part C: WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
+- [ ] **5.14** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.
+- [ ] **5.15** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot.
+
+**Undo, if something is wrong**
+- Code: `bash /tmp/pi/pi_update.sh --undo`. It goes back to the previous code. The extra system files stay in place; they're harmless. To remove them: `sudo rm /etc/systemd/journald.conf.d/90-smart-speaker.conf /etc/logrotate.d/smart_speaker` and then `sudo systemctl restart systemd-journald`.
+- Mopidy settings: `bash /tmp/pi/pi_install_audio.sh --rollback`.
+
+---
+
 ## Step 7: final tests (later)
 
 **The walkthrough** (you do these on the speaker):
