@@ -9,7 +9,7 @@ Tick the boxes as you go. This is the tick-box version of the plan, in the same 
 - When something fails, stop and tell me the lines it printed. Don't improvise a fix.
 - Never paste `credentials.json`, the `SECRETS` file or `/etc/mopidy/mopidy.conf` anywhere.
 
-Nothing has been pushed to GitHub. Step 3 needs the branch `pi/audio-stack` on GitHub, and I'll ask before pushing it.
+The branch `pi/audio-stack` is on GitHub (pushed Oct 3). Push it again after any new commit here, because the Pi switches code by pulling from GitHub.
 
 ---
 
@@ -58,7 +58,7 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
   ```
   sudo bash /tmp/pi/pi_report.sh > /tmp/report.txt
   ```
-- [ ] **2.4** *(skipped for now, Oct 3: we go on without it; do it after step 3.0 instead)* A quick physical test of what works today (10 minutes). Tell me pass or fail for each:
+- [ ] **2.4** *(skipped for now, Oct 3: we go on without it; do it after step 3 instead)* A quick physical test of what works today (10 minutes). Tell me pass or fail for each:
   - [ ] all 6 buttons
   - [ ] all 4 tags
   - [ ] play a Spotify chip and the local-file chip
@@ -85,10 +85,10 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
 
 ## Step 3: bring over the audio changes (about 45 minutes)
 
-**Part 0: catch the Pi up to GitHub's `main` (recommended, about 10 minutes)**
+**Part 0: catch the Pi up to GitHub's `main` (SKIPPED, Oct 3)**
 
-The Pi is 4 commits behind `main`. All four are from Aug 13 (the monotonic-clock change, quieter logging and a Mopidy-connection fix), and none of them has run on the Pi yet. Doing this as its own small step tells us whether a problem comes from them or from the audio changes. This is the same script as in Part B, which needs the code on GitHub.
-- [ ] **3.0** Preview, then switch, then repeat the quick physical test from 2.4:
+We tried it and it failed: GitHub's `main` is broken (its Recorder is missing the `mic_session` fix, which is commit 6574a9c on `pi/audio-stack`), so the controller crashed and restarted every 5 seconds. We ran `pi_update.sh --undo` and went straight to Part A. Do not use `main` for the Pi until it has been fixed (that is a step-5 job).
+- [x] **3.0** *(tried Oct 3, failed for the reason above, undone)* Preview, then switch, then repeat the quick physical test from 2.4:
   ```
   bash /tmp/pi/pi_update.sh --dry-run main
   bash /tmp/pi/pi_update.sh main
@@ -97,37 +97,37 @@ The Pi is 4 commits behind `main`. All four are from Aug 13 (the monotonic-clock
 Part A changes settings only. The code from Part 0 still runs, so a problem with the shared audio shows up before the new audio code is involved.
 
 **Part A: sound card sharing**
-- [ ] **3.1** Preview. It changes nothing; read what it says it would do:
+- [x] **3.1** Preview. It changes nothing; read what it says it would do:
   ```
   bash /tmp/pi/pi_install_audio.sh --dry-run
   ```
-- [ ] **3.2** Run it for real (it asks for sudo). It ends with `DONE`, after checking that both users can play and record:
+- [x] **3.2** Run it for real (it asks for sudo). It ends with `DONE`, after checking that both users can play and record:
   ```
   bash /tmp/pi/pi_install_audio.sh
   ```
-- [ ] **3.3** A song still plays. Run Spotify test again; it must be no worse than in step 2:
+- [x] **3.3** A song still plays. Run Spotify test again; it must be no worse than in step 2:
   ```
   sudo python3 /tmp/pi/spotify_check.py --label "after the sound-sharing change" > /tmp/spotify-3a.txt
   ```
 
 **Part B: the new code and the Mopidy settings**
-- [ ] **3.4** Preview the code switch:
+- [x] **3.4** Preview the code switch:
   ```
   bash /tmp/pi/pi_update.sh --dry-run pi/audio-stack
   ```
-- [ ] **3.5** Switch the code. It installs the Python packages first, stops if there are local edits it doesn't expect, restarts the services and runs the quick check:
+- [x] **3.5** Switch the code. It installs the Python packages first, stops if there are local edits it doesn't expect, restarts the services and runs the quick check:
   ```
   bash /tmp/pi/pi_update.sh pi/audio-stack
   ```
   Note: this removes the old committed `Unit-tests/.venv` folder from the Pi. The services don't use it. For the old test scripts use the app's venv: `/home/iot-proj/IOT-project--Smart-Speaker/venv/bin/python`.
-- [ ] **3.6** The Mopidy settings (preview first, then for real):
+- [x] **3.6** The Mopidy settings (preview first, then for real):
   ```
   bash /tmp/pi/pi_install_audio.sh --mopidy-conf --dry-run
   bash /tmp/pi/pi_install_audio.sh --mopidy-conf
   ```
 - [ ] **3.7** Check it works:
   - [ ] `python3 /tmp/pi/pi_smoke_test.py --stable-seconds 60` has no FAIL lines
-  - [ ] the controller log says "Mixer initialized" and "Feedback player initialized" (`journalctl -u smart_speaker -n 50`)
+  - [x] the controller log says "Mixer initialized" and "Feedback player initialized" (`journalctl -u smart_speaker -n 50`)
   - [ ] a beep plays over music without cutting it off: `python3 /tmp/pi/pi_smoke_test.py --only audio --beep-over-music file:///path/to/a/local/song.mp3`
   - [ ] Vol+ and Vol- change the level: `amixer -c0 sget PCM`
 - [ ] **3.8** Spotify again, and a beep over a Spotify song (play a Spotify chip, then tap the same chip again: the music must keep going):
