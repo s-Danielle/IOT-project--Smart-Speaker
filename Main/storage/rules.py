@@ -117,11 +117,18 @@ def _flag(value, name):
     return value
 
 
-def _whole_number(value, name):
+def whole_number(value, name) -> int:
+    """A number from a request, as a whole number. JSON can carry NaN and Infinity, so those are refused too."""
     # bool is a kind of int in Python, and True would silently become 1
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number")
-    return int(value)
+    try:
+        return int(value)
+    except (ValueError, OverflowError):
+        raise ValueError(f"{name} must be a finite number") from None
+
+
+_whole_number = whole_number
 
 
 def _time_of_day(value, name):

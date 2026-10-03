@@ -52,6 +52,12 @@ class JsonStore:
                 self._save(data)
             return status
 
+    def write_all(self, data):
+        """Replace everything (used when the data is moved here from the SQLite database)."""
+        with self._lock:
+            self._load()  # a damaged file already there is set aside first, so it can't become the .bak
+            self._save(self._complete(data))
+
     def import_legacy_tags(self, tags) -> int:
         """Add chips from the old tags.json format ({uid: {name, uri}}). Returns how many were added.
 
@@ -293,15 +299,14 @@ class JsonStore:
         return {"date": today, "seconds": int(usage.get("seconds", 0))}
 
     def add_daily_usage(self, seconds) -> dict:
-        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
-            raise ValueError("seconds must be a number")
+        add = max(0, rules.whole_number(seconds, "seconds"))
 
         def change(data):
             today = self._today()
             usage = data["daily_usage"]
             if usage.get("date") != today:
                 usage = {"date": today, "seconds": 0}
-            usage["seconds"] = int(usage.get("seconds", 0)) + max(0, int(seconds))
+            usage["seconds"] = int(usage.get("seconds", 0)) + add
             data["daily_usage"] = usage
             return dict(usage), True
 

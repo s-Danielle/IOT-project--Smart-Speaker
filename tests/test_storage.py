@@ -1,7 +1,8 @@
 """The speaker's data store: what it keeps, and that a crash or a bad file can't lose it.
 
-Every test uses a temporary folder. The first group (the "contract") says what any store must
-do, so the SQLite store that comes later can be run through the same tests.
+Every test uses a temporary folder. Most tests (the "contract") run twice, once for the JSON file
+store and once for the SQLite store, because both must behave the same. The tests at the end
+that are about the JSON file itself run once. The SQLite file's own tests are in test_sqlite_store.py.
 """
 
 import json
@@ -11,7 +12,7 @@ import threading
 
 import pytest
 
-from storage import JsonStore, rules
+from storage import JsonStore, SqliteStore, rules
 
 
 class Clock:
@@ -29,15 +30,44 @@ def clock():
     return Clock()
 
 
+@pytest.fixture(params=["json", "sqlite"])
+def kind(request):
+    return request.param
+
+
 @pytest.fixture
-def path(tmp_path):
+def make_store(kind, clock):
+    """Build a store of the kind being tested, on any path."""
+    def make(path):
+        return (JsonStore if kind == "json" else SqliteStore)(path, today=clock)
+    return make
+
+
+@pytest.fixture
+def path(tmp_path, kind):
+    return str(tmp_path / ("server_data.json" if kind == "json" else "server_data.db"))
+
+
+@pytest.fixture
+def store(make_store, path):
+    s = make_store(path)
+    s.open()
+    yield s
+    if hasattr(s, "close"):
+        s.close()
+
+
+# The JSON file's own tests use these, so they run once and not twice.
+
+
+@pytest.fixture
+def json_path(tmp_path):
     return str(tmp_path / "server_data.json")
 
 
-@pytest.fixture(params=["json"])
-def store(request, path, clock):
-    # When the SQLite store exists, add "sqlite" to params and build it here.
-    s = JsonStore(path, today=clock)
+@pytest.fixture
+def jstore(json_path, clock):
+    s = JsonStore(json_path, today=clock)
     s.open()
     return s
 
@@ -56,30 +86,32 @@ def song_id(store, uri="spotify:track:abc", name="A song"):
 # ---------------------------------------------------------------------------
 
 
-def test_the_first_start_creates_the_file_with_the_starting_songs(path, clock):
-    s = JsonStore(path, today=clock)
+def test_the_first_start_creates_the_file_with_the_starting_songs(make_store, path):
+    s = make_store(path)
     assert s.open() == "new"
     assert os.path.exists(path)
     assert s.chips() == []
     assert [song["id"] for song in s.songs()] == ["song001", "song002"]
 
 
-def test_data_survives_a_restart(path, clock):
-    first = JsonStore(path, today=clock)
+def test_data_survives_a_restart(make_store, path):
+    first = make_store(path)
     first.open()
     chip = first.register_chip("04A1B2C3", "Bedtime")
-    second = JsonStore(path, today=clock)
+    if hasattr(first, "close"):
+        first.close()
+    second = make_store(path)
     assert second.open() == "ok"
     assert [c["id"] for c in second.chips()] == [chip["id"]]
 
 
-def test_the_defaults_cannot_be_changed_by_accident(store, tmp_path, clock):
+def test_the_defaults_cannot_be_changed_by_accident(store, make_store, tmp_path, kind):
     # The old code handed out a shallow copy of one shared dict, so editing a result changed the defaults.
     settings = store.parental_controls()
     settings["quiet_hours"]["start"] = "03:00"
     settings["chip_blacklist"].append("x")
     store.songs()[0]["name"] = "changed"
-    other = JsonStore(str(tmp_path / "other.json"), today=clock)
+    other = make_store(str(tmp_path / ("other.json" if kind == "json" else "other.db")))
     other.open()
     assert other.parental_controls()["quiet_hours"]["start"] == "21:00"
     assert other.parental_controls()["chip_blacklist"] == []
@@ -167,11 +199,10 @@ def test_lookup_of_a_chip_we_have_not_seen(store):
     assert store.chips() == []  # looking never registers
 
 
-def test_lookup_when_the_song_is_gone_has_no_link(path, clock):
-    import json as _json
-    with open(path, "w") as f:
-        _json.dump({"chips": [{"id": "c1", "uid": "AA", "name": "N", "song_id": "song-gone", "song_name": "Old"}], "library": []}, f)
-    found = JsonStore(path, today=clock).lookup_chip("AA")
+def test_lookup_when_the_song_is_gone_has_no_link(json_path, clock):
+    with open(json_path, "w") as f:
+        json.dump({"chips": [{"id": "c1", "uid": "AA", "name": "N", "song_id": "song-gone", "song_name": "Old"}], "library": []}, f)
+    found = JsonStore(json_path, today=clock).lookup_chip("AA")
     assert found["uri"] == "" and found["song_name"] is None
 
 
@@ -217,23 +248,31 @@ def test_a_bad_chip_name_is_refused(store):
         store.update_chip(chip["id"], {"name": 42})
 
 
-def test_renaming_a_song_renames_it_on_the_chips_too(store, path):
+def test_renaming_a_song_renames_it_on_the_chips_too(store):
     chip = store.register_chip("AA11")
     song = store.add_song("Old name", "spotify:track:1")
     store.update_chip(chip["id"], {"song_id": song["id"]})
     store.update_song(song["id"], {"name": "New name"})
     assert store.get_chip(chip["id"])["song_name"] == "New name"
-    stored = next(c for c in read_file(path)["chips"] if c["id"] == chip["id"])
+    assert store.lookup_chip("AA11")["song_name"] == "New name"
+
+
+def test_the_json_file_keeps_the_new_song_name_for_the_old_code(jstore, json_path):
+    chip = jstore.register_chip("AA11")
+    song = jstore.add_song("Old name", "spotify:track:1")
+    jstore.update_chip(chip["id"], {"song_id": song["id"]})
+    jstore.update_song(song["id"], {"name": "New name"})
+    stored = next(c for c in read_file(json_path)["chips"] if c["id"] == chip["id"])
     assert stored["song_name"] == "New name"  # the old code, after a rollback, sees it too
 
 
-def test_a_stale_song_name_in_an_old_file_is_corrected_when_read(path, clock):
-    with open(path, "w") as f:
+def test_a_stale_song_name_in_an_old_file_is_corrected_when_read(json_path, clock):
+    with open(json_path, "w") as f:
         json.dump({
             "chips": [{"id": "chip1", "uid": "AA11", "name": "C", "song_id": "song1", "song_name": "Stale"}],
             "library": [{"id": "song1", "name": "Fresh", "uri": "spotify:track:1"}],
         }, f)
-    s = JsonStore(path, today=clock)
+    s = JsonStore(json_path, today=clock)
     assert s.chips()[0]["song_name"] == "Fresh"
 
 
@@ -353,13 +392,12 @@ def test_times_are_written_the_same_way_every_time(store):
     {"chip_whitelist_mode": 0},
     "not an object",
 ])
-def test_a_bad_setting_is_refused_and_nothing_is_saved(store, path, changes):
+def test_a_bad_setting_is_refused_and_nothing_is_saved(store, changes):
     store.update_parental_controls({"volume_limit": 60})
-    before = open(path).read()
+    before = store.parental_controls()
     with pytest.raises(ValueError):
         store.update_parental_controls(changes)
-    assert open(path).read() == before
-    assert store.parental_controls()["volume_limit"] == 60
+    assert store.parental_controls() == before
 
 
 def test_one_bad_field_stops_the_whole_update(store):
@@ -374,17 +412,17 @@ def test_the_whitelist_and_blacklist_are_stored(store):
     assert pc["chip_whitelist_mode"] is True and pc["chip_whitelist"] == ["A"] and pc["chip_blacklist"] == ["B"]
 
 
-def test_an_old_file_without_parental_controls_gets_the_defaults(path, clock):
-    with open(path, "w") as f:
+def test_an_old_file_without_parental_controls_gets_the_defaults(json_path, clock):
+    with open(json_path, "w") as f:
         json.dump({"chips": [], "library": []}, f)
-    s = JsonStore(path, today=clock)
+    s = JsonStore(json_path, today=clock)
     assert s.parental_controls() == rules.DEFAULT_PARENTAL_CONTROLS
 
 
-def test_an_old_file_with_some_quiet_hours_fields_missing(path, clock):
-    with open(path, "w") as f:
+def test_an_old_file_with_some_quiet_hours_fields_missing(json_path, clock):
+    with open(json_path, "w") as f:
         json.dump({"chips": [], "library": [], "parental_controls": {"enabled": True, "quiet_hours": {"start": "22:00"}}}, f)
-    pc = JsonStore(path, today=clock).parental_controls()
+    pc = JsonStore(json_path, today=clock).parental_controls()
     assert pc["enabled"] is True
     assert pc["quiet_hours"] == {"enabled": False, "start": "22:00", "end": "07:00"}
     assert pc["volume_limit"] == 100
@@ -423,15 +461,15 @@ def test_usage_needs_a_number(store):
             store.add_daily_usage(bad)
 
 
-def test_looking_at_the_usage_writes_nothing(store, path, clock):
+def test_looking_at_the_usage_writes_nothing(jstore, json_path, clock):
     # The old code rewrote the whole file when it noticed a new day, just because someone asked.
-    store.add_daily_usage(10)
-    before = open(path).read()
-    mtime = os.stat(path).st_mtime_ns
+    jstore.add_daily_usage(10)
+    before = open(json_path).read()
+    mtime = os.stat(json_path).st_mtime_ns
     clock.day = "2026-10-05"
-    store.daily_usage()
-    assert open(path).read() == before
-    assert os.stat(path).st_mtime_ns == mtime
+    jstore.daily_usage()
+    assert open(json_path).read() == before
+    assert os.stat(json_path).st_mtime_ns == mtime
 
 
 # ---------------------------------------------------------------------------
@@ -477,20 +515,20 @@ def test_nothing_to_import(store):
 # ---------------------------------------------------------------------------
 
 
-def test_the_file_keeps_the_format_the_app_and_the_old_code_read(store, path):
-    chip = store.register_chip("AA11")
-    store.update_chip(chip["id"], {"song_id": store.add_song("S", "u")["id"]})
-    store.add_daily_usage(5)
-    data = read_file(path)
+def test_the_file_keeps_the_format_the_app_and_the_old_code_read(jstore, json_path):
+    chip = jstore.register_chip("AA11")
+    jstore.update_chip(chip["id"], {"song_id": jstore.add_song("S", "u")["id"]})
+    jstore.add_daily_usage(5)
+    data = read_file(json_path)
     assert set(data) >= {"chips", "library", "parental_controls", "daily_usage"}
     assert set(data["chips"][0]) == {"id", "uid", "name", "song_id", "song_name"}
     assert set(data["library"][0]) == {"id", "name", "uri"}
     assert data["daily_usage"] == {"date": "2026-10-03", "seconds": 5}
 
 
-def test_a_file_in_the_old_format_is_read(path, clock):
+def test_a_file_in_the_old_format_is_read(json_path, clock):
     # Shaped like the one on the speaker: only spotify track links, no usage yet.
-    with open(path, "w") as f:
+    with open(json_path, "w") as f:
         json.dump({
             "chips": [{"id": "chipaaaaaa", "uid": "E41C9DBB", "name": "MyFirstChip", "song_id": "song1", "song_name": "Surprise"}],
             "library": [{"id": "song1", "name": "Surprise", "uri": "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"}],
@@ -499,159 +537,159 @@ def test_a_file_in_the_old_format_is_read(path, clock):
                                   "daily_limit_minutes": 0, "chip_blacklist": [], "chip_whitelist_mode": False,
                                   "chip_whitelist": []},
         }, f, indent=2)
-    s = JsonStore(path, today=clock)
+    s = JsonStore(json_path, today=clock)
     assert s.open() == "ok"
     assert s.chips()[0]["name"] == "MyFirstChip"
     assert s.daily_usage()["seconds"] == 0
 
 
-def test_the_previous_version_is_kept_as_a_backup(store, path):
-    store.register_chip("AA11")
-    store.register_chip("BB22")
-    backup = read_file(path + ".bak")
+def test_the_previous_version_is_kept_as_a_backup(jstore, json_path):
+    jstore.register_chip("AA11")
+    jstore.register_chip("BB22")
+    backup = read_file(json_path + ".bak")
     assert [c["uid"] for c in backup["chips"]] == ["AA11"]
-    assert [c["uid"] for c in read_file(path)["chips"]] == ["AA11", "BB22"]
+    assert [c["uid"] for c in read_file(json_path)["chips"]] == ["AA11", "BB22"]
 
 
-def test_saving_leaves_no_temporary_files(store, path):
+def test_saving_leaves_no_temporary_files(jstore, json_path):
     for n in range(5):
-        store.register_chip(f"{n:04X}")
-    leftovers = [n for n in os.listdir(os.path.dirname(path)) if n not in ("server_data.json", "server_data.json.bak")]
+        jstore.register_chip(f"{n:04X}")
+    leftovers = [n for n in os.listdir(os.path.dirname(json_path)) if n not in ("server_data.json", "server_data.json.bak")]
     assert leftovers == []
 
 
-def test_a_crash_while_saving_keeps_the_old_data(store, path, monkeypatch):
-    store.register_chip("AA11")
-    before = open(path).read()
+def test_a_crash_while_saving_keeps_the_old_data(jstore, json_path, monkeypatch):
+    jstore.register_chip("AA11")
+    before = open(json_path).read()
 
     def power_cut(src, dst):
         raise OSError("power cut")
 
     monkeypatch.setattr(os, "replace", power_cut)
     with pytest.raises(OSError):
-        store.register_chip("BB22")
+        jstore.register_chip("BB22")
     monkeypatch.undo()
-    assert open(path).read() == before
-    assert not os.path.exists(path + ".tmp") and not os.path.exists(path + ".bak.new")
-    assert [c["uid"] for c in store.chips()] == ["AA11"]
-    store.register_chip("CC33")  # and it works again afterwards
-    assert [c["uid"] for c in store.chips()] == ["AA11", "CC33"]
+    assert open(json_path).read() == before
+    assert not os.path.exists(json_path + ".tmp") and not os.path.exists(json_path + ".bak.new")
+    assert [c["uid"] for c in jstore.chips()] == ["AA11"]
+    jstore.register_chip("CC33")  # and it works again afterwards
+    assert [c["uid"] for c in jstore.chips()] == ["AA11", "CC33"]
 
 
-def test_a_crash_between_the_backup_and_the_rename_loses_nothing(store, path, monkeypatch):
-    store.register_chip("AA11")
+def test_a_crash_between_the_backup_and_the_rename_loses_nothing(jstore, json_path, monkeypatch):
+    jstore.register_chip("AA11")
     real_replace = os.replace
     calls = []
 
     def second_replace_fails(src, dst):
         calls.append(dst)
-        if dst == path:  # the final swap, after the backup has been made
+        if dst == json_path:  # the final swap, after the backup has been made
             raise OSError("power cut")
         return real_replace(src, dst)
 
     monkeypatch.setattr(os, "replace", second_replace_fails)
     with pytest.raises(OSError):
-        store.register_chip("BB22")
+        jstore.register_chip("BB22")
     monkeypatch.undo()
-    assert path + ".bak" in calls
-    assert [c["uid"] for c in read_file(path)["chips"]] == ["AA11"]
-    assert [c["uid"] for c in read_file(path + ".bak")["chips"]] == ["AA11"]
+    assert json_path + ".bak" in calls
+    assert [c["uid"] for c in read_file(json_path)["chips"]] == ["AA11"]
+    assert [c["uid"] for c in read_file(json_path + ".bak")["chips"]] == ["AA11"]
 
 
-def test_a_half_written_temporary_file_is_ignored(store, path):
-    store.register_chip("AA11")
-    with open(path + ".tmp", "w") as f:
+def test_a_half_written_temporary_file_is_ignored(jstore, json_path):
+    jstore.register_chip("AA11")
+    with open(json_path + ".tmp", "w") as f:
         f.write('{"chips": [{"id": "chip')  # what a power cut during step 1 leaves
-    assert [c["uid"] for c in store.chips()] == ["AA11"]
-    store.register_chip("BB22")
-    assert [c["uid"] for c in store.chips()] == ["AA11", "BB22"]
+    assert [c["uid"] for c in jstore.chips()] == ["AA11"]
+    jstore.register_chip("BB22")
+    assert [c["uid"] for c in jstore.chips()] == ["AA11", "BB22"]
 
 
 @pytest.mark.parametrize("damage", [b"", b'{"chips": [{"id": "chip', b"\x00\x00\x00", b"not json at all", b"[]", b'{"chips": "oops"}'])
-def test_a_damaged_file_is_replaced_by_the_last_good_copy(store, path, clock, damage):
-    store.register_chip("AA11")
-    store.register_chip("BB22")  # the backup now holds AA11 only
-    with open(path, "wb") as f:
+def test_a_damaged_file_is_replaced_by_the_last_good_copy(jstore, json_path, clock, damage):
+    jstore.register_chip("AA11")
+    jstore.register_chip("BB22")  # the backup now holds AA11 only
+    with open(json_path, "wb") as f:
         f.write(damage)
-    fresh = JsonStore(path, today=clock)
+    fresh = JsonStore(json_path, today=clock)
     assert fresh.open() == "recovered"
     assert [c["uid"] for c in fresh.chips()] == ["AA11"]
-    assert [c["uid"] for c in read_file(path)["chips"]] == ["AA11"]  # repaired on disk
-    corrupt = [n for n in os.listdir(os.path.dirname(path)) if ".corrupt-" in n]
+    assert [c["uid"] for c in read_file(json_path)["chips"]] == ["AA11"]  # repaired on disk
+    corrupt = [n for n in os.listdir(os.path.dirname(json_path)) if ".corrupt-" in n]
     assert len(corrupt) == 1
-    with open(os.path.join(os.path.dirname(path), corrupt[0]), "rb") as f:
+    with open(os.path.join(os.path.dirname(json_path), corrupt[0]), "rb") as f:
         assert f.read() == damage  # kept, not thrown away
-    assert JsonStore(path, today=clock).open() == "ok"  # and it is only reported once
+    assert JsonStore(json_path, today=clock).open() == "ok"  # and it is only reported once
 
 
-def test_a_missing_file_comes_back_from_the_backup(store, path, clock):
-    store.register_chip("AA11")
-    store.register_chip("BB22")
-    os.remove(path)
-    fresh = JsonStore(path, today=clock)
+def test_a_missing_file_comes_back_from_the_backup(jstore, json_path, clock):
+    jstore.register_chip("AA11")
+    jstore.register_chip("BB22")
+    os.remove(json_path)
+    fresh = JsonStore(json_path, today=clock)
     assert fresh.open() == "recovered"
     assert [c["uid"] for c in fresh.chips()] == ["AA11"]
 
 
-def test_damage_in_the_middle_of_a_run_is_repaired_once(store, path):
-    store.register_chip("AA11")
-    store.register_chip("BB22")
-    with open(path, "w") as f:
+def test_damage_in_the_middle_of_a_run_is_repaired_once(jstore, json_path):
+    jstore.register_chip("AA11")
+    jstore.register_chip("BB22")
+    with open(json_path, "w") as f:
         f.write("garbage")
-    assert [c["uid"] for c in store.chips()] == ["AA11"]
-    assert [c["uid"] for c in store.chips()] == ["AA11"]
-    assert len([n for n in os.listdir(os.path.dirname(path)) if ".corrupt-" in n]) == 1
+    assert [c["uid"] for c in jstore.chips()] == ["AA11"]
+    assert [c["uid"] for c in jstore.chips()] == ["AA11"]
+    assert len([n for n in os.listdir(os.path.dirname(json_path)) if ".corrupt-" in n]) == 1
 
 
-def test_when_nothing_good_is_left_it_starts_empty_and_keeps_the_damaged_file(path, clock):
-    with open(path, "w") as f:
+def test_when_nothing_good_is_left_it_starts_empty_and_keeps_the_damaged_file(json_path, clock):
+    with open(json_path, "w") as f:
         f.write("garbage")
-    with open(path + ".bak", "w") as f:
+    with open(json_path + ".bak", "w") as f:
         f.write("also garbage")
-    s = JsonStore(path, today=clock)
+    s = JsonStore(json_path, today=clock)
     assert s.open() == "damaged"
     assert s.chips() == []
-    assert any(".corrupt-" in n for n in os.listdir(os.path.dirname(path)))
+    assert any(".corrupt-" in n for n in os.listdir(os.path.dirname(json_path)))
     s.register_chip("AA11")
-    assert [c["uid"] for c in JsonStore(path, today=clock).chips()] == ["AA11"]
+    assert [c["uid"] for c in JsonStore(json_path, today=clock).chips()] == ["AA11"]
 
 
-def test_only_the_newest_damaged_copies_are_kept(store, path):
+def test_only_the_newest_damaged_copies_are_kept(jstore, json_path):
     for n in range(6):
-        store.register_chip(f"{n:04X}")
-        with open(path, "w") as f:
+        jstore.register_chip(f"{n:04X}")
+        with open(json_path, "w") as f:
             f.write(f"garbage {n}")
-        store.chips()
-    corrupt = [n for n in os.listdir(os.path.dirname(path)) if ".corrupt-" in n]
+        jstore.chips()
+    corrupt = [n for n in os.listdir(os.path.dirname(json_path)) if ".corrupt-" in n]
     assert len(corrupt) == 3
 
 
-def test_a_damaged_file_never_replaces_the_good_backup(store, path):
-    store.register_chip("AA11")
-    store.register_chip("BB22")
-    with open(path, "w") as f:
+def test_a_damaged_file_never_replaces_the_good_backup(jstore, json_path):
+    jstore.register_chip("AA11")
+    jstore.register_chip("BB22")
+    with open(json_path, "w") as f:
         f.write("garbage")
-    store.chips()
-    store.register_chip("CC33")
-    assert "garbage" not in open(path + ".bak").read()
-    assert [c["uid"] for c in read_file(path + ".bak")["chips"]] == ["AA11"]
+    jstore.chips()
+    jstore.register_chip("CC33")
+    assert "garbage" not in open(json_path + ".bak").read()
+    assert [c["uid"] for c in read_file(json_path + ".bak")["chips"]] == ["AA11"]
 
 
 @pytest.mark.skipif(os.name != "posix", reason="file modes")
-def test_the_files_permissions_are_kept(store, path):
-    store.register_chip("AA11")
-    os.chmod(path, 0o640)
-    store.register_chip("BB22")
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
+def test_the_files_permissions_are_kept(jstore, json_path):
+    jstore.register_chip("AA11")
+    os.chmod(json_path, 0o640)
+    jstore.register_chip("BB22")
+    assert stat.S_IMODE(os.stat(json_path).st_mode) == 0o640
 
 
-def test_many_threads_writing_at_once_lose_nothing(store, path):
+def test_many_threads_writing_at_once_lose_nothing(jstore, json_path):
     errors = []
 
     def worker(n):
         try:
             for i in range(15):
-                store.add_song(f"t{n}-{i}", f"spotify:track:{n}-{i}")
+                jstore.add_song(f"t{n}-{i}", f"spotify:track:{n}-{i}")
         except Exception as exc:  # pragma: no cover - only on failure
             errors.append(exc)
 
@@ -661,20 +699,20 @@ def test_many_threads_writing_at_once_lose_nothing(store, path):
     for t in threads:
         t.join()
     assert errors == []
-    songs = read_file(path)["library"]
+    songs = read_file(json_path)["library"]
     assert len(songs) == 2 + 8 * 15
     assert len({s["id"] for s in songs}) == len(songs)
 
 
-def test_reading_while_writing_never_sees_a_half_written_file(store):
+def test_reading_while_writing_never_sees_a_half_written_file(jstore):
     stop = threading.Event()
     problems = []
 
     def reader():
         while not stop.is_set():
             try:
-                store.chips()
-                store.songs()
+                jstore.chips()
+                jstore.songs()
             except Exception as exc:  # pragma: no cover - only on failure
                 problems.append(exc)
                 return
@@ -683,9 +721,9 @@ def test_reading_while_writing_never_sees_a_half_written_file(store):
     t.start()
     try:
         for n in range(60):
-            store.register_chip(f"{n:06X}")
+            jstore.register_chip(f"{n:06X}")
     finally:
         stop.set()
         t.join()
     assert problems == []
-    assert len(store.chips()) == 60
+    assert len(jstore.chips()) == 60
