@@ -7,6 +7,7 @@ used by both the main server and the wifi_provisioner service.
 
 import html
 import os
+import shutil
 import subprocess
 import time
 
@@ -95,21 +96,70 @@ def get_wifi_interface() -> str:
     return _wifi_interface
 
 
+def find_tool(name: str) -> str | None:
+    """Path of a command, looking in /usr/sbin and /sbin as well.
+
+    iwgetid and iw live there, and a normal user's PATH does not include those folders (the
+    root services' PATH does). Without this, `iwgetid` looked "not installed" to anyone but root.
+    """
+    return shutil.which(name) or shutil.which(name, path=os.pathsep.join(['/usr/sbin', '/sbin']))
+
+
 class WiFiManager:
     """NetworkManager-based WiFi management"""
     
     @staticmethod
     def is_connected() -> bool:
         """Check if connected to WiFi (not AP mode)"""
-        result = subprocess.run(['iwgetid', '-r'], capture_output=True, text=True)
-        ssid = result.stdout.strip()
+        ssid = WiFiManager.get_current_ssid()
         return bool(ssid) and ssid != AP_SSID
     
     @staticmethod
     def get_current_ssid() -> str:
-        """Get current connected SSID"""
-        result = subprocess.run(['iwgetid', '-r'], capture_output=True, text=True)
-        return result.stdout.strip()
+        """Get current connected SSID ('' if there is none)"""
+        tool = find_tool('iwgetid')
+        if tool:
+            try:
+                result = subprocess.run([tool, '-r'], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    return result.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                pass
+        # iwgetid is missing or failed: ask NetworkManager instead of crashing
+        return WiFiManager._ssid_from_networkmanager()
+
+    @staticmethod
+    def _ssid_from_networkmanager() -> str:
+        """The SSID NetworkManager says we are connected to ('' if none)"""
+        try:
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'ACTIVE,SSID', 'device', 'wifi', 'list'],
+                capture_output=True, text=True, timeout=10
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ''
+        for line in result.stdout.splitlines():
+            parts = split_terse_line(line)
+            if len(parts) >= 2 and parts[0] == 'yes':
+                return parts[1]
+        return ''
+
+    @staticmethod
+    def has_ap_clients() -> bool:
+        """True if a device (a phone doing the setup, say) is connected to our setup hotspot"""
+        tool = find_tool('iw')
+        if not tool:
+            return False
+        try:
+            result = subprocess.run(
+                [tool, 'dev', get_wifi_interface(), 'station', 'dump'],
+                capture_output=True, text=True, timeout=10
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0 and any(
+            line.startswith('Station ') for line in result.stdout.splitlines()
+        )
     
     @staticmethod
     def get_ip_address() -> str | None:
