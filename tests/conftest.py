@@ -71,11 +71,16 @@ def api(request, server_module, tmp_path, monkeypatch):
     monkeypatch.setattr(server_module, "DATA_FILE", str(tmp_path / "server_data.json"))
     monkeypatch.setattr(server_module, "UPLOADS_DIR", str(uploads))
     monkeypatch.setattr(server_module, "OLD_TAGS_FILE", str(tmp_path / "tags.json"))
+    # Never ask the real network whether the setup hotspot is up (that runs iwgetid/nmcli); tests flip this
+    wifi = {"setup_mode": False}
+    monkeypatch.setattr(server_module, "is_ap_mode", lambda: wifi["setup_mode"])
+    monkeypatch.delenv("SPEAKER_CORS_ORIGIN", raising=False)
     httpd = server_module.ThreadPoolHTTPServer(("127.0.0.1", 0), server_module.SpeakerHandler, max_workers=2)
     thread = threading.Thread(target=lambda: httpd.serve_forever(poll_interval=0.02), daemon=True)
     thread.start()
     client = Client("http://127.0.0.1:%d" % httpd.server_address[1])
     client.kind = kind
+    client.wifi = wifi
     client.data_path = data_path
     client.module = server_module
     client.tmp = tmp_path
@@ -89,25 +94,37 @@ def api(request, server_module, tmp_path, monkeypatch):
 
 
 class Client:
-    def call(self, method, path, body=None, raw=None, headers=None):
-        data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
-        request = urllib.request.Request(self.base + path, data=data, method=method, headers=headers or {})
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                payload = response.read()
-                return response.status, (json.loads(payload) if payload else None)
-        except urllib.error.HTTPError as error:
-            payload = error.read()
-            try:
-                return error.code, json.loads(payload)
-            except ValueError:
-                return error.code, None
+    """A tiny HTTP client for the test server. Every call returns (status, parsed JSON or None)."""
 
     def __init__(self, base):
         self.base = base
+        self.token = None  # sent as X-Speaker-Token when set
 
-    def get(self, path):
-        return self.call("GET", path)
+    def raw_call(self, method, path, body=None, raw=None, headers=None, token=True):
+        """(status, response headers, parsed JSON or None)."""
+        data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
+        sent = dict(headers or {})
+        if token and self.token:
+            sent.setdefault("X-Speaker-Token", self.token)
+        request = urllib.request.Request(self.base + path, data=data, method=method, headers=sent)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = response.read()
+                status, response_headers = response.status, response.headers
+        except urllib.error.HTTPError as error:
+            payload, status, response_headers = error.read(), error.code, error.headers
+        try:
+            parsed = json.loads(payload) if payload else None
+        except ValueError:
+            parsed = None
+        return status, response_headers, parsed
+
+    def call(self, method, path, body=None, raw=None, headers=None, token=True):
+        status, _, parsed = self.raw_call(method, path, body, raw, headers, token)
+        return status, parsed
+
+    def get(self, path, **kw):
+        return self.call("GET", path, **kw)
 
     def post(self, path, body=None, **kw):
         return self.call("POST", path, body, **kw)
@@ -115,7 +132,5 @@ class Client:
     def put(self, path, body=None, **kw):
         return self.call("PUT", path, body, **kw)
 
-    def delete(self, path):
-        return self.call("DELETE", path)
-
-
+    def delete(self, path, **kw):
+        return self.call("DELETE", path, **kw)

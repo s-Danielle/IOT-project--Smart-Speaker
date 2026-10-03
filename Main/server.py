@@ -10,6 +10,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse, unquote
+import functools
 import json
 import mimetypes
 import uuid
@@ -23,6 +24,10 @@ from utils.logger import log, log_success
 from utils.shared_dirs import ensure_shared_dir
 from storage import JsonStore, open_store
 from utils.status_file import read_status
+from utils.access import (
+    TOKEN_HEADER, NEVER, UNLESS_SETUP_MODE, protection, is_local_address, token_matches,
+)
+from utils.secrets_file import ensure_token
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT,
     render_network_list_html, CAPTIVE_PORTAL_HTML
@@ -364,26 +369,6 @@ def debug_daemon_reload() -> dict:
         return {"status": "error", "error": str(e)}
 
 
-def debug_run_main() -> dict:
-    """Run main.py with venv activated (in background)."""
-    try:
-        # Run in background using bash to source venv and run python
-        venv_path = os.path.join(PROJECT_DIR, 'venv', 'bin', 'activate')
-        main_path = os.path.join(SCRIPT_DIR, 'main.py')
-        
-        cmd = f'source {venv_path} && python {main_path}'
-        subprocess.Popen(
-            ['bash', '-c', cmd],
-            cwd=PROJECT_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-        return {"status": "started", "error": None}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-
 def debug_reboot() -> dict:
     """Reboot the Raspberry Pi."""
     try:
@@ -666,6 +651,44 @@ def _render_connecting_html(ssid: str) -> str:
     )
 
 
+# =============================================================================
+# WHO MAY CHANGE WHAT (rules in utils/access.py)
+# =============================================================================
+
+SECRETS_PATH = os.path.join(PROJECT_DIR, 'SECRETS')
+API_TOKEN = None  # set by start_security()
+
+MAX_JSON_BYTES = 64 * 1024            # chips, songs, settings: a few hundred bytes in practice
+MAX_FORM_BYTES = 8 * 1024             # the WiFi setup form
+MAX_UPLOAD_BYTES = 30 * 1024 * 1024   # a song. The whole upload is held in memory (the Pi has ~400 MB free)
+
+_refusal_log = {}  # address -> when it was last logged, so a flood of bad requests cannot flood the log
+
+
+class RequestTooLarge(Exception):
+    pass
+
+
+def start_security():
+    """Make sure the API token exists (created and saved in SECRETS on the first run)."""
+    global API_TOKEN
+    token, created, problem = ensure_token(SECRETS_PATH)
+    API_TOKEN = token
+    if problem:
+        log(f"[SECURITY] {problem}. Changes from other devices are refused until it is fixed", 'ERROR')
+    elif created:
+        log("[SECURITY] A new API token was created and saved as DEBUG_TOKEN in the SECRETS file. "
+            "Read it on the speaker and type it into the app's Settings")
+    else:
+        log("[SECURITY] API token loaded from SECRETS")
+
+
+def cors_origin() -> str:
+    """The one website allowed to call the API from a browser (for developing the web app). Normally none:
+    the web app the speaker serves is on the same address, so it needs no permission."""
+    return os.environ.get('SPEAKER_CORS_ORIGIN', '').strip()
+
+
 def build_status() -> dict:
     """What the app shows on its home screen: is the speaker up, what is it doing, how long has it played today."""
     result = {"connected": True, "storage": store.kind, "controller": read_status()}
@@ -709,26 +732,82 @@ def build_health():
     return answer, not problems
 
 
+def _guarded(method):
+    """Every request method goes through the token rule and the size limits."""
+    @functools.wraps(method)
+    def wrapper(self):
+        if not self._allowed():
+            return
+        try:
+            method(self)
+        except RequestTooLarge as problem:
+            self.close_connection = True
+            self._send_json({"error": str(problem)}, 413)
+    return wrapper
+
+
 class SpeakerHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override to use our logger instead of default logging"""
         log(f"HTTP {format % args}")
     
+    def _send_cors_headers(self):
+        """Only the one developer origin set in SPEAKER_CORS_ORIGIN gets these. Everyone else gets none."""
+        origin = self.headers.get('Origin')
+        if origin and cors_origin() and origin == cors_origin():
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Vary', 'Origin')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE')
+            self.send_header('Access-Control-Allow-Headers', f'Content-Type, {TOKEN_HEADER}')
+
     def _send_json(self, response_data, status=200):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(response_data).encode())
 
     def _send_ok(self, status=200):
         self.send_response(status)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self._send_cors_headers()
         self.end_headers()
 
-    def _read_body(self):
-        length = int(self.headers.get('Content-Length', 0))
+    def _content_length(self, limit: int) -> int:
+        """The size of the request body, refused up front if it is bad or too big (nothing is read)."""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+        except ValueError:
+            raise ValueError("Content-Length is not a number") from None
+        if length < 0:
+            raise ValueError("Content-Length is negative")
+        if length > limit:
+            raise RequestTooLarge(f"the request is {length} bytes; the most allowed here is {limit}")
+        return length
+
+    def _read_body(self, limit=MAX_JSON_BYTES):
+        length = self._content_length(limit)
         return json.loads(self.rfile.read(length)) if length else {}
+
+    def _allowed(self) -> bool:
+        """The token rule (see utils/access.py). Sends the refusal itself when the answer is no."""
+        rule = protection(self.command, self.path)
+        if rule == NEVER:
+            return True
+        if is_local_address(self.client_address[0]):
+            return True  # the controller and the health monitor, on the speaker itself
+        if rule == UNLESS_SETUP_MODE and is_ap_mode():
+            return True  # a phone that has just joined the setup hotspot has no token yet
+        if token_matches(self.headers.get(TOKEN_HEADER), API_TOKEN):
+            return True
+        address = self.client_address[0]
+        now = time.monotonic()
+        if now - _refusal_log.get(address, -60.0) >= 30.0:
+            _refusal_log[address] = now
+            log(f"[SECURITY] Refused {self.command} {urlparse(self.path).path} from {address}: "
+                f"{'wrong' if self.headers.get(TOKEN_HEADER) else 'missing'} token", 'ERROR')
+        self.close_connection = True  # do not wait for a body we will not read
+        self._send_json({"error": f"missing or wrong {TOKEN_HEADER}: enter the speaker's token in the app's Settings"}, 401)
+        return False
 
     def _parse_multipart_file(self, content_type, field_name='file'):
         """Extract a single uploaded file from a multipart/form-data body.
@@ -738,7 +817,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         way. Returns (filename, data) for the given field, or (None, None)
         if it isn't present.
         """
-        length = int(self.headers.get('Content-Length', 0))
+        length = self._content_length(MAX_UPLOAD_BYTES)
         body = self.rfile.read(length) if length else b''
 
         # email.parser expects headers followed by a blank line, then the body
@@ -755,12 +834,16 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         return None, None
 
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        """The browser's "may I?" before a cross-site request. Only the developer origin is told yes."""
+        origin = self.headers.get('Origin')
+        if origin and not (cors_origin() and origin == cors_origin()):
+            self._send_json({"error": "cross-site requests are not allowed"}, 403)
+            return
+        self.send_response(204)
+        self._send_cors_headers()
         self.end_headers()
 
+    @_guarded
     def do_GET(self):
         # Parse path to handle query strings
         parsed = urlparse(self.path)
@@ -889,6 +972,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
     def _send_bad_request(self, problem):
         self._send_json({"error": str(problem)}, 400)
 
+    @_guarded
     def do_PUT(self):
         try:
             if self.path == '/settings/parental':
@@ -910,6 +994,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         except ValueError as problem:  # a value of the wrong kind, or a body that isn't JSON
             self._send_bad_request(problem)
 
+    @_guarded
     def do_DELETE(self):
         if '/chips/' in self.path and self.path.endswith('/assignment'):
             found = store.clear_chip_assignment(self.path.split('/')[2])
@@ -926,6 +1011,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    @_guarded
     def do_POST(self):
         if self.path == '/chips':
             # Register a new chip: POST /chips {uid: "...", name: "..."}
@@ -1008,8 +1094,6 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self._send_json(debug_speaker_restart())
         elif self.path == '/debug/daemon-reload':
             self._send_json(debug_daemon_reload())
-        elif self.path == '/debug/run-main':
-            self._send_json(debug_run_main())
         elif self.path == '/debug/reboot':
             self._send_json(debug_reboot())
         # WiFi POST endpoints
@@ -1040,8 +1124,8 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         /debug/wifi/connect-status; the actual connection attempt (AP
         teardown + nmcli connect) runs in a background thread.
         """
+        length = self._content_length(MAX_FORM_BYTES)
         try:
-            length = int(self.headers.get('Content-Length', 0))
             data = parse_qs(self.rfile.read(length).decode())
             ssid = data.get('ssid', [''])[0]
             password = data.get('password', [''])[0]
@@ -1076,6 +1160,7 @@ def run_server_blocking(port=8080, host='0.0.0.0'):
     is the main process and should run until terminated.
     """
     start_storage()
+    start_security()
     server = ThreadPoolHTTPServer((host, port), SpeakerHandler, max_workers=2)
     log_success(f"HTTP Server started on http://{host}:{port}")
     log(f"  - Data: {store.kind} store in {os.path.dirname(DATA_FILE)}")

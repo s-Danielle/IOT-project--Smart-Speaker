@@ -107,6 +107,12 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 55 | The controller is stuck in its loop (the process exists, nothing happens) | It rewrites `/run/smart_speaker/status.json` every second with a clock that cannot be fooled by a wrong date. After 20 seconds without a new write the health light blinks red and `/health` answers 503. Systemd alone cannot tell (it only knows the process exists) |
 | 56 | The controller stopped or is restarting | Its status folder is removed with it, so `/status` says "not running" at once, and the app does not show the last song as still playing |
 | 57 | A song is accepted but a Spotify problem keeps it from playing | The status keeps `last_play` (`failed` with Mopidy's reason, or the wait that ran out), so the app can say so without anyone reading logs. A later good play clears it |
+| 58 | A website open in a browser on your network tries to change the speaker (reboot, delete a chip, change the parental limit) | The speaker no longer answers with `Access-Control-Allow-Origin: *`, so other sites cannot read it, and every change needs the `X-Speaker-Token` header, which a site cannot add without the speaker's permission (its preflight is refused with 403) |
+| 59 | Another device on the network sends a change without the token, or with a wrong one | 401, nothing changes, and one `[SECURITY]` line is logged (at most one per device per 30 seconds). The token is compared in constant time and is never logged |
+| 60 | Someone sends a very large request (a 2 GB "upload", a huge JSON body) | Refused up front with 413 and not read: 64 KB for JSON, 8 KB for the WiFi form, 30 MB for a song |
+| 61 | The speaker sets up WiFi from a phone that just joined the hotspot | The WiFi setup routes are open while the hotspot is up, so no token is needed; everything else (reboot, forget WiFi, logs) still is |
+| 62 | The token cannot be saved (the program folder is read-only) | The server logs an error and keeps a token nobody can read, so changes from other devices are refused until it is fixed. The controller and health monitor, on the speaker itself, are unaffected |
+| 63 | `/debug/run-main` (started a second controller next to the service, fighting it for the buttons and the sound card) | Removed |
 
 ---
 
