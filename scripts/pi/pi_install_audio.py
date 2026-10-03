@@ -38,6 +38,7 @@ import sys
 import time
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ini_edit  # noqa: E402
@@ -273,7 +274,7 @@ class Setup:
         if self.dry:
             self.act("Check that alsaaudio imports in the venv")
             return
-        rc, out = self.run([str(self.venv_python), "-c", "import alsaaudio; print(alsaaudio.version)"],
+        rc, out = self.run([str(self.venv_python), "-c", "import alsaaudio; print('alsaaudio imports')"],
                            "Check that it imports", user=self.app_user, changes=False)
         if rc != 0:
             self.fail("alsaaudio still does not import in the venv.")

@@ -58,7 +58,7 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
   ```
   sudo bash /tmp/pi/pi_report.sh > /tmp/report.txt
   ```
-- [ ] **2.4** A quick physical test of what works today (10 minutes). Tell me pass or fail for each:
+- [ ] **2.4** *(skipped for now, Oct 3: we go on without it; do it after step 3.0 instead)* A quick physical test of what works today (10 minutes). Tell me pass or fail for each:
   - [ ] all 6 buttons
   - [ ] all 4 tags
   - [ ] play a Spotify chip and the local-file chip
@@ -75,7 +75,7 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
   **Oct 3:** the first version said "PLAYBACK FAILED" because it didn't wait for Spotify to load, and it was run without `sudo`. It's fixed. Copy the scripts again (2.2), then run it with `sudo`. A Spotify song takes a few seconds to start, so each Spotify link now takes about 10 seconds. If there's no local song it plays a quiet test tone as the control.
 
   **Result (Oct 3, 14:13): pass.** The test tone and the Spotify song both played; the song started about 3.4 seconds after the play command. Details are in [docs/SPOTIFY.md](docs/SPOTIFY.md). Re-run it after each change in steps 3 and 4 and compare.
-- [ ] **2.6** Back everything up (it asks for your sudo password for a few root-only files):
+- [ ] **2.6** *(skipped by choice, Oct 3: no backup. `pi_update.sh --undo` and `pi_install_audio.sh --rollback` still work.)* Back everything up (it asks for your sudo password for a few root-only files):
   ```
   bash /tmp/pi/pi_backup.sh
   ```
