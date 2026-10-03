@@ -125,12 +125,12 @@ Part A changes settings only. The code from Part 0 still runs, so a problem with
   bash /tmp/pi/pi_install_audio.sh --mopidy-conf --dry-run
   bash /tmp/pi/pi_install_audio.sh --mopidy-conf
   ```
-- [ ] **3.7** Check it works:
-  - [ ] `python3 /tmp/pi/pi_smoke_test.py --stable-seconds 60` has no FAIL lines
+- [x] **3.7** Check it works:
+  - [x] `python3 /tmp/pi/pi_smoke_test.py --stable-seconds 60` has no FAIL lines
   - [x] the controller log says "Mixer initialized" and "Feedback player initialized" (`journalctl -u smart_speaker -n 50`)
-  - [ ] a beep plays over music without cutting it off: `python3 /tmp/pi/pi_smoke_test.py --only audio --beep-over-music file:///path/to/a/local/song.mp3`
-  - [ ] Vol+ and Vol- change the level: `amixer -c0 sget PCM`
-- [ ] **3.8** Spotify again, and a beep over a Spotify song (play a Spotify chip, then tap the same chip again: the music must keep going):
+  - [x] a beep plays over music without cutting it off: `python3 /tmp/pi/pi_smoke_test.py --only audio --beep-over-music file:///path/to/a/local/song.mp3`
+  - [x] Vol+ and Vol- change the level: `amixer -c0 sget PCM`
+- [x] **3.8** Spotify again, and a beep over a Spotify song (play a Spotify chip, then tap the same chip again: the music must keep going):
   ```
   sudo python3 /tmp/pi/spotify_check.py --label "after the new code" > /tmp/spotify-3b.txt
   ```
@@ -144,25 +144,27 @@ Part A changes settings only. The code from Part 0 still runs, so a problem with
 
 ## Step 4: hardware tests (about 90 minutes)
 
+*(Done: on Oct 3 the user reported the hardware tests as good. No per-test numbers were reported, so if a later problem looks like hardware, redo the matching test.)*
+
 Stop the speaker's services first, so the tests have the bus to themselves:
 ```
 sudo systemctl stop smart_speaker smart_speaker_health
 ```
 
-- [ ] **4.1** `sudo i2cdetect -y 1` shows 0x20, 0x21, 0x24 and the HAT's sound chip (shown as `UU` or 0x18).
-- [ ] **4.2** `python3 /tmp/pi/test_buttons.py`: all 6 buttons register and none reads as pressed when idle.
-- [ ] **4.3** `python3 /tmp/pi/test_leds.py`: every light shows every colour. Tell me which physical LED is which, and whether the colour order is blue-green-red as the code assumes.
-- [ ] **4.4** NFC (from the repo folder, with the app's Python):
+- [x] **4.1** `sudo i2cdetect -y 1` shows 0x20, 0x21, 0x24 and the HAT's sound chip (shown as `UU` or 0x18).
+- [x] **4.2** `python3 /tmp/pi/test_buttons.py`: all 6 buttons register and none reads as pressed when idle.
+- [x] **4.3** `python3 /tmp/pi/test_leds.py`: every light shows every colour. Tell me which physical LED is which, and whether the colour order is blue-green-red as the code assumes.
+- [x] **4.4** NFC (from the repo folder, with the app's Python):
   ```
   cd /home/iot-proj/IOT-project--Smart-Speaker
   venv/bin/python Unit-tests/test_pn532.py
   venv/bin/python Unit-tests/read_card.py
   ```
   Tap each of the 4 tags and write down the IDs. Leave one tag on the reader for 10 seconds and tell me whether it causes repeated swipe sounds.
-- [ ] **4.5** Audio: `bash Unit-tests/BasicSound.sh` (you should hear "front center"), `bash Unit-tests/RecordShortAudio.sh` (records 5 seconds; play it back with `aplay recording_*.wav`). Check the volume at 10%, 50% and 90% (`amixer -c0 sset PCM 10%`, and so on; **start low**) and tell me if the loudest is safe for hearing.
-- [ ] **4.6** PTT: `cd /home/iot-proj/IOT-project--Smart-Speaker/Main && ../venv/bin/python ../scripts/test-ptt.py`
-- [ ] **4.7** Start the services again (`sudo systemctl start smart_speaker smart_speaker_health`) and start a song. Watch the lights for 60 seconds while the health monitor runs, and tell me about any flicker. Note CPU and memory in `top` while Spotify starts.
-- [ ] **4.8** Play Spotify continuously for 20 minutes. Listen for dropouts, search the Mopidy log for `xrun` and `underrun` (`journalctl -u mopidy | grep -iE "xrun|underrun"`), and note CPU and memory.
+- [x] **4.5** Audio: `bash Unit-tests/BasicSound.sh` (you should hear "front center"), `bash Unit-tests/RecordShortAudio.sh` (records 5 seconds; play it back with `aplay recording_*.wav`). Check the volume at 10%, 50% and 90% (`amixer -c0 sset PCM 10%`, and so on; **start low**) and tell me if the loudest is safe for hearing.
+- [x] **4.6** PTT: `cd /home/iot-proj/IOT-project--Smart-Speaker/Main && ../venv/bin/python ../scripts/test-ptt.py`
+- [x] **4.7** Start the services again (`sudo systemctl start smart_speaker smart_speaker_health`) and start a song. Watch the lights for 60 seconds while the health monitor runs, and tell me about any flicker. Note CPU and memory in `top` while Spotify starts.
+- [x] **4.8** Play Spotify continuously for 20 minutes. Listen for dropouts, search the Mopidy log for `xrun` and `underrun` (`journalctl -u mopidy | grep -iE "xrun|underrun"`), and note CPU and memory.
 
 ---
 
