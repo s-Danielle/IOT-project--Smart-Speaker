@@ -170,7 +170,7 @@ sudo systemctl stop smart_speaker smart_speaker_health
 
 ## Step 5: install the fixes, in phases (about 90 minutes, spread over a day or more)
 
-The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi pulls code from there). Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is covered by more than 800 automatic tests on the development computer, but **none of it has run on the Pi yet**.
+The fixes live on the branch `pi/fixes`, and the finished state is tagged `rc1` (release candidate 1). Both have to be on GitHub first (`git push origin pi/fixes rc1`; the Pi pulls code from there). The Pi is updated to the tag, so "what is on the Pi" is one name. Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is covered by more than 800 automatic tests on the development computer, but **none of it has run on the Pi yet**.
 
 It is done in phases, **in this order**, because some changes can be undone by switching to another commit and some cannot:
 
@@ -184,7 +184,7 @@ It is done in phases, **in this order**, because some changes can be undone by s
 Phase 1 comes first on purpose: it is made so that the **old code runs happily with it**, and the new code **needs** it (the controller's status file lives in a folder the new service file creates). `pi_update.sh` never installs system files; it only checks that they are in place and stops if they are not. The app (step 6) comes after Phase 2, because the app and the server move together.
 
 **Part A: Phase 1, the system files** (the code stays on the old commit, `bb089ff` or whatever you run now)
-- [ ] **5.1** *On this computer*, in your project folder on `pi/fixes` (pushed to GitHub), copy the helper scripts and the system files to the Pi (it only writes `/tmp/pi`):
+- [ ] **5.1** *On this computer*, in your project folder on `pi/fixes` (the same commit as `rc1`; check with `git log --oneline -1`), copy the helper scripts and the system files to the Pi (it only writes `/tmp/pi`):
   ```
   scripts/pi/push_to_pi.sh iot-proj@rpi2.local
   ```
@@ -216,11 +216,11 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
 **Part B: Phase 2, the code** (nothing here touches the system files. If something goes wrong: `bash /tmp/pi/pi_update.sh --undo`; or to find which change did it, go to a commit in between with `bash /tmp/pi/pi_update.sh <commit>` and halve the range each time, like `git bisect`. List the commits with `git log --oneline pi/audio-stack..pi/fixes`.)
 - [ ] **5.8** Preview. It lists what would change, and checks that the system files from Phase 1 are in place (it prints "System files: match what the new code expects"; if it says they differ, it stops and tells you to do Phase 1 first). It changes nothing:
   ```
-  bash /tmp/pi/pi_update.sh --dry-run pi/fixes
+  bash /tmp/pi/pi_update.sh --dry-run rc1
   ```
 - [ ] **5.9** Switch the code (it installs the Python packages first, switches, restarts the three services and runs the quick check; the check must end green). Only code changes here, so everything in this phase can be undone by going back to a commit:
   ```
-  bash /tmp/pi/pi_update.sh pi/fixes
+  bash /tmp/pi/pi_update.sh rc1
   ```
 - [ ] **5.10** Your data is safe and unchanged, and the program folders are right. The server now saves its data file in a way a power cut cannot damage (see `EDGE_CASES.md`, cases 40 to 47):
   - [ ] the quick check in 5.9 said the chips, library and settings match what they were before (it compares them; paste the line if it doesn't)
