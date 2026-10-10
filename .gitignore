@@ -80,3 +80,6 @@ Main/web_app/*
 
 # pytest
 .pytest_cache/
+# the web app that was live before the last deploy (scripts/deploy_web.sh --undo)
+Main/web_app.prev/
+Main/web_app.swap/
