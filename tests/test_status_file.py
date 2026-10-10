@@ -217,13 +217,38 @@ def test_a_song_that_never_starts_is_recorded_as_failed(monkeypatch, path):
     assert s["last_play"]["result"] == "failed" and "no sound" in s["last_play"]["reason"]
 
 
-def test_an_old_failure_reason_is_not_blamed_on_a_new_problem(monkeypatch, path):
+def test_a_chip_with_no_song_is_not_a_failed_play(monkeypatch, path):
+    # It is blocked ("assign a song in the app"), which is nothing like Spotify failing. The app
+    # must not show "the last song could not be played" for it.
     rig = Rig(monkeypatch, chips={"AA": {"uid": "AA", "name": "Empty", "uri": "", "id": "c1"}}, status_path=path)
-    rig.audio.last_error = "an old Mopidy error"
+    rig.audio.last_error = "an old Mopidy error"  # left over from earlier: must not be blamed on this
     rig.tap_chip("AA")
-    rig.play()  # the chip has no song: nothing is sent to Mopidy
-    reason = status(path)["last_play"]
-    assert reason is None or "old Mopidy error" not in str(reason["reason"])
+    rig.play()
+    assert rig.state == State.IDLE_CHIP_LOADED
+    assert status(path)["last_play"] is None
+
+
+def test_a_block_does_not_overwrite_a_real_failure(monkeypatch, path):
+    chips = {"AA": {"uid": "AA", "name": "Real", "uri": "spotify:track:bad", "id": "c1"},
+             "BB": {"uid": "BB", "name": "Empty", "uri": "", "id": "c2"}}
+    rig = Rig(monkeypatch, chips=chips, status_path=path)
+    rig.audio.play_ok = False
+    rig.tap_chip("AA")
+    rig.play()
+    assert status(path)["last_play"]["result"] == "failed"
+    rig.tap_chip("BB")
+    rig.play()  # blocked: no song
+    assert status(path)["last_play"]["result"] == "failed"  # the Spotify failure is still the last real attempt
+
+
+def test_a_resume_that_cannot_reach_mopidy_is_recorded_as_failed(monkeypatch, path):
+    rig = Rig(monkeypatch, status_path=path)
+    rig.load_and_play()
+    rig.play()  # pause
+    rig.audio.resume = lambda: False
+    rig.play()
+    last = status(path)["last_play"]
+    assert last["result"] == "failed" and "Mopidy" in last["reason"]
 
 
 def test_a_good_play_after_a_failure_clears_it(monkeypatch, path):

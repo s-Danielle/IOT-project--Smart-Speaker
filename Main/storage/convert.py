@@ -18,7 +18,7 @@ import os
 import sqlite3
 import time
 
-from . import rules
+from . import fsutil, rules
 from .json_store import JsonStore
 from .sqlite_store import (
     SELECT_CHIPS, create_schema, get_parental_controls, set_parental_controls,
@@ -138,7 +138,7 @@ def build_database_from_json(json_path, db_path):
         _remove_database_files(building, keep_main=True)
         _fsync_file(building)
         os.replace(building, db_path)
-        _sync_directory(os.path.dirname(db_path) or ".")
+        fsutil.sync_directory(os.path.dirname(db_path) or ".")
     except ConversionFailed:
         _discard(conn, building)
         raise
@@ -289,16 +289,3 @@ def _discard(conn, building):
 def _fsync_file(path):
     with open(path, "rb") as f:
         os.fsync(f.fileno())
-
-
-def _sync_directory(directory):
-    try:
-        fd = os.open(directory, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)

@@ -16,15 +16,18 @@ Boot-time state machine (no HTTP server, binds no ports):
 
 This service uses the shared WiFiManager from hardware/wifi_manager.py
 """
+import json
 import os
 import sys
 import time
 import threading
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from hardware.wifi_manager import WiFiManager, AP_SSID, AP_IP, WEB_PORT
 from utils.logger import log
+from config.settings import SERVER_HOST, SERVER_PORT
 
 CONNECT_TIMEOUT = 30  # Seconds to wait for auto-connect
 AP_POLL_INTERVAL = 3  # Seconds between connection checks while in AP mode
@@ -94,6 +97,20 @@ class LEDController:
         time.sleep(0.1)
 
 
+def portal_is_connecting() -> bool:
+    """Is the setup page (in the server, another program) in the middle of joining a network?
+
+    Asked over localhost, which needs no token. If the server does not answer, nobody is using the
+    portal, so the answer is no.
+    """
+    try:
+        url = f"http://{SERVER_HOST}:{SERVER_PORT}/debug/wifi/connect-status"
+        with urllib.request.urlopen(url, timeout=2) as response:
+            return json.loads(response.read().decode("utf-8")).get("state") == "connecting"
+    except Exception:
+        return False
+
+
 class WiFiProvisioner:
     """Main WiFi provisioning orchestrator.
 
@@ -101,11 +118,12 @@ class WiFiProvisioner:
     flow can be run without NetworkManager and without waiting.
     """
 
-    def __init__(self, wifi=WiFiManager, led=None, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, wifi=WiFiManager, led=None, clock=time.monotonic, sleep=time.sleep, portal_busy=None):
         self.wifi = wifi
         self.led = led if led is not None else LEDController()
         self._now = clock
         self._sleep = sleep
+        self._portal_busy = portal_busy if portal_busy is not None else portal_is_connecting
 
     def run(self):
         """Main provisioning flow - wait for WiFi, fallback to AP mode"""
@@ -182,6 +200,11 @@ class WiFiProvisioner:
         """
         if self.wifi.has_ap_clients():
             log_wifi("Someone is connected to the setup hotspot - leaving it up")
+            return False
+        if self._portal_busy():
+            # The portal has taken the hotspot down to join the network somebody just chose. That
+            # leaves no client on the hotspot, but it is not "nobody is using it".
+            log_wifi("The setup page is connecting to a network - not interfering")
             return False
         log_wifi("The setup hotspot is not in use - trying the saved WiFi again")
         self.led.connecting()

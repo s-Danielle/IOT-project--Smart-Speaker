@@ -84,6 +84,7 @@ def action_resume(device_state: DeviceState, audio_player, ui) -> DeviceState:
     log_action("Resuming playback")
     if not audio_player.resume():
         log_error("Cannot resume: Mopidy could not be reached")
+        audio_player.last_error = getattr(audio_player, "last_error", None) or "Mopidy could not be reached"
         ui.on_error()
         return device_state
     device_state.state = State.PLAYING

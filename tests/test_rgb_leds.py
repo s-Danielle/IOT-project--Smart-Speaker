@@ -134,3 +134,28 @@ def test_leds_are_disabled_quietly_without_the_bus(monkeypatch):
     leds = RGBLeds()
     leds.set_light(1, Colors.GREEN)  # nothing happens, and nothing crashes
     leds.off_all()
+
+
+@pytest.mark.parametrize("failing", ["ftruncate", "write", "flock"])
+def test_a_failing_shared_file_never_crashes_the_program_changing_a_light(monkeypatch, failing):
+    # /tmp full or read-only: this used to escape set_light() and end the controller's main loop
+    import hardware.leds as leds_module
+
+    messages = []
+    monkeypatch.setattr(leds_module, "log", messages.append)
+    leds = RGBLeds()
+    leds.set_light(1, Colors.GREEN)
+
+    def boom(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    if failing == "flock":
+        monkeypatch.setattr(leds_module.fcntl, "flock", boom)
+    else:
+        monkeypatch.setattr(leds_module.os, "ftruncate" if failing == "ftruncate" else "write", boom)
+    leds.set_light(2, Colors.RED)  # must not raise
+    leds.set_light(3, Colors.BLUE)
+    leds.off(1)
+    # the lights still follow what was asked, from the private copy
+    assert led_byte() & LIGHT2_RED and led_byte() & LIGHT3_BLUE and not led_byte() & LIGHT1_GREEN
+    assert len([m for m in messages if "shared LED state file failed" in m]) == 1  # said once

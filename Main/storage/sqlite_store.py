@@ -26,7 +26,7 @@ from datetime import date
 
 from utils.logger import log, log_error
 
-from . import rules
+from . import fsutil, rules
 
 SCHEMA_VERSION = 1
 BUSY_SECONDS = 5.0
@@ -152,7 +152,7 @@ class SqliteStore:
                 staging = self.path + ".restoring"
                 shutil.copy2(self.backup_path, staging)
                 os.replace(staging, self.path)
-                _sync_directory(os.path.dirname(self.path) or ".")
+                fsutil.sync_directory(os.path.dirname(self.path) or ".")
                 log_error(f"[STORAGE] the database was {'damaged' if damaged else 'missing'}; the last good copy ({self.backup_path}) was put back")
                 return "recovered"
             except (sqlite3.Error, ValueError, OSError) as exc:
@@ -197,18 +197,8 @@ class SqliteStore:
                 except OSError as exc:
                     log_error(f"[STORAGE] could not move {source} aside: {exc}")
         log_error(f"[STORAGE] the damaged database was kept as {self.path}{suffix}")
-        directory = os.path.dirname(self.path) or "."
-        prefix = os.path.basename(self.path) + ".corrupt-"
-        copies = [
-            os.path.join(directory, name) for name in os.listdir(directory)
-            if name.startswith(prefix) and not name.endswith(("-wal", "-shm"))
-        ]
-        for copy in sorted(copies, key=os.path.getmtime)[:-CORRUPT_COPIES_KEPT]:
-            for extra in ("", "-wal", "-shm"):
-                try:
-                    os.remove(copy + extra)
-                except OSError:
-                    pass
+        fsutil.keep_newest(os.path.dirname(self.path) or ".", os.path.basename(self.path) + ".corrupt-",
+                           CORRUPT_COPIES_KEPT, companions=("-wal", "-shm"))
 
     # ------------------------------------------------------------------
     # Backup copy
@@ -235,7 +225,7 @@ class SqliteStore:
                 with open(staging, "rb") as f:
                     os.fsync(f.fileno())
                 os.replace(staging, self.backup_path)
-                _sync_directory(os.path.dirname(self.path) or ".")
+                fsutil.sync_directory(os.path.dirname(self.path) or ".")
                 self._last_backup = self._clock()
             except (sqlite3.Error, OSError) as exc:
                 log_error(f"[STORAGE] could not make the backup copy: {exc}")
@@ -253,7 +243,9 @@ class SqliteStore:
     # ------------------------------------------------------------------
 
     def _connect(self):
-        conn = sqlite3.connect(self.path, timeout=BUSY_SECONDS, isolation_level=None)
+        # check_same_thread=False so that close() can close every thread's connection. Each connection is
+        # still only ever USED by the one thread that made it (see _conn).
+        conn = sqlite3.connect(self.path, timeout=BUSY_SECONDS, isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
@@ -532,16 +524,3 @@ def set_parental_controls(conn, settings: dict):
 
 def _chip_view(row) -> dict:
     return {"id": row["id"], "uid": row["uid"], "name": row["name"], "song_id": row["song_id"], "song_name": row["song_name"]}
-
-
-def _sync_directory(directory):
-    try:
-        fd = os.open(directory, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)

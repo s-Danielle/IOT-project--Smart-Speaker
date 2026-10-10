@@ -23,7 +23,7 @@ import subprocess
 import time
 from utils.logger import log, log_success
 from utils.shared_dirs import ensure_shared_dir
-from storage import JsonStore, open_store
+from storage import JsonStore, StorageError, open_store
 from utils.status_file import read_status
 from utils.access import (
     TOKEN_HEADER, NEVER, UNLESS_SETUP_MODE, protection, is_local_address, token_matches,
@@ -148,7 +148,11 @@ def start_storage():
     """Open the data when the server starts: pick JSON or SQLite, move the data across if the
     choice has changed, create the data on a first run, repair it from its backup if it is damaged."""
     global store
-    store, status, notes = open_store(os.path.dirname(DATA_FILE))
+    try:
+        store, status, notes = open_store(os.path.dirname(DATA_FILE))
+    except StorageError as problem:
+        log(f"[STORAGE] {problem}", 'ERROR')  # the server stops here: better loud than serving the wrong data
+        raise
     for level, message in notes:
         log(message, 'ERROR' if level == 'error' else 'INFO')
     what_happened = {
@@ -763,6 +767,10 @@ def _guarded(method):
         except RequestTooLarge as problem:
             self.close_connection = True
             self._send_json({"error": str(problem)}, 413)
+        except ValueError as problem:
+            # A body that is not JSON (json.JSONDecodeError is a ValueError), not an object, or a bad
+            # Content-Length. Without this the connection was dropped with a traceback in the log.
+            self._send_json({"error": str(problem)}, 400)
     return wrapper
 
 
@@ -805,8 +813,12 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         return length
 
     def _read_body(self, limit=MAX_JSON_BYTES):
+        """The request's JSON body, which must be an object ({} if there is none). Raises ValueError otherwise."""
         length = self._content_length(limit)
-        return json.loads(self.rfile.read(length)) if length else {}
+        body = json.loads(self.rfile.read(length)) if length else {}
+        if not isinstance(body, dict):
+            raise ValueError("the body must be a JSON object")
+        return body
 
     def _allowed(self) -> bool:
         """The token rule (see utils/access.py). Sends the refusal itself when the answer is no."""

@@ -22,7 +22,7 @@ from datetime import date
 
 from utils.logger import log, log_error
 
-from . import rules
+from . import fsutil, rules
 
 CORRUPT_COPIES_KEPT = 3
 
@@ -135,9 +135,10 @@ class JsonStore:
             raise ValueError("name must be text")
 
         def change(data):
+            names = {s["id"]: s.get("name") for s in data["library"]}
             for chip in data["chips"]:
                 if rules.same_uid(chip.get("uid"), uid):
-                    return chip, False
+                    return (self._chip_view(chip, names), False), False  # (the chip, created?), changed?
             chip = {
                 "id": rules.new_chip_id({c["id"] for c in data["chips"]}),
                 "uid": uid,
@@ -146,11 +147,12 @@ class JsonStore:
                 "song_name": None,
             }
             data["chips"].append(chip)
-            return chip, True
+            return (self._chip_view(chip, names), True), True
 
-        chip = self._change(change)
-        log(f"Registered new chip: {chip['name']} (UID: {uid[:20]}...)")
-        return self._chip_view(chip, {})
+        chip, created = self._change(change)
+        if created:
+            log(f"Registered new chip: {chip['name']} (UID: {uid[:20]}...)")
+        return chip
 
     def update_chip(self, chip_id, changes):
         """Change a chip's name and/or song. Returns the chip, or None if there is no such chip.
@@ -399,17 +401,7 @@ class JsonStore:
         except OSError as exc:
             log_error(f"[STORAGE] could not move the damaged file aside: {exc}")
             return
-        directory = os.path.dirname(self.path) or "."
-        prefix = os.path.basename(self.path) + ".corrupt-"
-        old = sorted(
-            (os.path.join(directory, name) for name in os.listdir(directory) if name.startswith(prefix)),
-            key=os.path.getmtime,
-        )
-        for path in old[:-CORRUPT_COPIES_KEPT]:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        fsutil.keep_newest(os.path.dirname(self.path) or ".", os.path.basename(self.path) + ".corrupt-", CORRUPT_COPIES_KEPT)
 
     def _save(self, data):
         directory = os.path.dirname(self.path) or "."
@@ -430,7 +422,7 @@ class JsonStore:
                 except OSError:
                     pass
             raise
-        self._sync_directory(directory)
+        fsutil.sync_directory(directory)
 
     def _keep_backup(self):
         """Make the current file the .bak copy, without ever leaving the real file missing."""
@@ -457,17 +449,3 @@ class JsonStore:
             os.chown(target, info.st_uid, info.st_gid)
         except (PermissionError, OSError):
             pass
-
-    @staticmethod
-    def _sync_directory(directory):
-        """Make the rename itself survive a power cut."""
-        try:
-            fd = os.open(directory, os.O_RDONLY)
-        except OSError:
-            return
-        try:
-            os.fsync(fd)
-        except OSError:
-            pass
-        finally:
-            os.close(fd)

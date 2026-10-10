@@ -114,6 +114,13 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 62 | The token cannot be saved (the program folder is read-only) | The server logs an error and keeps a token nobody can read, so changes from other devices are refused until it is fixed. The controller and health monitor, on the speaker itself, are unaffected |
 | 63 | `/debug/run-main` (started a second controller next to the service, fighting it for the buttons and the sound card) | Removed |
 | 64 | The app's Developer Tools run `git pull` or `git status` | The server runs as root; it now runs git as the owner of the program folder (`sudo -u iot-proj -H git ...`), so git does not refuse over "dubious ownership" and does not leave root-owned files in the repository for the next `pi_update.sh` to trip over |
+| 65 | `/tmp` is full or read-only, so the shared LED file fails | A light change falls back to a private copy and logs once. It used to raise out of `set_light()` and end the controller's main loop |
+| 66 | A request body that is not JSON, not an object, or has a bad `Content-Length` (on any route) | 400 with the reason. Before, some routes dropped the connection with a traceback in the log |
+| 67 | A user submits the WiFi setup form at the moment the 2-minute retry fires | The retry asks the server (over localhost) whether the setup page is joining a network and waits if so; it no longer tears the hotspot down or puts it back in the middle of the user's connect |
+| 68 | A chip with no song, or a blocked chip, is tapped and Play pressed | Not recorded as a failed play: `/health` and the app only warn when Mopidy actually refused the link or could not be reached |
+| 69 | `SPEAKER_STORAGE=sqlite` and the database exists but cannot be opened (made by a newer version, disk error) | The server stops with a clear message instead of falling back to a JSON file that may be out of date. Set `SPEAKER_STORAGE=json` to move the data out of SQLite on purpose |
+| 70 | Moving the data out of SQLite: the JSON is written but the database cannot be put aside | The new JSON file is removed again and the speaker carries on with the database, so there is never a second live copy |
+| 71 | The web app is deployed for the first time, or the folder on the Pi is empty | `deploy_web.sh` keeps a previous app only if it has an `index.html`, so the first deploy works and `--undo` can never swap an empty folder in |
 
 ---
 

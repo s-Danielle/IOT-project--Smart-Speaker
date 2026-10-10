@@ -483,3 +483,26 @@ def test_all_three_git_calls_use_that_command(api):
     import inspect
     source = inspect.getsource(api.module)
     assert "['git'," not in source.replace("['git'] + list(args)", "")
+
+
+# ---------------------------------------------------------------------------
+# A bad request body is a 400 on every route, never a dropped connection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("body", [b"{not json", b"[1, 2]", b'"text"', b"null", b"42", b"\xff\xfe"])
+@pytest.mark.parametrize("method, path", [
+    ("POST", "/chips"), ("POST", "/library"), ("POST", "/usage/add"), ("PUT", "/settings/parental"),
+    ("PUT", "/chips/x"), ("PUT", "/library/x"),
+])
+def test_a_body_that_is_not_a_json_object_is_a_400_on_every_data_route(api, method, path, body):
+    status, answer = api.call(method, path, raw=body)
+    assert status == 400 and "error" in answer
+    assert api.get("/status")[0] == 200  # and the server is fine
+
+
+@pytest.mark.parametrize("path", ["/debug/wifi/forget", "/debug/wifi/connect", "/debug/wifi/priority", "/debug/wifi/ap-mode"])
+def test_a_bad_body_to_a_debug_route_is_a_400_and_runs_nothing(remote, path):
+    remote.token = TOKEN
+    status, answer = remote.post(path, raw=b"{broken")
+    assert status == 400 and "error" in answer  # the body is read before anything is run

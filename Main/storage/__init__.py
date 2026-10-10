@@ -42,7 +42,7 @@ def open_store(directory, mode=None, today=None):
         opened = _open_sqlite(json_path, db_path, today, notes)
         if opened:
             return opened[0], opened[1], notes
-        notes.append(("error", "[STORAGE] SQLite could not be used, so the JSON file is used instead (nothing was lost)"))
+        notes.append(("error", "[STORAGE] the data could not be moved into SQLite, so the JSON file is used as before (nothing was lost)"))
     return _open_json(json_path, db_path, today, notes)
 
 
@@ -61,11 +61,19 @@ def _open_sqlite(json_path, db_path, today, notes):
     try:
         status = store.open()
     except (StorageError, sqlite3.Error, OSError) as exc:
-        notes.append(("error", f"[STORAGE] the SQLite database cannot be opened: {exc}"))
         store.close()
-        if imported:  # the new database is no good: drop it, and keep using the JSON file
-            convert._remove_database_files(db_path)
-            convert._remove_database_files(db_path + ".bak")
+        if not imported:
+            # A database that was in use cannot be opened (a newer version made it, the disk fails...).
+            # The JSON file, if there is one, is out of date, and moving the data out of a database we
+            # cannot trust would hide the problem. Stop, loudly: the owner decides.
+            raise StorageError(
+                f"the SQLite database {db_path} exists but cannot be opened ({exc}). Not falling back to the "
+                "JSON file, which may be out of date. Fix the cause, or set SPEAKER_STORAGE=json to move the "
+                "data out of SQLite on purpose.") from exc
+        # The database we have just built is no good: drop it, and keep using the JSON file (untouched)
+        notes.append(("error", f"[STORAGE] the new SQLite database cannot be opened: {exc}"))
+        convert._remove_database_files(db_path)
+        convert._remove_database_files(db_path + ".bak")
         return None
     if imported:
         status = "imported"
@@ -83,7 +91,16 @@ def _open_json(json_path, db_path, today, notes):
         # SQLite was used before. Bring its data across, then put the database aside.
         try:
             convert.export_database_to_json(db_path, json_path)
-            kept = convert.retire_database(db_path)
+            try:
+                kept = convert.retire_database(db_path)
+            except convert.ConversionFailed:
+                # Two live copies must never exist: take the JSON file we just wrote away again
+                for leftover in (json_path, json_path + ".bak"):
+                    try:
+                        os.remove(leftover)
+                    except OSError:
+                        pass
+                raise
             notes.append(("info", f"[STORAGE] the data was moved from SQLite into the JSON file and checked; the database was kept as {kept}"))
             status_override = "exported"
         except convert.ConversionFailed as exc:

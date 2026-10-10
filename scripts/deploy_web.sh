@@ -23,7 +23,7 @@ REMOTE_WEB_DIR="/home/iot-proj/IOT-project--Smart-Speaker/Main/web_app"
 
 if [ "$UNDO" -eq 1 ]; then
     echo "==> Swapping the web app on $TARGET with the previous one ..."
-    ssh "$TARGET" "set -e; cd '$(dirname "$REMOTE_WEB_DIR")'; [ -d web_app.prev ] || { echo 'There is no previous web app (web_app.prev) to go back to.'; exit 1; }; rm -rf web_app.swap; mv web_app web_app.swap; mv web_app.prev web_app; mv web_app.swap web_app.prev; echo done"
+    ssh "$TARGET" "set -e; cd '$(dirname "$REMOTE_WEB_DIR")'; [ -f web_app.prev/index.html ] || { echo 'There is no previous web app (web_app.prev) to go back to.'; exit 1; }; rm -rf web_app.swap; mv web_app web_app.swap; mv web_app.prev web_app; mv web_app.swap web_app.prev; echo done"
     echo "The previous web app is live. Run this again to go back to the newer one."
     exit 0
 fi
@@ -35,7 +35,8 @@ echo "==> Building Flutter web app (release)..."
 flutter build web --release
 
 echo "==> Keeping the current web app on $TARGET as web_app.prev ..."
-ssh "$TARGET" "rm -rf '$REMOTE_WEB_DIR.prev' && cp -a '$REMOTE_WEB_DIR' '$REMOTE_WEB_DIR.prev'"
+# (the first deploy has nothing to keep, and an empty folder must never become the "previous" app)
+ssh "$TARGET" "if [ -f '$REMOTE_WEB_DIR/index.html' ]; then rm -rf '$REMOTE_WEB_DIR.prev' && cp -a '$REMOTE_WEB_DIR' '$REMOTE_WEB_DIR.prev'; else echo '(no web app on the Pi yet: nothing to keep)'; fi"
 
 echo "==> Deploying to $TARGET:$REMOTE_WEB_DIR ..."
 rsync -av --delete build/web/ "$TARGET:$REMOTE_WEB_DIR/"

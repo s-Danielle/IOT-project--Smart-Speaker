@@ -153,21 +153,26 @@ class RGBLeds:
         from writing to the chips at the same moment.
         """
         fd = self._open_state()
-        if fd is None:
-            led, red3 = change(*self._private_state)
-            self._private_state = (led, red3)
-            self._write_chips(led, red3, write_buttons=True)
-            return led, red3
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            old = self._read_state(fd)
-            fresh = old is None
-            led, red3 = change(*(old if old is not None else (0x00, 0)))
-            self._save_state(fd, led, red3)
-            self._write_chips(led, red3, write_buttons=touches_buttons or fresh)
-            return led, red3
-        finally:
-            os.close(fd)  # also drops the lock
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                old = self._read_state(fd)
+                fresh = old is None
+                led, red3 = change(*(old if old is not None else (0x00, 0)))
+                self._save_state(fd, led, red3)
+                self._write_chips(led, red3, write_buttons=touches_buttons or fresh)
+                return led, red3
+            except OSError as e:
+                # A full or read-only /tmp must not crash the program that is only changing a light
+                if not self._warned_about_file:
+                    self._warned_about_file = True
+                    log(f"[LEDS] The shared LED state file failed ({e}) - using a private copy")
+            finally:
+                os.close(fd)  # also drops the lock
+        led, red3 = change(*self._private_state)
+        self._private_state = (led, red3)
+        self._write_chips(led, red3, write_buttons=True)
+        return led, red3
 
     @staticmethod
     def _with_light(led, red3, light_num, color):

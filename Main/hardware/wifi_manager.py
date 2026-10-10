@@ -133,7 +133,9 @@ class WiFiManager:
         """The SSID NetworkManager says we are connected to ('' if none)"""
         try:
             result = subprocess.run(
-                ['nmcli', '-t', '-f', 'ACTIVE,SSID', 'device', 'wifi', 'list'],
+                # --rescan no: this is only a lookup, and it runs every second or two while connecting;
+                # a scan on the radio that serves the setup hotspot can drop its clients
+                ['nmcli', '-t', '-f', 'ACTIVE,SSID', 'device', 'wifi', 'list', '--rescan', 'no'],
                 capture_output=True, text=True, timeout=10
             )
         except (OSError, subprocess.SubprocessError):

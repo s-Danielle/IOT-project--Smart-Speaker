@@ -739,3 +739,57 @@ def test_the_first_ever_sqlite_start_without_any_file(folder, clock):
     store, status, notes = open_store(folder, mode="sqlite", today=clock)
     assert status == "new" and len(store.songs()) == 2
     store.close()
+
+
+def test_a_database_that_cannot_be_opened_is_not_replaced_by_a_possibly_stale_json_file(folder, clock):
+    store, _, _ = open_store(folder, mode="sqlite", today=clock)
+    store.register_chip("ONLY-IN-DB")
+    store.close()
+    conn = sqlite3.connect(os.path.join(folder, "server_data.db"))
+    conn.execute("UPDATE meta SET value = '99' WHERE key = 'schema_version'")  # made by a newer version
+    conn.commit()
+    conn.close()
+    before = sorted(files_of(folder))
+    with pytest.raises(StorageError, match="Not falling back"):
+        open_store(folder, mode="sqlite", today=clock)
+    assert sorted(files_of(folder)) == before  # nothing exported, nothing retired, nothing created
+
+
+def test_a_failure_to_put_the_database_aside_leaves_one_live_copy_not_two(folder, clock, monkeypatch):
+    store, _, _ = open_store(folder, mode="sqlite", today=clock)
+    store.register_chip("AA11")
+    store.close()
+
+    def cannot(db_path, label=None):
+        raise convert.ConversionFailed("disk error")
+
+    monkeypatch.setattr(convert, "retire_database", cannot)
+    store, status, notes = open_store(folder, mode="json", today=clock)
+    assert store.kind == "sqlite"  # carried on with the database
+    assert not os.path.exists(os.path.join(folder, "server_data.json"))  # the JSON written for the move was taken away again
+    assert not os.path.exists(os.path.join(folder, "server_data.json.bak"))
+    assert [c["uid"] for c in store.chips()] == ["AA11"]
+    store.close()
+    # and so a later start still finds exactly one live copy
+    store, status, _ = open_store(folder, mode="sqlite", today=clock)
+    assert status == "ok" and [c["uid"] for c in store.chips()] == ["AA11"]
+    store.close()
+
+
+def test_closing_closes_the_connections_of_other_threads_too(path, clock):
+    # They used to be skipped silently (sqlite refuses to close another thread's connection), which
+    # kept the database's write-ahead log from ever being folded back into the main file.
+    s = SqliteStore(path, today=clock)
+    s.open()
+    made = []
+    for _ in range(3):
+        t = threading.Thread(target=lambda: made.append(s._conn()))
+        t.start()
+        t.join()
+    mine = s._conn()
+    assert len(s._connections) == 4
+    s.close()
+    for conn in made + [mine]:
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")  # closed
+    assert s._connections == []

@@ -444,7 +444,11 @@ class Controller:
         self._audio.last_error = None  # so a reason below is from this attempt, not an old one
         self.device_state = start()
         if self.device_state.state != State.PLAYING:
-            self._record_play("failed", getattr(self._audio, "last_error", None) or "it could not be started (see the controller log)")
+            # A real failure is one where Mopidy refused or could not be reached: the audio player
+            # says why. A chip with no song, or a block, is not a failed play and leaves last_play alone.
+            reason = getattr(self._audio, "last_error", None)
+            if reason:
+                self._record_play("failed", reason)
             return False
         self._record_play("waiting")
         self._wait_for_playback_confirmation()

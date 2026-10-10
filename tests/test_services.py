@@ -136,3 +136,11 @@ def test_the_controllers_status_folder_is_made_for_it_by_systemd():
     assert "RuntimeDirectory=smart_speaker" in lines_of(SERVICES / "smart_speaker.service")
     assert DEFAULT_PATH.startswith("/run/smart_speaker/")
     assert "User=iot-proj" in unit
+
+
+def test_the_web_deploy_keeps_the_previous_app_only_if_there_is_one():
+    text = (REPO / "scripts" / "deploy_web.sh").read_text()
+    # keep only a real app (it has an index.html), so a first deploy works and an empty folder can never
+    # become "the previous app" that --undo would then put live
+    assert "if [ -f '$REMOTE_WEB_DIR/index.html' ]; then" in text
+    assert "[ -f web_app.prev/index.html ] ||" in text

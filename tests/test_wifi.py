@@ -68,9 +68,9 @@ class FakeWiFi:
         return self.clients
 
 
-def build(limit=3600):
+def build(limit=3600, portal_busy=lambda: False):
     clock, wifi, led = Clock(limit), FakeWiFi(), fakes.CallLog()
-    provisioner = WiFiProvisioner(wifi=wifi, led=led, clock=clock.now, sleep=clock.sleep)
+    provisioner = WiFiProvisioner(wifi=wifi, led=led, clock=clock.now, sleep=clock.sleep, portal_busy=portal_busy)
     return provisioner, wifi, clock, led
 
 
@@ -178,6 +178,8 @@ def test_the_setup_hotspot_does_not_count_as_connected(monkeypatch):
 def test_without_iwgetid_networkmanager_is_asked_instead(monkeypatch):
     def run(cmd, **kw):
         assert cmd[0] == "nmcli"
+        # a read-only lookup: it must not start a scan (that can drop the setup hotspot's clients)
+        assert cmd[-2:] == ["--rescan", "no"]
         return completed("no:Cafe\nyes:Home\\:5G\nno:Other\n")
 
     monkeypatch.setattr(wifi_manager, "find_tool", lambda name: None)
@@ -221,3 +223,63 @@ def test_an_empty_hotspot_has_no_clients(monkeypatch, interface):
 def test_no_iw_means_no_clients_rather_than_a_crash(monkeypatch, interface):
     monkeypatch.setattr(wifi_manager, "find_tool", lambda name: None)
     assert WiFiManager.has_ap_clients() is False
+
+
+# ---------------------------------------------------------------------------
+# The retry must not fight the setup page
+# ---------------------------------------------------------------------------
+
+
+def test_the_retry_waits_while_the_setup_page_is_joining_a_network():
+    # A user submitted the form: the server dropped the hotspot to join their network, so no client is
+    # attached any more. The retry timer must not tear the hotspot down or bring it back in that window.
+    busy = {"now": True}
+    provisioner, wifi, clock, led = build(limit=AP_RETRY_INTERVAL + 60, portal_busy=lambda: busy["now"])
+    clock.on_tick = lambda t: busy.update(now=t < AP_RETRY_INTERVAL + 40)
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert wifi.calls == ["start_ap"]  # no stop_ap, no reconnect, no second start_ap while it was busy
+
+
+def test_the_retry_goes_ahead_once_the_setup_page_is_done():
+    provisioner, wifi, clock, led = build(portal_busy=lambda: False)
+    clock.on_tick = lambda t: setattr(wifi, "connected", t >= 100)
+    provisioner.run()
+    assert wifi.calls == ["start_ap", "stop_ap", "reconnect"]
+
+
+@pytest.mark.parametrize("answer, expected", [
+    (b'{"state": "connecting", "ssid": "x"}', True),
+    (b'{"state": "idle"}', False),
+    (b'{"state": "connected"}', False),
+    (b'{"state": "failed"}', False),
+    (b"not json", False),
+    (b"[]", False),
+])
+def test_asking_the_server_whether_the_portal_is_busy(monkeypatch, answer, expected):
+    import io
+    import urllib.request
+    import wifi_provisioner
+
+    class Reply(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    requested = []
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=0: requested.append(url) or Reply(answer))
+    assert wifi_provisioner.portal_is_connecting() is expected
+    assert requested == ["http://localhost:8080/debug/wifi/connect-status"]
+
+
+def test_a_server_that_does_not_answer_means_nobody_is_using_the_portal(monkeypatch):
+    import urllib.request
+    import wifi_provisioner
+
+    def refuse(url, timeout=0):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    assert wifi_provisioner.portal_is_connecting() is False

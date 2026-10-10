@@ -133,6 +133,15 @@ def test_a_new_chip_gets_an_id_and_a_numbered_name(store):
     assert first["song_id"] is None and first["song_name"] is None
 
 
+def test_registering_a_known_chip_again_keeps_its_song_in_the_answer(store):
+    # Both stores must answer the same: this used to blank song_name in the JSON store only
+    chip = store.register_chip("AA11", "Bedtime")
+    song = store.add_song("Lullaby", "spotify:track:1")
+    store.update_chip(chip["id"], {"song_id": song["id"]})
+    again = store.register_chip("aa11")
+    assert again["id"] == chip["id"] and again["song_id"] == song["id"] and again["song_name"] == "Lullaby"
+
+
 def test_registering_the_same_chip_again_returns_the_one_we_have(store):
     first = store.register_chip("AA11", "Mine")
     again = store.register_chip("AA11", "Other name")
