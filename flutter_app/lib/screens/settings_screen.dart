@@ -56,9 +56,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await ApiService(baseUrl).checkToken();
       if (mounted) setState(() => _tokenResult = 'ok');
     } catch (e) {
-      final message = e is ApiException && e.isTokenProblem
-          ? 'The speaker did not accept this token.'
-          : '$e';
+      final String message;
+      if (e is ApiException && e.isTokenProblem) {
+        message = 'The speaker did not accept this token.';
+      } else if (e is ApiException && e.statusCode == 404) {
+        // /debug/ping does not exist on a speaker with older software (which has no token either)
+        message = 'This speaker\'s software is too old to use a token. Nothing to check.';
+      } else {
+        message = '$e';
+      }
       if (mounted) setState(() => _tokenResult = 'error:$message');
     } finally {
       if (mounted) setState(() => _checkingToken = false);

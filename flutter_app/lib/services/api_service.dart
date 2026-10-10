@@ -197,7 +197,7 @@ class ApiService {
   // Takes raw bytes so it works on both native and web builds.
   //
   // The speaker adds the uploaded file to the library by itself, and answers
-  // with that entry. The caller must NOT also create a library entry for it
+  // with that entry (its id is '' on an older speaker). The caller must NOT also create a library entry for it
   // (that made two entries for one file); to give it another name, rename
   // the returned entry with [updateSong].
   Future<Song> uploadFileBytes(Uint8List bytes, String filename) async {
@@ -211,7 +211,14 @@ class ApiService {
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
-      return Song.fromJson(jsonDecode(response.body));
+      // An older speaker does not send the entry's id. Then the id is '' and the
+      // caller finds the entry by its link instead.
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return Song(
+        id: (data['id'] ?? '').toString(),
+        name: (data['name'] ?? '').toString(),
+        uri: (data['uri'] ?? '').toString(),
+      );
     }
     throw _failure('upload file', response);
   }

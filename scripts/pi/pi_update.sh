@@ -8,13 +8,18 @@
 #   bash pi_update.sh v1.0                   a tag
 #   bash pi_update.sh --dry-run pi/audio-stack    show what it would do, change nothing
 #   bash pi_update.sh --undo                 go back to where the Pi was before the last update
+#   bash pi_update.sh --allow-system-drift X   go on although the system files differ (for bisecting)
+#
+# This changes CODE only, so that any update can be undone, or bisected, by switching commits.
+# The system files (service files, the saved system log, log rotation) are installed separately,
+# first, by pi_install_system.sh. This script only CHECKS that they match what the new code expects.
 #
 # Order (so a failure can't leave the Pi half-updated):
-#   1. look for unexpected local edits and stop if there are any
+#   1. look for unexpected local edits, and check the system files; stop if anything is off
 #   2. save a snapshot of the speaker's data (to compare afterwards)
 #   3. install the Python packages the NEW code needs (nothing has changed yet)
 #   4. switch the code
-#   5. copy changed service files and log settings, reload systemd, restart the services
+#   5. restart the services
 #   6. run the quick check and compare the data with the snapshot
 
 set -euo pipefail
@@ -27,12 +32,14 @@ SERVICES=(smart_speaker_server smart_speaker smart_speaker_health)
 
 DRY=0
 UNDO=0
+ALLOW_DRIFT=0
 REF=""
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY=1 ;;
         --undo) UNDO=1 ;;
-        -h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --allow-system-drift) ALLOW_DRIFT=1 ;;
+        -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "Unknown option: $arg"; exit 1 ;;
         *) REF="$arg" ;;
     esac
@@ -49,46 +56,27 @@ do_it() { if [ "$DRY" -eq 1 ]; then say "[preview]   \$ $*"; else say "  \$ $*";
 cd "$REPO"
 mkdir -p "$STATE"
 
-install_units() {   # copy only the service files that differ, then reload systemd
-    local changed=0 f name
-    for f in "$REPO"/services/*.service; do
-        [ -f "$f" ] || continue
-        name="$(basename "$f")"
-        if ! diff -q "$f" "/etc/systemd/system/$name" >/dev/null 2>&1; then
-            act "service file changed: $name"
-            do_it sudo cp "$f" "/etc/systemd/system/$name"
-            do_it sudo chown root:root "/etc/systemd/system/$name"
-            do_it sudo chmod 644 "/etc/systemd/system/$name"
-            changed=1
+check_system_files() {   # $1 = the commit whose system files the new code expects
+    # The system files are installed by pi_install_system.sh (phase 1), never by switching code.
+    # A commit that lists them (services/system-files.txt) needs them in place first.
+    local checker="$HERE/pi_install_system.py" out rc=0
+    if [ ! -f "$checker" ]; then
+        say "(System files not checked: pi_install_system.py is not in $HERE. Run push_to_pi.sh again.)"
+        return 0
+    fi
+    out="$(python3 "$checker" --check --from-git "$1" --repo "$REPO" 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        say "System files: match what the new code expects."
+    elif [ "$rc" -eq 3 ]; then
+        printf '%s\n' "$out"
+        if git cat-file -e "$1:services/system-files.txt" 2>/dev/null && [ "$ALLOW_DRIFT" -eq 0 ]; then
+            die "The new code expects system files that are not installed. Install them first (it previews, and can be undone):  bash $HERE/pi_install_system.sh --from-git $1   Or go on anyway with --allow-system-drift."
         fi
-    done
-    [ "$changed" -eq 1 ] && do_it sudo systemctl daemon-reload
-    return 0
-}
-
-install_system_files() {   # the extra files listed in services/system-files.txt (log rotation, a persistent journal)
-    local manifest="$REPO/services/system-files.txt" src dst mode restart unit
-    local restarts=()
-    [ -f "$manifest" ] || return 0
-    while read -r src dst mode restart <&3; do
-        case "$src" in ''|\#*) continue ;; esac
-        if [ ! -f "$REPO/services/$src" ]; then
-            say "(system-files.txt lists services/$src but it is missing; skipped)"
-            continue
-        fi
-        if ! diff -q "$REPO/services/$src" "$dst" >/dev/null 2>&1; then
-            act "system file changed: $dst"
-            do_it sudo mkdir -p "$(dirname "$dst")"
-            do_it sudo cp "$REPO/services/$src" "$dst"
-            do_it sudo chown root:root "$dst"
-            do_it sudo chmod "$mode" "$dst"
-            if [ -n "$restart" ]; then restarts+=("$restart"); fi
-        fi
-    done 3< "$manifest"
-    for unit in ${restarts[@]+"${restarts[@]}"}; do
-        do_it sudo systemctl restart "$unit"
-    done
-    return 0
+        say "(That is expected for older code, or because of --allow-system-drift: no system file is changed here.)"
+    else
+        printf '%s\n' "$out"
+        say "(The system files could not be checked, so I am going on without that check.)"
+    fi
 }
 
 restart_services() {
@@ -134,8 +122,6 @@ if [ "$UNDO" -eq 1 ]; then
     else
         do_it git checkout --detach "$PREV_COMMIT"
     fi
-    install_units
-    install_system_files
     restart_services
     run_check
     exit $?
@@ -174,6 +160,7 @@ if [ "$KIND" = "branch" ] && git show-ref --verify --quiet "refs/heads/$REF"; th
     AHEAD="$(git rev-list --count "origin/$REF..$REF")"
     [ "$AHEAD" -eq 0 ] || die "The local branch '$REF' has $AHEAD commit(s) that are not on origin. I won't overwrite them."
 fi
+check_system_files "$TARGET_COMMIT"
 
 # ---- 2. data snapshot -----------------------------------------------------------------------
 step "2. Snapshot of the speaker's data"
@@ -215,9 +202,7 @@ case "$KIND" in
 esac
 
 # ---- 5. services ------------------------------------------------------------------------------------
-step "5. Service files and restart"
-install_units
-install_system_files
+step "5. Restart the services"
 restart_services
 
 # ---- 6. check ------------------------------------------------------------------------------------------

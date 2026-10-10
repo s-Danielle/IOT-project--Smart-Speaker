@@ -1,5 +1,7 @@
-# Extra system files that belong to the speaker but are not service files.
-# pi_update.sh and copy-and-enable-service.sh install the ones that differ.
+# Extra system files that belong to the speaker but are not service files. (The service files
+# themselves, services/*.service, are installed to /etc/systemd/system/ without being listed here.)
+# scripts/pi/pi_install_system.sh installs them on a running Pi, with a preview and a rollback;
+# copy-and-enable-service.sh installs them on a fresh one. pi_update.sh never touches them.
 #
 # source (in services/)             where it goes                                           mode  restart afterwards
 system/logrotate-smart-speaker      /etc/logrotate.d/smart_speaker                          644

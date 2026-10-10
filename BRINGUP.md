@@ -168,72 +168,102 @@ sudo systemctl stop smart_speaker smart_speaker_health
 
 ---
 
-## Step 5: install the fixes (about 60 minutes)
+## Step 5: install the fixes, in phases (about 90 minutes, spread over a day or more)
 
-The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi pulls from there). Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is covered by more than 700 automatic tests on the development computer, but **none of it has run on the Pi yet**: the shared LED file on real I2C, the NFC reader retry, the WiFi retry, `setup.sh` and the saved system log are all untested on real hardware, so this step is where they get their first real run.
+The fixes live on the branch `pi/fixes`, which has to be on GitHub first (the Pi pulls code from there). Do this after step 4, so the hardware tests were done on the plain audio build and any new problem is clearly the fixes' fault. Everything here is covered by more than 800 automatic tests on the development computer, but **none of it has run on the Pi yet**.
 
-**Part A: the code**
-- [ ] **5.1** Preview. It lists what changes and the system files it would install (log rotation, a saved system log). It changes nothing:
+It is done in phases, **in this order**, because some changes can be undone by switching to another commit and some cannot:
+
+| Phase | What changes | How it is undone | The Pi runs |
+|---|---|---|---|
+| **1. System files** | the service files, the saved system log, log rotation, Mopidy's log setting | `pi_install_system.sh --rollback` and `pi_install_audio.sh --rollback` (each saved the old files first) | the **old** code, unchanged |
+| **2. Code** | only files in the git checkout, and the Python packages | `pi_update.sh --undo`, or switch to **any** commit or tag (so a regression can be found by bisecting) | the new code |
+| **3. Data** | the data file becomes a SQLite database (optional, a switch) | set `SPEAKER_STORAGE=json`; both copies are kept | the new code |
+| **4. WiFi setup mode** | tests that take the Pi off the network | the phone and TESTING_WIFI_AND_WEB.md | the new code |
+
+Phase 1 comes first on purpose: it is made so that the **old code runs happily with it**, and the new code **needs** it (the controller's status file lives in a folder the new service file creates). `pi_update.sh` never installs system files; it only checks that they are in place and stops if they are not. The app (step 6) comes after Phase 2, because the app and the server move together.
+
+**Part A: Phase 1, the system files** (the code stays on the old commit, `bb089ff` or whatever you run now)
+- [ ] **5.1** *On this computer*, in your project folder on `pi/fixes` (pushed to GitHub), copy the helper scripts and the system files to the Pi (it only writes `/tmp/pi`):
   ```
-  bash /tmp/pi/pi_update.sh --dry-run pi/fixes
+  scripts/pi/push_to_pi.sh iot-proj@rpi2.local
   ```
-- [ ] **5.2** Switch the code (it installs, restarts and runs the quick check; the check must end green):
+- [ ] **5.2** Preview. It lists the six system files and says for each one `ok`, `CHANGES` or `NEW`, and which services it would restart. Expect: the server and WiFi service files `ok`; the controller's and health monitor's service files `CHANGES`; the journal setting and log rotation `NEW`. It changes nothing:
   ```
-  bash /tmp/pi/pi_update.sh pi/fixes
+  bash /tmp/pi/pi_install_system.sh --dry-run
   ```
-- [ ] **5.3** Mopidy's settings gain a `[loglevels]` section (so Spotify's own messages reach the Mopidy log). Preview, then for real:
+- [ ] **5.3** Install. It saves the old files first (in `/var/lib/smart-speaker-setup/system-rollback/`), installs, restarts the controller and the health monitor (the music stops for a few seconds) and the system log service, and checks that they came back:
+  ```
+  bash /tmp/pi/pi_install_system.sh
+  ```
+- [ ] **5.4** Mopidy's settings gain a `[loglevels]` section (so Spotify's own messages reach the Mopidy log). Preview, then for real:
   ```
   bash /tmp/pi/pi_install_audio.sh --mopidy-conf --dry-run
   bash /tmp/pi/pi_install_audio.sh --mopidy-conf
   ```
-- [ ] **5.4** The logs are kept:
-  - [ ] `ls /var/log/smart_speaker/` shows `controller.log` (and the server and health logs)
-  - [ ] `ls /var/log/journal` exists (the system log now survives a reboot)
-  - [ ] `cat /etc/logrotate.d/smart_speaker` exists
-  - [ ] `ls -ld /home/iot-proj/IOT-project--Smart-Speaker/Main/local_files/recordings` is owned by `iot-proj`, not `root`
-- [ ] **5.5** `sudo reboot`, wait 90 seconds, then `journalctl --list-boots` shows two or more boots, and `python3 /tmp/pi/pi_smoke_test.py --stable-seconds 30` is green. (This is the first time the Pi keeps a log across a reboot.)
+- [ ] **5.5** Phase 1 landed, and nothing broke (the Pi still runs the OLD code):
+  - [ ] `bash /tmp/pi/pi_install_system.sh --check` says all 6 system files match
+  - [ ] `systemctl is-active smart_speaker smart_speaker_server smart_speaker_health mopidy` says `active` four times, and `systemctl show -p NRestarts --value smart_speaker smart_speaker_health` says `0` for both (counted since the restart in 5.3)
+  - [ ] `ls -ld /run/smart_speaker` shows a folder owned by `iot-proj` (systemd makes it for the controller; it stays empty until Phase 2, because the old code does not write a status file)
+  - [ ] `systemctl cat smart_speaker_health | grep ExecStart` shows the venv's Python (`.../venv/bin/python`)
+  - [ ] `cat /etc/logrotate.d/smart_speaker` and `ls /etc/systemd/journald.conf.d/` show the two new files
+  - [ ] the health light (Light 1) is green, `python3 /tmp/pi/pi_smoke_test.py --stable-seconds 30` is green
+- [ ] **5.6** `sudo reboot`, wait 90 seconds. `journalctl --list-boots` shows two or more boots (the system log now survives a reboot: this is the first time), the services are active with 0 restarts, and the quick check above is green again.
+- [ ] **5.7** Use the speaker as you normally do (taps, Spotify, the buttons, a recording) **for a while, ideally a day**, with the old code still running. Anything new that goes wrong now comes from Phase 1 and nothing else. Tell me about anything odd, then go on to Phase 2.
 
-- [ ] **5.6** Your data is safe and unchanged. The server now saves its data file in a way a power cut cannot damage (see `EDGE_CASES.md`, cases 40 to 47):
-  - [ ] the quick check in 5.2 said the chips, library and settings match what they were before (it compares them; paste the line if it doesn't)
+**Undo Phase 1:** `bash /tmp/pi/pi_install_system.sh --rollback` (puts the old service files back, removes the two new files, restarts) and, for Mopidy, `bash /tmp/pi/pi_install_audio.sh --rollback`.
+
+**Part B: Phase 2, the code** (nothing here touches the system files. If something goes wrong: `bash /tmp/pi/pi_update.sh --undo`; or to find which change did it, go to a commit in between with `bash /tmp/pi/pi_update.sh <commit>` and halve the range each time, like `git bisect`. List the commits with `git log --oneline pi/audio-stack..pi/fixes`.)
+- [ ] **5.8** Preview. It lists what would change, and checks that the system files from Phase 1 are in place (it prints "System files: match what the new code expects"; if it says they differ, it stops and tells you to do Phase 1 first). It changes nothing:
+  ```
+  bash /tmp/pi/pi_update.sh --dry-run pi/fixes
+  ```
+- [ ] **5.9** Switch the code (it installs the Python packages first, switches, restarts the three services and runs the quick check; the check must end green). Only code changes here, so everything in this phase can be undone by going back to a commit:
+  ```
+  bash /tmp/pi/pi_update.sh pi/fixes
+  ```
+- [ ] **5.10** Your data is safe and unchanged, and the program folders are right. The server now saves its data file in a way a power cut cannot damage (see `EDGE_CASES.md`, cases 40 to 47):
+  - [ ] the quick check in 5.9 said the chips, library and settings match what they were before (it compares them; paste the line if it doesn't)
   - [ ] open the app: the chips, the library and the settings look the same as before
   - [ ] rename a chip in the app, then `ls -l /home/iot-proj/IOT-project--Smart-Speaker/Main/server_data.json*` shows the file and a new `server_data.json.bak`
   - [ ] `grep STORAGE /var/log/smart_speaker_server.log | tail -n 5` says "data file opened" (and nothing about damage)
   - [ ] a chip you deleted earlier does not come back after `sudo systemctl restart smart_speaker_server`
+  - [ ] `ls -ld /home/iot-proj/IOT-project--Smart-Speaker/Main/local_files/recordings` is owned by `iot-proj`, not `root` (the server now hands the folder to the speaker's user)
 
-**Part B: what you should now see and hear** (tell me pass or fail for each; paste the log lines for any fail with `journalctl -u smart_speaker -n 80`)
-- [ ] **5.7** Lights: with the health monitor running, watch all three lights for 60 seconds. No flicker, no light going dark for a moment. After a Vol+ or Vol- press, the speaker light (Light 3) goes back to its normal colour. (Before: it stayed dark.)
-- [ ] **5.8** A tap **loads** the chip (green flash and chime) and **Play** starts it. Tap the same chip again while it plays: the music must keep going.
-- [ ] **5.9** A song that can't start: in the app give a chip the made-up link `spotify:track:0000000000000000000000`, tap it and press Play. You should get the error sound and a red flash within a few seconds, and the speaker goes back to "chip loaded". (Before: 60 seconds of silent "playing".)
-- [ ] **5.10** Stop button: hold Stop for 3 seconds (the chip is unloaded). Then tap a chip, press Play, and short-press Stop: the music must stop. (Before: the first short press after a long press was ignored.)
-- [ ] **5.11** Recording: hold Record for 5 seconds (the recording light turns **red**), speak, short-press Record. You hear the "saved" chime to the end, and a `[RECORDING]` entry appears in the library. Hold Play for 2 seconds: it plays back.
-- [ ] **5.12** Parental controls, from the app, one at a time:
+**Part B continued: what you should now see and hear** (tell me pass or fail for each; paste the log lines for any fail with `journalctl -u smart_speaker -n 80`)
+- [ ] **5.11** Lights: with the health monitor running, watch all three lights for 60 seconds. No flicker, no light going dark for a moment. After a Vol+ or Vol- press, the speaker light (Light 3) goes back to its normal colour. (Before: it stayed dark.)
+- [ ] **5.12** A tap **loads** the chip (green flash and chime) and **Play** starts it. Tap the same chip again while it plays: the music must keep going.
+- [ ] **5.13** A song that can't start: in the app give a chip the made-up link `spotify:track:0000000000000000000000`, tap it and press Play. You should get the error sound and a red flash within a few seconds, and the speaker goes back to "chip loaded". (Before: 60 seconds of silent "playing".)
+- [ ] **5.14** Stop button: hold Stop for 3 seconds (the chip is unloaded). Then tap a chip, press Play, and short-press Stop: the music must stop. (Before: the first short press after a long press was ignored.)
+- [ ] **5.15** Recording: hold Record for 5 seconds (the recording light turns **red**), speak, short-press Record. You hear the "saved" chime to the end, and a `[RECORDING]` entry appears in the library. Hold Play for 2 seconds: it plays back.
+- [ ] **5.16** Parental controls, from the app, one at a time:
   - [ ] cap the volume at 40, press Vol+ many times: it stops at 40
   - [ ] set quiet hours around now: a chip tap + Play is refused with the error sound, and so is Play/Pause resuming a paused song
   - [ ] set a daily limit of 2 minutes: after 2 minutes of music it is refused
   - [ ] put every setting back to normal afterwards
-- [ ] **5.13** Voice: hold PTT and say "hi speaker, clear" with a chip loaded: the chip's song link is cleared (check the app) and only then the music stops. Say a command with the internet off or the microphone covered: the speaker answers within about 10 seconds and the buttons still work.
-- [ ] **5.14** The status file and the health check (the speaker now proves it is alive, and says what it is doing):
+- [ ] **5.17** Voice: hold PTT and say "hi speaker, clear" with a chip loaded: the chip's song link is cleared (check the app) and only then the music stops. Say a command with the internet off or the microphone covered: the speaker answers within about 10 seconds and the buttons still work.
+- [ ] **5.18** The status file and the health check (the speaker now proves it is alive, and says what it is doing):
   - [ ] `cat /run/smart_speaker/status.json` shows the state, the chip, the volume, the version (the git commit) and `last_play`. Run it twice a few seconds apart: the `monotonic` number must go up (it is rewritten every second)
   - [ ] `curl -s -w '\n%{http_code}\n' localhost:8080/health` shows `"ok": true` and `200`. `curl -s localhost:8080/status` shows the same controller information, `storage`, and today's `usage`
-  - [ ] with the made-up link from 5.9, `/health` is still `ok` but `warnings` says the last song could not be played, with Mopidy's reason, and `last_play` in the status says `failed`
+  - [ ] with the made-up link from 5.13, `/health` is still `ok` but `warnings` says the last song could not be played, with Mopidy's reason, and `last_play` in the status says `failed`
   - [ ] **Freeze the controller** to prove a stuck one is noticed: `sudo systemctl kill --signal=SIGSTOP smart_speaker`. Within about 25 seconds `curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/health` says `503` and the health light (Light 1) blinks red. Then `sudo systemctl kill --signal=SIGCONT smart_speaker`: within a few seconds it says `200` again and the light is green. (Before, a stuck controller looked fine because systemd only asks whether the process exists.)
-- [ ] **5.15** The API token (changes from other devices now need a secret; the speaker itself, and the WiFi setup hotspot, do not):
+- [ ] **5.19** The API token (changes from other devices now need a secret; the speaker itself, and the WiFi setup hotspot, do not):
   - [ ] after the first start of the new server, `ls -l /home/iot-proj/IOT-project--Smart-Speaker/SECRETS` shows a file owned by `iot-proj` (mode `-rw-------`), and `grep SECURITY /var/log/smart_speaker_server.log | tail -n 3` says a new API token was created. **Never paste the token or the file.** Read the token on the speaker with `grep DEBUG_TOKEN /home/iot-proj/IOT-project--Smart-Speaker/SECRETS` and type it into the app's Settings
   - [ ] from **this computer** (another device on the network): `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/chips` says `200` (reading is open) and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://rpi2.local:8080/usage/add -d '{"seconds":0}'` says `401` (changing is not)
   - [ ] `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/debug/system` says `401`, and with the header `-H "X-Speaker-Token: <the token>"` it says `200`
   - [ ] the controller and the health light still work (they call the server from the speaker itself, which needs no token): tap a chip, press Play, and the health light stays green
   - [ ] in the app (after the new app is installed, see step 6 below): without the token, changing a chip says the token is missing; with the token typed into Settings, it works
-- [ ] **5.16** The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
+- [ ] **5.20** The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
 
-**Part C: the database (SQLite)** (the data moves out of the JSON file into a database that a power cut cannot damage; this is a switch you turn on, look at, rehearse turning off, and turn on again)
+**Part C: Phase 3, the database (SQLite)** (do this only after Phase 2 has run well for a while) (the data moves out of the JSON file into a database that a power cut cannot damage; this is a switch you turn on, look at, rehearse turning off, and turn on again)
 
 How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been running) or `sqlite`. When the server starts and finds the setting has changed, it moves your data across by itself, **checks every row against the original**, and keeps the old copy under a dated name (`server_data.json.migrated-<date>` or `server_data.db.exported-<date>`). If the check fails it undoes itself and carries on with the old copy, and says so in the log. There is only ever one live copy of the data, so the two can't drift apart.
 
-- [ ] **5.17** Take a snapshot of what the app sees now, to compare with later (it hashes the chips, library and settings):
+- [ ] **5.21** Take a snapshot of what the app sees now, to compare with later (it hashes the chips, library and settings):
   ```
   python3 /tmp/pi/pi_smoke_test.py --only data --save-data /tmp/data-json.json
   ```
-- [ ] **5.18** Switch to SQLite:
+- [ ] **5.22** Switch to SQLite:
   ```
   sudo mkdir -p /etc/systemd/system/smart_speaker_server.service.d
   printf '[Service]\nEnvironment=SPEAKER_STORAGE=sqlite\n' | sudo tee /etc/systemd/system/smart_speaker_server.service.d/storage.conf
@@ -247,27 +277,28 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
   - [ ] `python3 /tmp/pi/db_export_json.py` says the database passes its own check and shows your chip and song counts
   - [ ] `python3 /tmp/pi/pi_smoke_test.py --only api --compare-data /tmp/data-json.json` says the data matches
   - [ ] the app shows the same chips, library and settings as before
-- [ ] **5.19** Use it: rename a chip and assign a different song in the app, tap that chip, press Play. Add a song from the app. Everything works as before, and the controller log shows no errors about the chip lookup (`journalctl -u smart_speaker -n 50`).
-- [ ] **5.20** `sudo reboot`. After 90 seconds the changes from 5.19 are still there and `/status` still says `sqlite`. (The real power-cut test is in step 7.)
-- [ ] **5.21** Rehearse the way back. Switch to JSON:
+- [ ] **5.23** Use it: rename a chip and assign a different song in the app, tap that chip, press Play. Add a song from the app. Everything works as before, and the controller log shows no errors about the chip lookup (`journalctl -u smart_speaker -n 50`).
+- [ ] **5.24** `sudo reboot`. After 90 seconds the changes from 5.23 are still there and `/status` still says `sqlite`. (The real power-cut test is in step 7.)
+- [ ] **5.25** Rehearse the way back. Switch to JSON:
   ```
   printf '[Service]\nEnvironment=SPEAKER_STORAGE=json\n' | sudo tee /etc/systemd/system/smart_speaker_server.service.d/storage.conf
   sudo systemctl daemon-reload
   sudo systemctl restart smart_speaker_server
   ```
   - [ ] the log says the data was moved back into the JSON file, and the database was kept as `server_data.db.exported-...`
-  - [ ] `/status` shows `"storage": "json"`, and the changes you made in 5.19 are still there in the app
+  - [ ] `/status` shows `"storage": "json"`, and the changes you made in 5.23 are still there in the app
   - [ ] `ls /home/iot-proj/IOT-project--Smart-Speaker/Main/server_data*` shows `server_data.json` and **no** `server_data.db`
-- [ ] **5.22** Switch to SQLite again (same commands as 5.18 with `sqlite`) and check the changes are still there. If everything passed, **leave it on SQLite** and tell me: I then make SQLite the default in the code, so this setting file is no longer needed. (If something failed, set it back to `json`, tell me what the log said, and nothing is lost: both copies are kept.)
+- [ ] **5.26** Switch to SQLite again (same commands as 5.22 with `sqlite`) and check the changes are still there. If everything passed, **leave it on SQLite** and tell me: I then make SQLite the default in the code, so this setting file is no longer needed. (If something failed, set it back to `json`, tell me what the log said, and nothing is lost: both copies are kept.)
 
-**Part D: WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
-- [ ] **5.23** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.
-- [ ] **5.24** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot.
+**Part D: Phase 4, WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
+- [ ] **5.27** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.
+- [ ] **5.28** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot.
 
-**Undo, if something is wrong**
-- Code: `bash /tmp/pi/pi_update.sh --undo`. It goes back to the previous code. The extra system files stay in place; they're harmless. To remove them: `sudo rm /etc/systemd/journald.conf.d/90-smart-speaker.conf /etc/logrotate.d/smart_speaker` and then `sudo systemctl restart systemd-journald`.
+**Undo, in the order that matters**
+- The data (Phase 3) first, if the Pi has been on SQLite: set `SPEAKER_STORAGE=json` as in 5.25. A code switch does not move data by itself.
+- Then the code (Phase 2): `bash /tmp/pi/pi_update.sh --undo`.
+- Then the system files (Phase 1), only if they themselves are the problem: `bash /tmp/pi/pi_install_system.sh --rollback`. They are made so that the old code works with them, so there is normally no need.
 - Mopidy settings: `bash /tmp/pi/pi_install_audio.sh --rollback`.
-- The database: set `SPEAKER_STORAGE=json` as in 5.21. The code switch above (`pi_update.sh --undo`) does not move data by itself: if the Pi has been on SQLite, do 5.21 **first**, then undo the code.
 
 ---
 
@@ -282,7 +313,7 @@ Do this after step 5, because the app talks to the new server. The app code coul
   ```
 - [ ] **6.3** Open `http://rpi2.local:8080` in a browser on any computer or phone on the network:
   - [ ] the home screen shows a second card saying what the speaker is doing ("Waiting for a chip", "Ready: <chip>", "Playing", "Paused", "Recording"), the volume and "Played today". Tap a chip on the speaker, press Play: the card follows within about 5 seconds
-  - [ ] with the made-up link from 5.9 the card shows an orange "The last song could not be played" with Mopidy's reason; a later good play clears it
+  - [ ] with the made-up link from 5.13 the card shows an orange "The last song could not be played" with Mopidy's reason; a later good play clears it
   - [ ] stop the controller (`sudo systemctl stop smart_speaker` on the Pi): within about 25 seconds the card says "The speaker is not running". Start it again
 - [ ] **6.4** The token. In the app go to Settings, **Speaker Token**, type the token (read it on the Pi with `grep DEBUG_TOKEN /home/iot-proj/IOT-project--Smart-Speaker/SECRETS`; do not paste it anywhere else), press **Check**: "The speaker accepted the token". With a wrong token it says "did not accept".
 - [ ] **6.5** Without the token (clear the field, Save): changing a chip name or a setting shows "The speaker needs its token for this. Enter it in Settings." and changes nothing. Looking at chips, library and settings still works. Put the token back.

@@ -33,6 +33,9 @@ done
 cp "$REPO/services/audio/asound.conf" "$REPO/services/audio/mopidy.conf" "$BUNDLE/pi/audio/"
 cp "$REPO"/services/*.service "$BUNDLE/pi/units/"
 cp "$REPO/requirements.txt" "$BUNDLE/pi/"
+# The whole services/ folder, laid out as in the repo: pi_install_system.py installs from it
+cp -r "$REPO/services" "$BUNDLE/pi/services"
+rm -rf "$BUNDLE/pi/services/__pycache__"
 git -C "$REPO" rev-parse HEAD > "$BUNDLE/pi/BUNDLE_COMMIT" 2>/dev/null || echo unknown > "$BUNDLE/pi/BUNDLE_COMMIT"
 
 chmod +x "$BUNDLE"/pi/*.sh "$BUNDLE"/pi/*.py 2>/dev/null || true

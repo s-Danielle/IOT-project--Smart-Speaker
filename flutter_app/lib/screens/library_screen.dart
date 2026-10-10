@@ -115,7 +115,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final uploaded = await api.uploadFileBytes(file.bytes!, file.name);
       final chosenName = nameController.text.trim();
       if (chosenName.isNotEmpty && chosenName != uploaded.name) {
-        await api.updateSong(uploaded.id, chosenName, uploaded.uri);
+        var songId = uploaded.id;
+        if (songId.isEmpty) {
+          // An older speaker does not say which entry it made: find it by its link.
+          final library = await api.getLibrary();
+          for (final song in library) {
+            if (song.uri == uploaded.uri) songId = song.id;
+          }
+        }
+        if (songId.isNotEmpty) {
+          await api.updateSong(songId, chosenName, uploaded.uri);
+        }
       }
       _loadSongs();
 
