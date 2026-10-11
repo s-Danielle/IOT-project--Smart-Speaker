@@ -38,7 +38,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
+sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ini_edit  # noqa: E402
@@ -203,7 +203,7 @@ class Setup:
             needed.append(REF_MOPIDY)
         for path in needed:
             if not path.exists():
-                raise Stop("Missing %s. Copy the whole bundle with scripts/pi/push_to_pi.sh." % path)
+                raise Stop("Missing %s. Copy the whole bundle with scripts/dev/push_to_pi.sh." % path)
         try:
             pwd.getpwnam(self.app_user)
         except KeyError:

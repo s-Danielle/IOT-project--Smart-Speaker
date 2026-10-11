@@ -1,8 +1,8 @@
 """A small, careful editor for INI files such as /etc/mopidy/mopidy.conf.
 
 Python's configparser rewrites the whole file: it drops comments and changes
-the layout. The live mopidy.conf holds the Spotify settings, so we change only
-the lines we mean to change and leave every other byte alone.
+the layout. The live mopidy.conf holds the Spotify settings, so only the lines being
+changed are rewritten and every other byte is kept.
 
 Rules it understands:
   [section]            a header on its own line

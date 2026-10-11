@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sets up shared audio for the Smart Speaker. Run it on the Pi.
+# Sets up shared audio for the Smart Speaker. Runs on the Pi.
 #
 #   bash pi_install_audio.sh --dry-run        # preview only, changes nothing
 #   bash pi_install_audio.sh                  # Part A: sound card sharing

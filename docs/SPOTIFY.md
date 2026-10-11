@@ -128,7 +128,7 @@ The fixed `spotify_check.py`, run with sudo on the Pi (old code, nothing changed
 - **Two more things the script got wrong:** its verdict said "A local file plays but the Spotify track does not" when no local file had been tested (the library holds none), and the credentials line said "none found" because it was run without sudo.
 - **Fixed:** the script now waits up to 30 seconds after the lookup, only counts "stop" as a failure after Mopidy has said "play", shows the lookup time, says in plain words why a test failed, and plays a quiet test tone as the control when there is no local song. The beep-over-music test in `pi_smoke_test.py` had the same flaw (it waited a fixed 4 seconds), and is fixed too. The tests now include a fake Mopidy that starts slowly, like Spotify does.
 - **The made-up link failed as it should,** with `ACK [50@0] {add} directory or file not found`. That is the same message as the Sep 5 failures. The new "Lookup" column shows how long Mopidy took to refuse it. On Sep 5 it took milliseconds.
-- **Next:** copy the fixed scripts to the Pi (`scripts/pi/push_to_pi.sh`) and run it again with sudo.
+- **Next:** copy the fixed scripts to the Pi (`scripts/dev/push_to_pi.sh`) and run it again with sudo.
 
 ### 2026-10-03: what the old logs say about Sep 5 (and Aug 13)
 

@@ -34,7 +34,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
+sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pi_common import is_root, now_iso, sh, stamp  # noqa: E402
@@ -86,8 +86,7 @@ class GitSource:
         self.label = f"git {ref}"
 
     def _git(self, *args):
-        # safe.directory: run with sudo, git is root and the checkout belongs to iot-proj, which git
-        # refuses ("dubious ownership") unless told. Only reads happen here; nothing is written.
+        # safe.directory: under sudo git runs as root, and the checkout belongs to iot-proj.
         command = ["git", "-c", f"safe.directory={self.repo}", "-C", self.repo, *args]
         result = subprocess.run(command, capture_output=True, timeout=30)
         return result.stdout if result.returncode == 0 else None

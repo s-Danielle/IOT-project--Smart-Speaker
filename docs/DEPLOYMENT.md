@@ -10,7 +10,7 @@ Some changes can be undone by switching to another git commit. Some cannot. They
 |---|---|---|---|---|
 | **1. System** | service files, the saved system log (journald), log rotation, Mopidy's log setting | `pi_install_system.sh`, `pi_install_audio.sh --mopidy-conf` | `--rollback` of each (they save every file they replace) | the old code |
 | **2. Code** | the git checkout and the Python packages | `pi_update.sh <branch, tag or commit>` | `pi_update.sh --undo`, or any other commit | the new code |
-| **2b. App** | the web app on the Pi, the Android app | `scripts/deploy_web.sh`, `flutter build apk` | `deploy_web.sh --undo`; keep the old APK | the new code |
+| **2b. App** | the web app on the Pi, the Android app | `scripts/dev/deploy_web.sh`, `flutter build apk` | `deploy_web.sh --undo`; keep the old APK | the new code |
 | **3. Data** | JSON file becomes a SQLite database (a switch, off by default) | `SPEAKER_STORAGE` (BRINGUP 5.22) | set it back; both copies are kept | the new code |
 | **4. WiFi setup** | tests that take the Pi off the network | TESTING_WIFI_AND_WEB.md | the phone | the new code |
 
@@ -41,7 +41,7 @@ The data comes last because it is the one change that code switching does not co
 | a service file or the journal setting misbehaves | `bash /tmp/pi/pi_install_system.sh --rollback` |
 | Mopidy's settings | `bash /tmp/pi/pi_install_audio.sh --rollback` |
 | the new code misbehaves | `bash /tmp/pi/pi_update.sh --undo` (or a named commit) |
-| the new web app misbehaves | `scripts/deploy_web.sh --undo` |
+| the new web app misbehaves | `scripts/dev/deploy_web.sh --undo` |
 | the new Android app misbehaves | install the APK you kept |
 | SQLite misbehaves | `SPEAKER_STORAGE=json` and restart the server (it carries the data back and checks it) |
 | nothing works and you want everything as it was | undo in this order: data, code, system files (BRINGUP 5, "Undo, in the order that matters"), then the SD-card copy as the last resort |

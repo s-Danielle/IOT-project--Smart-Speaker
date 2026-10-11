@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guided test of the status LEDs. Run it ON THE PI.
+"""Guided test of the status LEDs. Runs on the Pi.
 
     sudo systemctl stop smart_speaker smart_speaker_health
     python3 test_leds.py
@@ -14,7 +14,7 @@ The speaker has 3 lights in the code:
   Light 3 (Speaker) ONE LED split over two chips: blue = 0x21 P6, green = 0x21 P7,
                     red = 0x20 P6 (the buttons chip, whose P0-P5 must stay high)
 
-The pins must match Main/hardware/leds.py (a test checks that).
+The pins must match Main/hardware/leds.py.
 Everything is switched off again when this ends, even if you press Ctrl-C.
 """
 

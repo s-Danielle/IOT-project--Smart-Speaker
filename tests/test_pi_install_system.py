@@ -368,7 +368,7 @@ def test_the_programs_the_real_service_files_start_are_absolute_paths():
 
 
 def test_the_bundle_script_copies_the_whole_services_folder():
-    text = (REPO / "scripts" / "pi" / "push_to_pi.sh").read_text()
+    text = (REPO / "scripts" / "dev" / "push_to_pi.sh").read_text()
     assert 'cp -r "$REPO/services" "$BUNDLE/pi/services"' in text
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A quick automatic health check for the Smart Speaker. Run it ON THE PI.
+"""A quick automatic health check for the Smart Speaker. Runs on the Pi.
 
     python3 pi_smoke_test.py                       # all checks
     python3 pi_smoke_test.py --stable-seconds 30   # also watch for restarts for 30 s
@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 
-sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
+sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pi_common import (  # noqa: E402
@@ -153,7 +153,7 @@ def check_i2c(report):
         report.add("FAIL", "LED chip 0x21", "no answer on I2C bus 1")
     else:
         report.add("PASS", "LED chip 0x21", "answers (0x%02x)" % value)
-    # The NFC reader is NOT probed: its thread polls it all day and a stray read could confuse it.
+    # The NFC reader is not probed: the controller polls it all day.
     text, where = controller_log()
     if where is None:
         report.add("SKIP", "NFC reader", "the controller log is not readable here (run with sudo)")

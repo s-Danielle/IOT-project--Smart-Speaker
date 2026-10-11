@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Backs up the speaker's data and the system files our scripts change, and can
-# put them back. Run it on the Pi.
+# Backs up the speaker's data and the system files that the pi/ scripts change, and
+# can put them back. Runs on the Pi.
 #
 #   bash pi_backup.sh                         make a backup in /home/iot-proj/backups/<time>/
 #   bash pi_backup.sh --list                  list the backups

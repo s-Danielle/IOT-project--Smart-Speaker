@@ -50,6 +50,6 @@ A list for whoever fixes the README. Delete this file when that is done. The REA
 
 | Line | Add |
 |---|---|
-| 153-233 | `Main/hardware/nfc_service.py`, `mic_session.py`, `chip_store.py`, `wifi_manager.py`, `captive_responder.py`, `health.py`, `Main/utils/`, `Main/setup.sh`, `scripts/pi/` (the helper scripts for testing and updating the Pi), `scripts/monitor_gpio.py`, `scripts/install-flutter.sh`, `tests/`, `docs/`, `BRINGUP.md`, `EDGE_CASES.md`, `pytest.ini` |
+| 153-233 | `Main/hardware/nfc_service.py`, `mic_session.py`, `chip_store.py`, `wifi_manager.py`, `captive_responder.py`, `health.py`, `Main/utils/`, `Main/setup.sh`, `scripts/` (the helper scripts: `dev/` runs on this computer, `pi/` on the Pi), `tests/`, `docs/`, `BRINGUP.md`, `EDGE_CASES.md`, `pytest.ini` |
 | 547-552 | `BRINGUP.md` (the checklist for bringing the Pi up), `docs/SPOTIFY.md` (how Spotify works here and the debugging log), `EDGE_CASES.md` |
 | 146 | The project poster is still the blank template (a team job, not code) |

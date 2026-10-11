@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Moves the code on the Pi to a branch or tag, installs what it needs, restarts
-# the speaker's services and runs the quick check. Run it ON THE PI as the
-# normal user (iot-proj). It asks for sudo itself for the system steps.
+# the speaker's services and runs the quick check. Runs on the Pi as the normal
+# user (iot-proj). It asks for sudo itself for the system steps.
 #
 #   bash pi_update.sh pi/audio-stack         a branch
 #   bash pi_update.sh v1.0                   a tag
@@ -57,8 +57,6 @@ cd "$REPO"
 mkdir -p "$STATE"
 
 check_system_files() {   # $1 = the commit whose system files the new code expects
-    # The system files are installed by pi_install_system.sh (phase 1), never by switching code.
-    # A commit that lists them (services/system-files.txt) needs them in place first.
     local checker="$HERE/pi_install_system.py" out rc=0
     if [ ! -f "$checker" ]; then
         say "(System files not checked: pi_install_system.py is not in $HERE. Run push_to_pi.sh again.)"
@@ -116,8 +114,7 @@ if [ "$UNDO" -eq 1 ]; then
     git status --porcelain | grep -v '^??' | grep -vE 'web_app/index.html|Unit-tests/\.venv' && die "There are unexpected local edits (listed above)." || true
     [ -d Unit-tests/.venv ] && do_it git checkout -- Unit-tests/.venv 2>/dev/null || true
     if [ "$PREV_BRANCH" != "HEAD" ]; then
-        # Point the branch back at the old commit. Unlike "reset --hard" this keeps local edits
-        # that are not part of the switch (such as the deployed web app's index.html).
+        # Unlike "reset --hard", this keeps local edits such as the deployed index.html.
         do_it git checkout -B "$PREV_BRANCH" "$PREV_COMMIT"
     else
         do_it git checkout --detach "$PREV_COMMIT"

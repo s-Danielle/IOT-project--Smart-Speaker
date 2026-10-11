@@ -1,32 +1,29 @@
 #!/usr/bin/env bash
 #
-# Run this on the computer where the repo is (not on the Pi). It copies the Pi
-# helper scripts, and the few repo files they need, to /tmp/pi on the Pi. It
-# changes nothing else on the Pi.
+# Copies scripts/pi and the repo files it needs to /tmp/pi on the Pi. Run it on the
+# development machine. It writes only to /tmp/pi on the Pi.
 #
-#   scripts/pi/push_to_pi.sh [user@host]       (default: iot-proj@rpi2.local)
+#   scripts/dev/push_to_pi.sh [user@host]       (default: iot-proj@rpi2.local)
 #
-# Then, on the Pi:
-#   sudo bash /tmp/pi/pi_report.sh > /tmp/report.txt
+# The bundle holds scripts/pi/*, services/ (whole folder, as pi_install_system.py
+# reads it), services/audio/asound.conf and mopidy.conf, and requirements.txt.
+# It also records the commit in BUNDLE_COMMIT.
 #
-# Why not just `scp -r scripts/pi`? The scripts also need services/audio/*,
-# the service files and requirements.txt, and this puts them in one folder.
+# Plain `scp -r scripts/pi` would miss the files outside scripts/pi, so the bundle is
+# assembled in a temporary folder first.
 
 set -euo pipefail
 
 TARGET="${1:-iot-proj@rpi2.local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PI_SCRIPTS="$REPO/scripts/pi"
 
 BUNDLE="$(mktemp -d)"
 trap 'rm -rf "$BUNDLE"' EXIT
 mkdir -p "$BUNDLE/pi/audio" "$BUNDLE/pi/units"
 
-# The scripts themselves (not this laptop-side one, and no caches)
-for file in "$SCRIPT_DIR"/*; do
-    case "$(basename "$file")" in
-        push_to_pi.sh|__pycache__) continue ;;
-    esac
+for file in "$PI_SCRIPTS"/*; do
     [ -f "$file" ] && cp "$file" "$BUNDLE/pi/"
 done
 

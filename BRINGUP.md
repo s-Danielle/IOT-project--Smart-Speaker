@@ -52,7 +52,7 @@ The Pi runs old code: commit `45a4eae` from Jul 24, which is 4 commits behind Gi
 - [ ] **2.1** Power on and watch Light 1 for about 90 seconds (yellow pulse, then blue or green). Tell me anything odd, especially lights flickering or going dark every few seconds.
 - [x] **2.2** *On this computer*, in the repo folder, copy the helper scripts to the Pi (it only writes `/tmp/pi` on the Pi). Use `rpi2.local`: plain `rpi2` does not resolve from this computer.
   ```
-  scripts/pi/push_to_pi.sh iot-proj@rpi2.local
+  scripts/dev/push_to_pi.sh iot-proj@rpi2.local
   ```
 - [x] **2.3** On the Pi, collect the facts (sudo is only used to read root-only files and the Mopidy log; nothing is changed):
   ```
@@ -162,7 +162,7 @@ sudo systemctl stop smart_speaker smart_speaker_health
   ```
   Tap each of the 4 tags and write down the IDs. Leave one tag on the reader for 10 seconds and tell me whether it causes repeated swipe sounds.
 - [x] **4.5** Audio: `bash Unit-tests/BasicSound.sh` (you should hear "front center"), `bash Unit-tests/RecordShortAudio.sh` (records 5 seconds; play it back with `aplay recording_*.wav`). Check the volume at 10%, 50% and 90% (`amixer -c0 sset PCM 10%`, and so on; **start low**) and tell me if the loudest is safe for hearing.
-- [x] **4.6** PTT: `cd /home/iot-proj/IOT-project--Smart-Speaker/Main && ../venv/bin/python ../scripts/test-ptt.py`
+- [x] **4.6** PTT: `cd /home/iot-proj/IOT-project--Smart-Speaker/Main && ../venv/bin/python ../scripts/pi/test_ptt.py`
 - [x] **4.7** Start the services again (`sudo systemctl start smart_speaker smart_speaker_health`) and start a song. Watch the lights for 60 seconds while the health monitor runs, and tell me about any flicker. Note CPU and memory in `top` while Spotify starts.
 - [x] **4.8** Play Spotify continuously for 20 minutes. Listen for dropouts, search the Mopidy log for `xrun` and `underrun` (`journalctl -u mopidy | grep -iE "xrun|underrun"`), and note CPU and memory.
 
@@ -186,7 +186,7 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
 **Part A: Phase 1, the system files** (the code stays on the old commit, `bb089ff` or whatever you run now)
 - [ ] **5.1** *On this computer*, in your project folder on `pi/fixes` (the same commit as `rc1`; check with `git log --oneline -1`), copy the helper scripts and the system files to the Pi (it only writes `/tmp/pi`):
   ```
-  scripts/pi/push_to_pi.sh iot-proj@rpi2.local
+  scripts/dev/push_to_pi.sh iot-proj@rpi2.local
   ```
 - [ ] **5.2** Preview. It lists the six system files and says for each one `ok`, `CHANGES` or `NEW`, and which services it would restart. Expect: the server and WiFi service files `ok`; the controller's and health monitor's service files `CHANGES`; the journal setting and log rotation `NEW`. It changes nothing:
   ```
@@ -307,9 +307,9 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
 Do this after Phase 2 of step 5 (the code), because the app talks to the new server. (The new app also works against the old server, so a rollback of the Pi's code does not strand it. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).) The app code could not be built on the development computer (Flutter was not run there). I did run Dart's analyzer over `flutter_app/lib` on a scratch copy and it reported **no issues**, which catches mistakes in types and names but is not the same as a build, so 6.1 is still yours to run.
 
 - [ ] **6.1** *On this computer.* Check the app compiles: `cd flutter_app && flutter analyze`. It should say "No issues found". If it prints errors, paste them to me and I fix them before you build anything.
-- [ ] **6.2** *On this computer.* Build the web app and put it on the Pi (this only replaces the web app's files in `Main/web_app` on the Pi, after keeping the old ones as `Main/web_app.prev`; no service restarts. To go back: `scripts/deploy_web.sh --undo`):
+- [ ] **6.2** *On this computer.* Build the web app and put it on the Pi (this only replaces the web app's files in `Main/web_app` on the Pi, after keeping the old ones as `Main/web_app.prev`; no service restarts. To go back: `scripts/dev/deploy_web.sh --undo`):
   ```
-  scripts/deploy_web.sh iot-proj@rpi2.local
+  scripts/dev/deploy_web.sh iot-proj@rpi2.local
   ```
 - [ ] **6.3** Open `http://rpi2.local:8080` in a browser on any computer or phone on the network:
   - [ ] the home screen shows a second card saying what the speaker is doing ("Waiting for a chip", "Ready: <chip>", "Playing", "Paused", "Recording"), the volume and "Played today". Tap a chip on the speaker, press Play: the card follows within about 5 seconds
@@ -366,4 +366,4 @@ Do this after Phase 2 of step 5 (the code), because the app talks to the new ser
 | back up / list / restore | `bash /tmp/pi/pi_backup.sh`, `--list`, `--restore <folder> --dry-run` |
 | read the logs | `journalctl -u smart_speaker -u mopidy -n 100`; the controller's own log is `/var/log/smart_speaker.log` on the old code and `/var/log/smart_speaker/controller.log` on newer code |
 
-If `/tmp/pi` is gone after a reboot, run `scripts/pi/push_to_pi.sh iot-proj@rpi2.local` again on this computer.
+If `/tmp/pi` is gone after a reboot, run `scripts/dev/push_to_pi.sh iot-proj@rpi2.local` again on this computer.

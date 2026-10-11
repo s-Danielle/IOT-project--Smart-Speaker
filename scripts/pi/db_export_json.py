@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """Check the speaker's SQLite database and write a copy of its data as a JSON file.
 
-Run it ON THE PI. It only READS the database (the speaker can stay running):
+Runs on the Pi. It only reads the database, so the speaker can keep running:
 
     python3 /tmp/pi/db_export_json.py                 # check the database and say what is in it
     python3 /tmp/pi/db_export_json.py --write         # also write /tmp/speaker_data_export.json
     python3 /tmp/pi/db_export_json.py --write --out ~/my-copy.json
 
-What this is for: a copy you can read, keep or hand to someone, and a way to get your chips and
-songs out if the speaker will not start. It is NOT how you switch the speaker back to JSON. For
-that, set SPEAKER_STORAGE=json and restart the server: it moves the data across by itself, checks
-it, and keeps the database as server_data.db.exported-<date> (see BRINGUP.md, step 5).
-
-By default the copy is written to /tmp, not next to the database, because a JSON file next to a
-live database makes the server warn at every start.
+Use it for a readable copy of the data, or to recover chips and songs if the server will not start.
+It does not switch the speaker back to JSON: for that, set SPEAKER_STORAGE=json and restart the server.
+The copy goes to /tmp by default, because a JSON file next to a live database makes the server warn.
 """
 
 import argparse
@@ -21,7 +17,7 @@ import os
 import sqlite3
 import sys
 
-sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
+sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_REPO = "/home/iot-proj/IOT-project--Smart-Speaker"

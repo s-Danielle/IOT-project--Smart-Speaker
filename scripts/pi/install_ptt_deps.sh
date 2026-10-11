@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install PTT (Push-to-Talk) voice command dependencies
-# Run this on Raspberry Pi before using voice commands
+# Runs on the Pi. Run it before using voice commands.
 
 set -e
 
@@ -25,6 +25,6 @@ fi
 echo ""
 echo "=== Done! ==="
 echo ""
-echo "Test with: cd Main && python3 ../scripts/test-ptt.py"
+echo "Test with: cd Main && python3 ../scripts/pi/test_ptt.py"
 echo ""
 echo "Note: PTT requires internet connection for Google Speech API"

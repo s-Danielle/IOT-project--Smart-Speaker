@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guided test of the 6 buttons (the PCF8574 chip at I2C address 0x20). Run it ON THE PI.
+"""Guided test of the 6 buttons (the PCF8574 chip at I2C address 0x20). Runs on the Pi.
 
     python3 test_buttons.py          # guided: it asks you to press each button
     python3 test_buttons.py --live   # just show the buttons as you press them
@@ -14,7 +14,7 @@ Reading the chip is safe even while the speaker's services run, but stopping
 them first gives a cleaner test:
     sudo systemctl stop smart_speaker smart_speaker_health
 
-The pin numbers below must match Main/config/settings.py (a test checks that).
+The pin numbers below must match Main/config/settings.py.
 """
 
 import argparse

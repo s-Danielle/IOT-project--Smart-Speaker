@@ -63,7 +63,7 @@ LOCAL_FILES_DIR = os.path.join(SCRIPT_DIR, 'local_files')
 UPLOADS_DIR = os.path.join(LOCAL_FILES_DIR, 'uploads')
 RECORDINGS_DIR = os.path.join(LOCAL_FILES_DIR, 'recordings')
 
-# Built Flutter web app bundle (deployed via scripts/deploy_web.sh)
+# Built Flutter web app bundle (deployed via scripts/dev/deploy_web.sh)
 WEB_APP_DIR = os.path.join(SCRIPT_DIR, 'web_app')
 
 # Ensure directories exist
@@ -959,7 +959,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             if not os.path.isfile(os.path.join(WEB_APP_DIR, 'index.html')):
                 body = (
                     "Web app not deployed.\n"
-                    "Run scripts/deploy_web.sh from the development machine "
+                    "Run scripts/dev/deploy_web.sh from the development machine "
                     "to build and deploy the Flutter web app.\n"
                 )
                 self.send_response(503)

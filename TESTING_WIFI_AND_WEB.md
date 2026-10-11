@@ -73,7 +73,7 @@ With the speaker in AP mode and the Flutter app installed on a phone:
 
 From a dev machine with Flutter installed:
 
-- [ ] `./scripts/deploy_web.sh` builds and rsyncs to the Pi (default target `iot-proj@rpi2.local`) with no service restart
+- [ ] `./scripts/dev/deploy_web.sh` builds and rsyncs to the Pi (default target `iot-proj@rpi2.local`) with no service restart
 - [ ] From a laptop browser on the same LAN, open `http://rpi2.local:8080`
 - [ ] App loads; chips list, library, and settings/parental controls all read and save correctly
 - [ ] NFC chip scanning UI is **absent** on web (hidden on this platform)

@@ -2,7 +2,7 @@
 #
 # Installs the speaker's SYSTEM files (service files, the saved system log, log rotation).
 # These are the changes `git checkout` cannot undo, so pi_update.sh leaves them alone.
-# Run it on the Pi.
+# Runs on the Pi.
 #
 #   bash pi_install_system.sh --dry-run     # preview only, changes nothing
 #   bash pi_install_system.sh               # install and restart what changed

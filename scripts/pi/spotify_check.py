@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Try a few links on the Pi's Mopidy and report what happened.
 
-Run it ON THE PI (it makes sound, so YOU run it, not me):
+Runs on the Pi. It makes sound, so lower the speaker volume first:
 
     sudo python3 /tmp/pi/spotify_check.py --label "what this run is" > /tmp/spotify.txt
 
@@ -12,11 +12,10 @@ Progress is shown on the screen. The results table and a ready-to-paste
 entry for docs/SPOTIFY.md go to the output file.
 
 For each link it clears Mopidy's queue, adds the link, plays it and checks the
-status four times a second. A Spotify song takes several seconds to start (3.4
-seconds were measured on this Pi) and Mopidy says "stop" all that time, so the
-script waits up to --timeout seconds for the music to start moving. It stops
-each link after a few seconds of real progress, so the speaker is loud for only
-about 5 seconds per link. TURN THE SPEAKER VOLUME DOWN FIRST.
+status four times a second. A Spotify song takes several seconds to start, and
+Mopidy reports "stop" until then, so the script waits up to --timeout seconds
+for the music to start moving. It stops each link after a few seconds of real
+progress, so each link plays for about 5 seconds.
 
 If there is no local song to use as the control, it writes a quiet 6-second
 test tone to /tmp and deletes it at the end. It changes nothing else on the
@@ -37,7 +36,7 @@ import urllib.request
 import wave
 from urllib.parse import unquote, urlparse
 
-sys.dont_write_bytecode = True  # a root run must not leave root-owned .pyc files in /tmp/pi
+sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from pi_common import (  # noqa: E402
@@ -55,8 +54,8 @@ from pi_common import (  # noqa: E402
     to_float,
 )
 
-DEFAULT_TRACK = "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"  # "Surprise", the repo's default library song
-DEFAULT_LOCAL = "file:///home/iot-proj/lights.mp3"  # the repo's default local song
+DEFAULT_TRACK = "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"
+DEFAULT_LOCAL = "file:///home/iot-proj/lights.mp3"
 BOGUS_URI = "spotify:track:0000000000000000000000"
 SPOTIFY_TYPES = ("track", "playlist", "album", "artist", "episode", "show")
 POLL_SECONDS = 0.25

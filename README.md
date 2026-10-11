@@ -221,9 +221,8 @@ IOT-project--Smart-Speaker/
 │   └── rfid-chip-test/          # ESP32 RFID test (PlatformIO)
 │
 ├── scripts/                     # Utility scripts
-│   ├── install-ptt-deps.sh      # PTT dependencies installer
-│   ├── deploy_web.sh            # Build & deploy Flutter web app to the Pi
-│   └── test-ptt.py              # PTT functionality test
+│   ├── dev/                     # Run on this computer (deploy_web.sh, push_to_pi.sh, install_flutter.sh)
+│   └── pi/                      # Run on the Pi (see scripts/README.md)
 │
 ├── README.md                    # This file
 ├── PARAMETERS.md                # Hardcoded parameters documentation
@@ -289,7 +288,7 @@ cd IOT-project--Smart-Speaker
 pip3 install -r requirements.txt
 
 # Install PTT voice command dependencies
-cd scripts && ./install-ptt-deps.sh && cd ..
+./scripts/pi/install_ptt_deps.sh
 
 # Copy secrets template and fill in your values
 cp SECRETS.template SECRETS
@@ -478,8 +477,8 @@ Connect via: `http://<raspberry-pi-ip>:8080` (or `http://rpi2.local:8080`)
 The Flutter app also runs in the browser, served directly by the Pi's API server. To deploy the latest build:
 
 ```bash
-./scripts/deploy_web.sh            # default target: iot-proj@rpi2.local
-./scripts/deploy_web.sh user@host  # custom target
+./scripts/dev/deploy_web.sh        # default target: iot-proj@rpi2.local
+./scripts/dev/deploy_web.sh user@host  # custom target
 ```
 
 Then open `http://rpi2.local:8080` in a browser on the same network.

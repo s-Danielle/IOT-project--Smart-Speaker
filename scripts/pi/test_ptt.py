@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
 Test script for PTT (Push-to-Talk) voice command feature.
-Run this on the Raspberry Pi to test the voice command system.
+Runs on the Pi and tests the voice command system.
 
 Usage:
     cd /path/to/IOT-project--Smart-Speaker/Main
-    python3 ../scripts/test-ptt.py
+    python3 ../scripts/pi/test_ptt.py
+
+TODO: this only works from the repo checkout. The copy in /tmp/pi (from push_to_pi.sh) cannot
+find Main/, so it fails there. Either make it look in more places or document that it is run from the checkout.
 """
 
 import sys
@@ -13,7 +16,7 @@ import os
 
 # Add Main directory to path
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
+project_root = os.path.dirname(os.path.dirname(script_dir))
 main_dir = os.path.join(project_root, 'Main')
 sys.path.insert(0, main_dir)
 os.chdir(main_dir)

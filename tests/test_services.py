@@ -37,7 +37,7 @@ def test_units_that_write_a_log_file_run_unbuffered(unit):
         assert "Environment=PYTHONUNBUFFERED=1" in lines_of(unit)
 
 
-@pytest.mark.parametrize("script", sorted(SERVICES.glob("*.sh")) + [REPO / "Main" / "setup.sh", REPO / "scripts" / "deploy_web.sh"], ids=lambda p: p.name)
+@pytest.mark.parametrize("script", sorted(SERVICES.glob("*.sh")) + [REPO / "Main" / "setup.sh", REPO / "scripts" / "dev" / "deploy_web.sh"], ids=lambda p: p.name)
 def test_the_install_scripts_have_valid_syntax(script):
     # Syntax only (bash -n): nothing is run.
     result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
@@ -139,7 +139,7 @@ def test_the_controllers_status_folder_is_made_for_it_by_systemd():
 
 
 def test_the_web_deploy_keeps_the_previous_app_only_if_there_is_one():
-    text = (REPO / "scripts" / "deploy_web.sh").read_text()
+    text = (REPO / "scripts" / "dev" / "deploy_web.sh").read_text()
     # keep only a real app (it has an index.html), so a first deploy works and an empty folder can never
     # become "the previous app" that --undo would then put live
     assert "if [ -f '$REMOTE_WEB_DIR/index.html' ]; then" in text

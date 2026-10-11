@@ -27,7 +27,7 @@ fi
 IS_ROOT=0
 [ "$(id -u)" -eq 0 ] && IS_ROOT=1
 
-# Run things as the mopidy user when we can (that is who really uses GStreamer).
+# Runs commands as the mopidy user when possible, since Mopidy and GStreamer run as that user.
 MOPIDY_AS=()
 if [ "$IS_ROOT" -eq 1 ] && command -v runuser >/dev/null 2>&1 && id mopidy >/dev/null 2>&1; then
     MOPIDY_AS=(runuser -u mopidy --)
@@ -311,8 +311,7 @@ done
 [ "$FOUND_CREDS" -eq 0 ] && echo "  none found (or not readable by this user)"
 summ "Spotify credentials.json" "$([ "$FOUND_CREDS" -eq 1 ] && echo present || echo 'none found')"
 echo
-# The Pi has no clock battery. Early in a boot its clock can be weeks off, and the log lines get
-# those wrong times. So look at "this boot" and "the boot before" as well as the last N days.
+# No clock battery: log lines from early in a boot can carry wrong dates, so scan by boot as well as by days.
 mopidy_log_scan() {   # mopidy_log_scan "label" <journalctl time options>
     local label="$1"; shift
     local log
@@ -343,8 +342,7 @@ mopidy_log_scan "last $DAYS days" --since "$DAYS days ago"
 
 # ---- 10. The speaker's own API and data -------------------------------------------------
 hr "SPEAKER API AND DATA"
-# Only /status is called. The data endpoints are left alone: the first data request after a
-# server start can trigger the server's one-time chip seeding, and this report must not change anything.
+# Only /status: the first data request after a server start can seed chips, and this report changes nothing.
 if command -v curl >/dev/null 2>&1; then
     runsh "curl -s -m 5 http://localhost:8080/status"
 fi

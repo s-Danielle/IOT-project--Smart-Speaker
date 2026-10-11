@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install Flutter SDK on Arch-based Linux (CachyOS, Manjaro, EndeavourOS, etc.)
-# Installs from official git source instead of the unreliable AUR package
+# Installs from the official git repository, not the AUR package.
 
 set -e
 

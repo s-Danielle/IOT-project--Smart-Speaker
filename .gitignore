@@ -67,7 +67,7 @@ Main/server_data.json*
 Main/server_data.db*
 *.migrated-*
 
-# Deployed Flutter web bundle (rsync'd to the Pi by scripts/deploy_web.sh,
+# Deployed Flutter web bundle (rsync'd to the Pi by scripts/dev/deploy_web.sh,
 # never committed). Keep only the placeholder page.
 Main/web_app/*
 !Main/web_app/index.html
@@ -80,6 +80,6 @@ Main/web_app/*
 
 # pytest
 .pytest_cache/
-# the web app that was live before the last deploy (scripts/deploy_web.sh --undo)
+# the web app that was live before the last deploy (scripts/dev/deploy_web.sh --undo)
 Main/web_app.prev/
 Main/web_app.swap/
