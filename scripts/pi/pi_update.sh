@@ -162,7 +162,7 @@ fi
 
 # ---- 1. look before changing anything ------------------------------------------------
 step "1. What would change"
-git fetch origin --tags --prune --quiet
+git fetch origin --tags --prune --quiet || die "git fetch failed. If a tag was moved on GitHub, the Pi still has the old one: delete it there (git tag -d <tag>) and run this again."
 if git show-ref --verify --quiet "refs/remotes/origin/$REF"; then
     KIND=branch; TARGET="origin/$REF"
 elif git show-ref --verify --quiet "refs/tags/$REF"; then
