@@ -77,6 +77,30 @@ check_system_files() {   # $1 = the commit whose system files the new code expec
     fi
 }
 
+# --- deployed index.html (begin) ---
+# The deployed web app replaces Main/web_app/index.html, a file git tracks (a placeholder page), so git
+# sees it as edited and refuses to switch to a commit that changes the placeholder. So: keep the deployed
+# file aside, let git have its own copy back, switch, then put the deployed file back.
+WEB_INDEX="Main/web_app/index.html"
+DEPLOYED_INDEX=""
+
+set_aside_deployed_index() {
+    [ "$DRY" -eq 0 ] || return 0
+    git diff --quiet -- "$WEB_INDEX" 2>/dev/null && return 0
+    DEPLOYED_INDEX="$(mktemp)"
+    cp "$WEB_INDEX" "$DEPLOYED_INDEX"
+    git checkout -- "$WEB_INDEX"
+}
+
+put_back_deployed_index() {
+    [ -n "$DEPLOYED_INDEX" ] || return 0
+    mkdir -p "$(dirname "$WEB_INDEX")"
+    cp "$DEPLOYED_INDEX" "$WEB_INDEX"
+    rm -f "$DEPLOYED_INDEX"
+    DEPLOYED_INDEX=""
+}
+# --- deployed index.html (end) ---
+
 restart_services() {
     local s
     for s in "${SERVICES[@]}"; do
@@ -113,12 +137,15 @@ if [ "$UNDO" -eq 1 ]; then
     step "Undo: back to $PREV_BRANCH ($PREV_COMMIT)"
     git status --porcelain | grep -v '^??' | grep -vE 'web_app/index.html|Unit-tests/\.venv' && die "There are unexpected local edits (listed above)." || true
     [ -d Unit-tests/.venv ] && do_it git checkout -- Unit-tests/.venv 2>/dev/null || true
+    set_aside_deployed_index
+    switched=0
     if [ "$PREV_BRANCH" != "HEAD" ]; then
-        # Unlike "reset --hard", this keeps local edits such as the deployed index.html.
-        do_it git checkout -B "$PREV_BRANCH" "$PREV_COMMIT"
+        do_it git checkout -B "$PREV_BRANCH" "$PREV_COMMIT" && switched=1
     else
-        do_it git checkout --detach "$PREV_COMMIT"
-    fi
+        do_it git checkout --detach "$PREV_COMMIT" && switched=1
+    fi || true
+    put_back_deployed_index
+    [ "$DRY" -eq 1 ] || [ "$switched" -eq 1 ] || die "git could not go back. Nothing was changed. (The web app's index.html was put back.)"
     restart_services
     run_check
     exit $?
@@ -193,10 +220,14 @@ if [ "$DRY" -eq 0 ]; then
     say "Saved where we are now, for --undo: $CURRENT ($CURRENT_BRANCH)"
 fi
 [ -d Unit-tests/.venv ] && do_it git checkout -- Unit-tests/.venv 2>/dev/null || true
+set_aside_deployed_index
+switched=0
 case "$KIND" in
-    branch) do_it git checkout -B "$REF" "origin/$REF" ;;
-    *)      do_it git checkout --detach "$TARGET_COMMIT" ;;
-esac
+    branch) do_it git checkout -B "$REF" "origin/$REF" && switched=1 ;;
+    *)      do_it git checkout --detach "$TARGET_COMMIT" && switched=1 ;;
+esac || true
+put_back_deployed_index
+[ "$DRY" -eq 1 ] || [ "$switched" -eq 1 ] || die "git could not switch the code. Nothing was changed: the Pi still runs the old code. (The web app's index.html was put back.)"
 
 # ---- 5. services ------------------------------------------------------------------------------------
 step "5. Restart the services"

@@ -2,7 +2,8 @@
 
 These tests only call pure Python functions, talk to a fake Mopidy on a localhost
 socket, and syntax-check the shell scripts. They never run a Pi script or any
-system command (systemctl, sudo, aplay, journalctl...).
+system command (systemctl, sudo, aplay, journalctl...). The one exception is the last section: it
+runs two small shell functions of pi_update.sh in a throwaway git repo in a temporary folder.
 
 Run from the repo root:   python -m pytest tests -q
 """
@@ -667,3 +668,60 @@ def test_export_reports_a_damaged_database_and_does_not_write(speaker_folder, ca
 def test_export_cannot_find_the_program_folder(tmp_path, capsys):
     code, text = run_export(capsys, "--repo", str(tmp_path / "nowhere"))
     assert code == 2 and "--repo" in text
+
+
+# --------------------------------------------------------------------------
+# pi_update.sh: the deployed web app's index.html must not block a switch
+# --------------------------------------------------------------------------
+
+
+def _run_index_helpers(tmp_path, steps):
+    """Run only the two small functions about index.html (from pi_update.sh) in a throwaway git repo.
+    Nothing else of the script runs; git only touches the temporary folder."""
+    text = (PI_SCRIPTS / "pi_update.sh").read_text()
+    functions = text.split("# --- deployed index.html (begin) ---")[1].split("# --- deployed index.html (end) ---")[0]
+    repo = tmp_path / "repo"
+    script = f"""
+set -e
+DRY=0
+git init -q -b main "{repo}"
+cd "{repo}"
+git config user.email t@example.com
+git config user.name t
+mkdir -p Main/web_app
+echo placeholder > Main/web_app/index.html
+git add . && git commit -q -m one
+echo 'placeholder, changed' > Main/web_app/index.html
+git commit -qam two
+git checkout -q HEAD~1
+echo DEPLOYED-WEB-APP > Main/web_app/index.html
+{functions}
+{steps}
+"""
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True), repo
+
+
+def test_git_refuses_to_switch_over_the_deployed_index_html(tmp_path):
+    result, _ = _run_index_helpers(tmp_path, "git checkout -q main")
+    assert result.returncode != 0
+    assert "would be overwritten" in result.stderr
+
+
+def test_the_deployed_index_html_survives_a_switch(tmp_path):
+    result, repo = _run_index_helpers(tmp_path, "set_aside_deployed_index\ngit checkout -q main\nput_back_deployed_index")
+    assert result.returncode == 0, result.stderr
+    assert (repo / "Main/web_app/index.html").read_text() == "DEPLOYED-WEB-APP\n"
+    assert subprocess.run(["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True).stdout.strip() == "main"
+
+
+def test_the_deployed_index_html_is_put_back_when_the_switch_fails(tmp_path):
+    result, repo = _run_index_helpers(
+        tmp_path, "set_aside_deployed_index\ngit checkout -q no-such-branch || true\nput_back_deployed_index")
+    assert result.returncode == 0, result.stderr
+    assert (repo / "Main/web_app/index.html").read_text() == "DEPLOYED-WEB-APP\n"
+
+
+def test_nothing_is_set_aside_when_index_html_is_unchanged(tmp_path):
+    result, repo = _run_index_helpers(tmp_path, "git checkout -q -- Main/web_app/index.html\nset_aside_deployed_index\n"
+                                                  "test -z \"$DEPLOYED_INDEX\"\ngit checkout -q main")
+    assert result.returncode == 0, result.stderr
