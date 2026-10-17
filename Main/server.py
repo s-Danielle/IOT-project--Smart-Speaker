@@ -35,11 +35,13 @@ from hardware.wifi_manager import (
 )
 
 
-# Thread-pool HTTP server limited to 2 workers (suitable for single-core RPi)
+# Thread-pool HTTP server with a few workers (the Pi Zero 2 W has 4 cores but 512 MB of memory)
 class ThreadPoolHTTPServer(ThreadingMixIn, HTTPServer):
     """HTTP server that handles requests in a thread pool."""
-    
-    def __init__(self, server_address, RequestHandlerClass, max_workers=2):
+
+    request_queue_size = 16  # connections waiting for a free worker (the default is 5)
+
+    def __init__(self, server_address, RequestHandlerClass, max_workers=4):
         super().__init__(server_address, RequestHandlerClass)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         log(f"Server configured with {max_workers} worker threads")
@@ -775,10 +777,23 @@ def _guarded(method):
 
 
 class SpeakerHandler(BaseHTTPRequestHandler):
+    # A connection that sends nothing for this long is closed. Browsers open spare connections they never
+    # use; without a limit two of them held both workers for ever and the speaker's API stopped answering.
+    timeout = 15
+
+    # Successful polls of these are not logged: the health monitor reads /status every 5 s and the app's
+    # home screen every 4 s, so they were most lines of smart_speaker_server.log (needless SD card writes)
+    QUIET_POLLS = ("/status", "/health")
+
+    def log_request(self, code='-', size='-'):
+        if self.command == "GET" and code == 200 and self.path.split("?")[0] in self.QUIET_POLLS:
+            return
+        super().log_request(code, size)
+
     def log_message(self, format, *args):
         """Override to use our logger instead of default logging"""
         log(f"HTTP {format % args}")
-    
+
     def _send_cors_headers(self):
         """Only the one developer origin set in SPEAKER_CORS_ORIGIN gets these. Everyone else gets none."""
         origin = self.headers.get('Origin')
@@ -1195,7 +1210,7 @@ def run_server_blocking(port=8080, host='0.0.0.0'):
     """
     start_storage()
     start_security()
-    server = ThreadPoolHTTPServer((host, port), SpeakerHandler, max_workers=2)
+    server = ThreadPoolHTTPServer((host, port), SpeakerHandler)
     log_success(f"HTTP Server started on http://{host}:{port}")
     log(f"  - Data: {store.kind} store in {os.path.dirname(DATA_FILE)}")
     log(f"  - Local files directory: {LOCAL_FILES_DIR}")

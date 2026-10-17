@@ -506,3 +506,27 @@ def test_a_bad_body_to_a_debug_route_is_a_400_and_runs_nothing(remote, path):
     remote.token = TOKEN
     status, answer = remote.post(path, raw=b"{broken")
     assert status == 400 and "error" in answer  # the body is read before anything is run
+
+
+def test_connections_that_send_nothing_do_not_block_the_server(api, monkeypatch):
+    """Browsers open spare connections and never use them. Each used to hold a worker for ever."""
+    import socket
+    import time
+    monkeypatch.setattr(api.module.SpeakerHandler, "timeout", 0.5)
+    port = int(api.base.rsplit(":", 1)[1])
+    idle = [socket.create_connection(("127.0.0.1", port)) for _ in range(8)]  # more than there are workers
+    try:
+        time.sleep(0.1)
+        start = time.monotonic()
+        status, _ = api.get("/status")
+        assert status == 200
+        assert time.monotonic() - start < 5
+    finally:
+        for sock in idle:
+            sock.close()
+
+
+def test_an_idle_connection_is_given_up_after_a_while(server_module):
+    # None (the library's default) means for ever
+    assert server_module.SpeakerHandler.timeout is not None
+    assert 0 < server_module.SpeakerHandler.timeout <= 30

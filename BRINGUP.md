@@ -230,6 +230,8 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
   - [ ] a chip you deleted earlier does not come back after `sudo systemctl restart smart_speaker_server`
   - [ ] `ls -ld /home/iot-proj/IOT-project--Smart-Speaker/Main/local_files/recordings` is owned by `iot-proj`, not `root` (the server now hands the folder to the speaker's user)
 
+**Before the checks below, install the app: do 6.1 to 6.4 now** (analyse, deploy the web app, type the token into its Settings; the phone app, 6.8, can wait). The checks use the app to add songs and assign them, and the new speaker only lets an app that has the token change anything: an un-updated app can look but gets "401" on every change. That is the token working, not a fault.
+
 **Part B continued: what you should now see and hear** (tell me pass or fail for each; paste the log lines for any fail with `journalctl -u smart_speaker -n 80`)
 - [ ] **5.11** Lights: with the health monitor running, watch all three lights for 60 seconds. No flicker, no light going dark for a moment. After a Vol+ or Vol- press, the speaker light (Light 3) goes back to its normal colour. (Before: it stayed dark.)
 - [ ] **5.12** A tap **loads** the chip (green flash and chime) and **Play** starts it. Tap the same chip again while it plays: the music must keep going.
@@ -242,28 +244,28 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
   - [ ] set a daily limit of 2 minutes: after 2 minutes of music it is refused
   - [ ] put every setting back to normal afterwards
 - [ ] **5.17** Voice: hold PTT and say "hi speaker, clear" with a chip loaded: the chip's song link is cleared (check the app) and only then the music stops. Say a command with the internet off or the microphone covered: the speaker answers within about 10 seconds and the buttons still work.
-- [ ] **5.18** The status file and the health check (the speaker now proves it is alive, and says what it is doing):
+- [x] **5.18** The status file and the health check (the speaker now proves it is alive, and says what it is doing):
   - [ ] `cat /run/smart_speaker/status.json` shows the state, the chip, the volume, the version (the git commit) and `last_play`. Run it twice a few seconds apart: the `monotonic` number must go up (it is rewritten every second)
   - [ ] `curl -s -w '\n%{http_code}\n' localhost:8080/health` shows `"ok": true` and `200`. `curl -s localhost:8080/status` shows the same controller information, `storage`, and today's `usage`
   - [ ] with the made-up link from 5.13, `/health` is still `ok` but `warnings` says the last song could not be played, with Mopidy's reason, and `last_play` in the status says `failed`
   - [ ] **Freeze the controller** to prove a stuck one is noticed: `sudo systemctl kill --signal=SIGSTOP smart_speaker`. Within about 25 seconds `curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/health` says `503` and the health light (Light 1) blinks red. Then `sudo systemctl kill --signal=SIGCONT smart_speaker`: within a few seconds it says `200` again and the light is green. (Before, a stuck controller looked fine because systemd only asks whether the process exists.)
-- [ ] **5.19** The API token (changes from other devices now need a secret; the speaker itself, and the WiFi setup hotspot, do not):
+- [x] **5.19** The API token (changes from other devices now need a secret; the speaker itself, and the WiFi setup hotspot, do not):
   - [ ] after the first start of the new server, `ls -l /home/iot-proj/IOT-project--Smart-Speaker/SECRETS` shows a file owned by `iot-proj` (mode `-rw-------`), and `grep SECURITY /var/log/smart_speaker_server.log | tail -n 3` says a new API token was created. **Never paste the token or the file.** Read the token on the speaker with `grep DEBUG_TOKEN /home/iot-proj/IOT-project--Smart-Speaker/SECRETS` and type it into the app's Settings
   - [ ] from **this computer** (another device on the network): `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/chips` says `200` (reading is open) and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://rpi2.local:8080/usage/add -d '{"seconds":0}'` says `401` (changing is not)
   - [ ] `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/debug/system` says `401`, and with the header `-H "X-Speaker-Token: <the token>"` it says `200`
   - [ ] the controller and the health light still work (they call the server from the speaker itself, which needs no token): tap a chip, press Play, and the health light stays green
   - [ ] in the app (after the new app is installed, see step 6 below): without the token, changing a chip says the token is missing; with the token typed into Settings, it works
-- [ ] **5.20** The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
+- [ ] **5.20** *(skipped by choice, Oct 11: the reader is not unplugged. What this leaves untested on real hardware: the controller starting without a reader, and the reader coming back by itself. Both are covered only by tests with a fake reader.)* The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
 
 **Part C: Phase 3, the database (SQLite)** (do this only after Phase 2 has run well for a while) (the data moves out of the JSON file into a database that a power cut cannot damage; this is a switch you turn on, look at, rehearse turning off, and turn on again)
 
 How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been running) or `sqlite`. When the server starts and finds the setting has changed, it moves your data across by itself, **checks every row against the original**, and keeps the old copy under a dated name (`server_data.json.migrated-<date>` or `server_data.db.exported-<date>`). If the check fails it undoes itself and carries on with the old copy, and says so in the log. There is only ever one live copy of the data, so the two can't drift apart.
 
-- [ ] **5.21** Take a snapshot of what the app sees now, to compare with later (it hashes the chips, library and settings):
+- [x] **5.21** Take a snapshot of what the app sees now, to compare with later (it hashes the chips, library and settings):
   ```
   python3 /tmp/pi/pi_smoke_test.py --only data --save-data /tmp/data-json.json
   ```
-- [ ] **5.22** Switch to SQLite:
+- [x] **5.22** Switch to SQLite:
   ```
   sudo mkdir -p /etc/systemd/system/smart_speaker_server.service.d
   printf '[Service]\nEnvironment=SPEAKER_STORAGE=sqlite\n' | sudo tee /etc/systemd/system/smart_speaker_server.service.d/storage.conf
@@ -277,9 +279,9 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
   - [ ] `python3 /tmp/pi/db_export_json.py` says the database passes its own check and shows your chip and song counts
   - [ ] `python3 /tmp/pi/pi_smoke_test.py --only api --compare-data /tmp/data-json.json` says the data matches
   - [ ] the app shows the same chips, library and settings as before
-- [ ] **5.23** Use it: rename a chip and assign a different song in the app, tap that chip, press Play. Add a song from the app. Everything works as before, and the controller log shows no errors about the chip lookup (`journalctl -u smart_speaker -n 50`).
-- [ ] **5.24** `sudo reboot`. After 90 seconds the changes from 5.23 are still there and `/status` still says `sqlite`. (The real power-cut test is in step 7.)
-- [ ] **5.25** Rehearse the way back. Switch to JSON:
+- [x] **5.23** Use it: rename a chip and assign a different song in the app, tap that chip, press Play. Add a song from the app. Everything works as before, and the controller log shows no errors about the chip lookup (`journalctl -u smart_speaker -n 50`).
+- [x] **5.24** `sudo reboot`. After 90 seconds the changes from 5.23 are still there and `/status` still says `sqlite`. (The real power-cut test is in step 7.)
+- [x] **5.25** Rehearse the way back. Switch to JSON:
   ```
   printf '[Service]\nEnvironment=SPEAKER_STORAGE=json\n' | sudo tee /etc/systemd/system/smart_speaker_server.service.d/storage.conf
   sudo systemctl daemon-reload
@@ -288,7 +290,7 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
   - [ ] the log says the data was moved back into the JSON file, and the database was kept as `server_data.db.exported-...`
   - [ ] `/status` shows `"storage": "json"`, and the changes you made in 5.23 are still there in the app
   - [ ] `ls /home/iot-proj/IOT-project--Smart-Speaker/Main/server_data*` shows `server_data.json` and **no** `server_data.db`
-- [ ] **5.26** Switch to SQLite again (same commands as 5.22 with `sqlite`) and check the changes are still there. If everything passed, **leave it on SQLite** and tell me: I then make SQLite the default in the code, so this setting file is no longer needed. (If something failed, set it back to `json`, tell me what the log said, and nothing is lost: both copies are kept.)
+- [x] **5.26** Switch to SQLite again (same commands as 5.22 with `sqlite`) and check the changes are still there. If everything passed, **leave it on SQLite** and tell me: I then make SQLite the default in the code, so this setting file is no longer needed. (If something failed, set it back to `json`, tell me what the log said, and nothing is lost: both copies are kept.) *(Done Oct 17: all of 5.21 to 5.26 passed; the Pi is on SQLite. From `rc2` on SQLite is the default in the code, so this setting file is only needed to go back to JSON.)*
 
 **Part D: Phase 4, WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
 - [ ] **5.27** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.

@@ -553,6 +553,43 @@ def test_exporting_over_an_existing_file_keeps_that_file_as_a_backup(folder, clo
     assert json.load(open(out + ".bak"))["chips"][0]["uid"] == "OLD"
 
 
+def test_switching_json_sqlite_json_leaves_no_old_copy_to_recover(folder, clock, monkeypatch):
+    """The sequence run on the Pi: the first move into SQLite used to leave server_data.json.bak behind,
+    and the move back then opened that old copy ("was missing; using the last good copy") before writing."""
+    errors = []
+    monkeypatch.setattr("storage.json_store.log_error", errors.append)
+    json_path = os.path.join(folder, "server_data.json")
+    store, status, _ = open_store(folder, mode="json", today=clock)
+    store.register_chip("AA11", "Old name")
+    store.register_chip("BB22", "Second")
+    assert os.path.exists(json_path + ".bak")
+
+    store, status, _ = open_store(folder, mode="sqlite", today=clock)
+    assert status == "imported"
+    store.update_chip(store.find_chip_by_uid("AA11")["id"], {"name": "New name"})
+    store.close()
+    assert not os.path.exists(json_path) and not os.path.exists(json_path + ".bak")
+
+    store, status, notes = open_store(folder, mode="json", today=clock)
+    assert status == "exported"
+    assert errors == []
+    assert [c["name"] for c in store.chips()] == ["New name", "Second"]
+
+
+def test_a_leftover_backup_is_not_used_by_the_move_back_to_json(folder, clock, monkeypatch):
+    errors = []
+    monkeypatch.setattr("storage.json_store.log_error", errors.append)
+    db_path, json_path = os.path.join(folder, "server_data.db"), os.path.join(folder, "server_data.json")
+    s = SqliteStore(db_path, today=clock)
+    s.open()
+    s.register_chip("CC33", "Real")
+    s.close()
+    write_json(json_path + ".bak", {"chips": [{"id": "old", "uid": "OLD", "name": "Stale", "song_id": None}], "library": []})
+    convert.export_database_to_json(db_path, json_path)
+    assert errors == []
+    assert [c["uid"] for c in json.load(open(json_path))["chips"]] == ["CC33"]
+
+
 def test_an_export_that_cannot_be_written_is_refused(folder, clock, monkeypatch):
     db_path = os.path.join(folder, "server_data.db")
     s = SqliteStore(db_path, today=clock)
@@ -592,9 +629,17 @@ def messages(notes, level=None):
     return [m for lvl, m in notes if level is None or lvl == level]
 
 
-def test_json_is_what_is_used_until_sqlite_is_asked_for(folder, monkeypatch):
+def test_sqlite_is_what_is_used_unless_json_is_asked_for(folder, monkeypatch):
     monkeypatch.delenv("SPEAKER_STORAGE", raising=False)
-    assert DEFAULT_STORAGE == "json"
+    assert DEFAULT_STORAGE == "sqlite"
+    store, status, notes = open_store(folder)
+    assert store.kind == "sqlite" and status == "new"
+    assert "server_data.db" in files_of(folder)
+    store.close()
+
+
+def test_json_is_used_when_asked_for(folder, monkeypatch):
+    monkeypatch.setenv("SPEAKER_STORAGE", "json")
     store, status, notes = open_store(folder)
     assert store.kind == "json" and status == "new"
     assert files_of(folder) == ["server_data.json"]
@@ -610,8 +655,9 @@ def test_the_setting_comes_from_the_environment(folder, monkeypatch):
 def test_a_setting_that_makes_no_sense_falls_back_loudly(folder, monkeypatch):
     monkeypatch.setenv("SPEAKER_STORAGE", "postgres")
     store, status, notes = open_store(folder)
-    assert store.kind == "json"
+    assert store.kind == DEFAULT_STORAGE
     assert any("postgres" in m for m in messages(notes, "error"))
+    store.close()
 
 
 def test_the_first_sqlite_start_moves_the_json_data_across_and_keeps_the_old_file(folder, clock):

@@ -388,3 +388,19 @@ def test_the_health_monitor_says_it_once_when_the_controller_goes_away(monitor, 
     for _ in range(5):
         monitor.check_hardware()
     assert len([l for l in lines if "Controller problem" in l]) == 1
+
+
+def test_successful_polls_of_status_and_health_are_not_logged_but_everything_else_is(api, monkeypatch):
+    lines = []
+    monkeypatch.setattr(api.module, "log", lines.append)
+    assert api.get("/status")[0] == 200
+    assert api.get("/status?x=1")[0] == 200
+    health = api.get("/health")[0]
+    api.get("/chips")
+    api.get("/no-such-page")
+    logged = " ".join(lines)
+    assert "GET /status" not in logged
+    assert "GET /chips" in logged
+    assert "GET /no-such-page" in logged
+    if health != 200:  # no controller is running in the tests, so the monitor may be told so: that is logged
+        assert "GET /health" in logged

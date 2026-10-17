@@ -150,7 +150,11 @@ def build_database_from_json(json_path, db_path):
 
 def retire_json(json_path, label=None):
     """Keep the old JSON file under a dated name, so it is never read again by accident. Returns the new name."""
-    return _move_aside(json_path, f".migrated-{label or time.strftime('%Y-%m-%d')}")
+    new_main = _move_aside(json_path, f".migrated-{label or time.strftime('%Y-%m-%d')}")
+    # Its .bak goes with it. Left behind, a later switch back to JSON would find it and "recover" old data
+    if os.path.exists(json_path + ".bak"):
+        os.replace(json_path + ".bak", new_main + ".bak")
+    return new_main
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +184,14 @@ def export_database_to_json(db_path, json_path):
     except sqlite3.Error as exc:
         raise ConversionFailed(f"cannot read {db_path}: {exc}") from exc
 
+    if not os.path.exists(json_path):
+        # A .bak without its file is old data (or a leftover): opening the JSON file would "recover" it
+        try:
+            os.remove(json_path + ".bak")
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise ConversionFailed(f"cannot clear the old copy {json_path}.bak: {exc}") from exc
     try:
         store = JsonStore(json_path)
         store.write_all(data)

@@ -15,9 +15,9 @@ from .sqlite_store import SqliteStore, StorageError
 
 __all__ = ["JsonStore", "SqliteStore", "StorageError", "open_store", "DEFAULT_STORAGE"]
 
-# The setting to use when SPEAKER_STORAGE is not set. It stays "json" until SQLite has been proven
-# on the speaker; then this one word is changed.
-DEFAULT_STORAGE = "json"
+# The setting to use when SPEAKER_STORAGE is not set. SQLite has been proven on the speaker (switched
+# on, rebooted, switched back and on again with the data identical each time).
+DEFAULT_STORAGE = "sqlite"
 
 JSON_NAME = "server_data.json"
 DB_NAME = "server_data.db"

@@ -11,7 +11,7 @@ Some changes can be undone by switching to another git commit. Some cannot. They
 | **1. System** | service files, the saved system log (journald), log rotation, Mopidy's log setting | `pi_install_system.sh`, `pi_install_audio.sh --mopidy-conf` | `--rollback` of each (they save every file they replace) | the old code |
 | **2. Code** | the git checkout and the Python packages | `pi_update.sh <branch, tag or commit>` | `pi_update.sh --undo`, or any other commit | the new code |
 | **2b. App** | the web app on the Pi, the Android app | `scripts/dev/deploy_web.sh`, `flutter build apk` | `deploy_web.sh --undo`; keep the old APK | the new code |
-| **3. Data** | JSON file becomes a SQLite database (a switch, off by default) | `SPEAKER_STORAGE` (BRINGUP 5.22) | set it back; both copies are kept | the new code |
+| **3. Data** | JSON file becomes a SQLite database (a switch; the default from `rc2` on) | `SPEAKER_STORAGE` (BRINGUP 5.22) | set it back; both copies are kept | the new code |
 | **4. WiFi setup** | tests that take the Pi off the network | TESTING_WIFI_AND_WEB.md | the phone | the new code |
 
 The data comes last because it is the one change that code switching does not cover: a Pi that has been on SQLite, switched back to old code, would find no JSON file.
@@ -29,7 +29,7 @@ The data comes last because it is the one change that code switching does not co
 1. **Finish and review** (this stage): all code on `pi/fixes`, the tests green, a review of the whole diff, the findings fixed. Tag `rc1` (a candidate, not a release). Push.
 2. **Phase 1** on the Pi: `push_to_pi.sh`, `pi_install_system.sh --dry-run`, `pi_install_system.sh`, the Mopidy settings, the checks, a reboot. Then **let it run with the old code**, ideally a day. Anything odd comes from Phase 1 alone.
 3. **Phase 2**: `pi_update.sh --dry-run rc1`, `pi_update.sh rc1`, then the hardware and behaviour checks (BRINGUP 5.10 to 5.20), including the frozen-controller drill and the NFC-reader-missing drill.
-4. **2b, the app**: only after Phase 2 is green. `flutter analyze`, `deploy_web.sh` (keeps the previous web app), build the APK (keep the old one), type the token into each phone and browser (BRINGUP step 6).
+4. **2b, the web app**: right after the code switch (BRINGUP 5.9) and **before the behaviour checks** (5.10 onwards), because those checks use the app, and the new server refuses changes from an app without the token. `flutter analyze`, `deploy_web.sh` (keeps the previous web app), type the token into the browser's Settings. The phone app (build the APK, keep the old one) can come after the checks (BRINGUP step 6).
 5. **Phase 3**, only if everything above has run well for a while: switch to SQLite, use it, reboot, rehearse the way back, switch again. If it passes, flip `DEFAULT_STORAGE` to `sqlite` in `Main/storage/__init__.py` (a one-word code change, so it goes through Phase 2 as a new tag).
 6. **Phase 4**: the WiFi setup tests, last, because they leave the Pi off the network until the phone puts it back.
 7. **Final tests** (BRINGUP step 7: the walkthrough, power pulls, the 2-hour soak, the failure drills). Then a full copy of the SD card, merge to `main`, tag `v1.0`, and put the Pi on `v1.0`.
