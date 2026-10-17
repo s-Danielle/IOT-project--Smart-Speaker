@@ -530,3 +530,18 @@ def test_an_idle_connection_is_given_up_after_a_while(server_module):
     # None (the library's default) means for ever
     assert server_module.SpeakerHandler.timeout is not None
     assert 0 < server_module.SpeakerHandler.timeout <= 30
+
+
+def test_without_a_deployed_web_app_the_server_says_so(api, monkeypatch, tmp_path):
+    """The repo no longer carries a placeholder index.html, so the server has to explain it itself."""
+    empty = tmp_path / "no_web_app"
+    empty.mkdir()
+    monkeypatch.setattr(api.module, "WEB_APP_DIR", str(empty))
+    import urllib.error
+    import urllib.request
+    try:
+        urllib.request.urlopen(api.base + "/", timeout=5)
+        raise AssertionError("expected a 503")
+    except urllib.error.HTTPError as error:
+        assert error.code == 503
+        assert b"Web app not deployed" in error.read()

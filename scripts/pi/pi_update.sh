@@ -78,18 +78,25 @@ check_system_files() {   # $1 = the commit whose system files the new code expec
 }
 
 # --- deployed index.html (begin) ---
-# The deployed web app replaces Main/web_app/index.html, a file git tracks (a placeholder page), so git
-# sees it as edited and refuses to switch to a commit that changes the placeholder. So: keep the deployed
-# file aside, let git have its own copy back, switch, then put the deployed file back.
+# The deployed web app puts its own Main/web_app/index.html in place. Older commits track a placeholder
+# page under that name, so git sees the deployed file as an edit and refuses to switch over it (and,
+# going back to such a commit from a newer one, would overwrite the deployed file without a word).
+# So: keep the deployed file aside, let git do its switch, then put the deployed file back.
 WEB_INDEX="Main/web_app/index.html"
 DEPLOYED_INDEX=""
 
 set_aside_deployed_index() {
     [ "$DRY" -eq 0 ] || return 0
-    git diff --quiet -- "$WEB_INDEX" 2>/dev/null && return 0
-    DEPLOYED_INDEX="$(mktemp)"
-    cp "$WEB_INDEX" "$DEPLOYED_INDEX"
-    git checkout -- "$WEB_INDEX"
+    [ -f "$WEB_INDEX" ] || return 0
+    if git cat-file -e "HEAD:$WEB_INDEX" 2>/dev/null; then
+        git diff --quiet -- "$WEB_INDEX" && return 0   # still the placeholder: nothing deployed
+        DEPLOYED_INDEX="$(mktemp)"
+        cp "$WEB_INDEX" "$DEPLOYED_INDEX"
+        git checkout -- "$WEB_INDEX"
+    else
+        DEPLOYED_INDEX="$(mktemp)"
+        cp "$WEB_INDEX" "$DEPLOYED_INDEX"
+    fi
 }
 
 put_back_deployed_index() {

@@ -675,9 +675,12 @@ def test_export_cannot_find_the_program_folder(tmp_path, capsys):
 # --------------------------------------------------------------------------
 
 
-def _run_index_helpers(tmp_path, steps):
+def _run_index_helpers(tmp_path, start, steps):
     """Run only the two small functions about index.html (from pi_update.sh) in a throwaway git repo.
-    Nothing else of the script runs; git only touches the temporary folder."""
+    Nothing else of the script runs; git only touches the temporary folder.
+
+    Commits: "one" tracks a placeholder index.html, "two" changes the placeholder, "three" stops tracking
+    it (Main/web_app/ is ignored). The "deployed web app" is written over index.html at commit `start`."""
     text = (PI_SCRIPTS / "pi_update.sh").read_text()
     functions = text.split("# --- deployed index.html (begin) ---")[1].split("# --- deployed index.html (end) ---")[0]
     repo = tmp_path / "repo"
@@ -690,10 +693,13 @@ git config user.email t@example.com
 git config user.name t
 mkdir -p Main/web_app
 echo placeholder > Main/web_app/index.html
-git add . && git commit -q -m one
+git add . && git commit -q -m one && git tag one
 echo 'placeholder, changed' > Main/web_app/index.html
-git commit -qam two
-git checkout -q HEAD~1
+git commit -qam two && git tag two
+git rm -q --cached Main/web_app/index.html
+echo 'Main/web_app/' > .gitignore
+git add .gitignore && git commit -q -m three && git tag three
+git checkout -q {start}
 echo DEPLOYED-WEB-APP > Main/web_app/index.html
 {functions}
 {steps}
@@ -701,27 +707,45 @@ echo DEPLOYED-WEB-APP > Main/web_app/index.html
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True), repo
 
 
+DEPLOYED = "DEPLOYED-WEB-APP\n"
+
+
 def test_git_refuses_to_switch_over_the_deployed_index_html(tmp_path):
-    result, _ = _run_index_helpers(tmp_path, "git checkout -q main")
+    result, _ = _run_index_helpers(tmp_path, "one", "git checkout -q two")
     assert result.returncode != 0
     assert "would be overwritten" in result.stderr
 
 
-def test_the_deployed_index_html_survives_a_switch(tmp_path):
-    result, repo = _run_index_helpers(tmp_path, "set_aside_deployed_index\ngit checkout -q main\nput_back_deployed_index")
+def test_the_deployed_index_html_survives_a_switch_to_a_newer_placeholder(tmp_path):
+    result, repo = _run_index_helpers(tmp_path, "one", "set_aside_deployed_index\ngit checkout -q two\nput_back_deployed_index")
     assert result.returncode == 0, result.stderr
-    assert (repo / "Main/web_app/index.html").read_text() == "DEPLOYED-WEB-APP\n"
-    assert subprocess.run(["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True).stdout.strip() == "main"
+    assert (repo / "Main/web_app/index.html").read_text() == DEPLOYED
+
+
+def test_the_deployed_index_html_survives_the_commit_that_stops_tracking_it(tmp_path):
+    result, repo = _run_index_helpers(tmp_path, "two", "set_aside_deployed_index\ngit checkout -q three\nput_back_deployed_index")
+    assert result.returncode == 0, result.stderr
+    assert (repo / "Main/web_app/index.html").read_text() == DEPLOYED
+    status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"], capture_output=True, text=True).stdout
+    assert status.strip() == ""  # ignored now, so git no longer sees it as an edit
+
+
+def test_the_deployed_index_html_survives_going_back_to_a_commit_that_tracks_it(tmp_path):
+    # git would overwrite an ignored file without a word; --undo must not lose the deployed app
+    result, repo = _run_index_helpers(tmp_path, "three", "set_aside_deployed_index\ngit checkout -q two\nput_back_deployed_index")
+    assert result.returncode == 0, result.stderr
+    assert (repo / "Main/web_app/index.html").read_text() == DEPLOYED
 
 
 def test_the_deployed_index_html_is_put_back_when_the_switch_fails(tmp_path):
     result, repo = _run_index_helpers(
-        tmp_path, "set_aside_deployed_index\ngit checkout -q no-such-branch || true\nput_back_deployed_index")
+        tmp_path, "one", "set_aside_deployed_index\ngit checkout -q no-such-branch || true\nput_back_deployed_index")
     assert result.returncode == 0, result.stderr
-    assert (repo / "Main/web_app/index.html").read_text() == "DEPLOYED-WEB-APP\n"
+    assert (repo / "Main/web_app/index.html").read_text() == DEPLOYED
 
 
-def test_nothing_is_set_aside_when_index_html_is_unchanged(tmp_path):
-    result, repo = _run_index_helpers(tmp_path, "git checkout -q -- Main/web_app/index.html\nset_aside_deployed_index\n"
-                                                  "test -z \"$DEPLOYED_INDEX\"\ngit checkout -q main")
+def test_nothing_is_set_aside_when_index_html_is_still_the_placeholder(tmp_path):
+    result, repo = _run_index_helpers(tmp_path, "one", "git checkout -q -- Main/web_app/index.html\nset_aside_deployed_index\n"
+                                                      "test -z \"$DEPLOYED_INDEX\"\ngit checkout -q two")
     assert result.returncode == 0, result.stderr
+    assert (repo / "Main/web_app/index.html").read_text() == "placeholder, changed\n"

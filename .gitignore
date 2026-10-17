@@ -67,10 +67,9 @@ Main/server_data.json*
 Main/server_data.db*
 *.migrated-*
 
-# Deployed Flutter web bundle (rsync'd to the Pi by scripts/dev/deploy_web.sh,
-# never committed). Keep only the placeholder page.
-Main/web_app/*
-!Main/web_app/index.html
+# Deployed Flutter web bundle (rsync'd to the Pi by scripts/dev/deploy_web.sh, never committed).
+# Without it the server answers "Web app not deployed" itself.
+Main/web_app/
 
 # Local media clutter (demo videos, photos, course PDFs)
 *.mp4
