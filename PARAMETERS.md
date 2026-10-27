@@ -165,20 +165,18 @@ Changing the value and restarting the server moves the data across by itself, ch
 
 ---
 
-## API Access (the token)
+## API Access
 
 Implemented in `Main/utils/access.py` and `Main/server.py`.
 
 | Setting | What it does |
 |---------|--------------|
-| `DEBUG_TOKEN` in the `SECRETS` file | The API token. Left empty, the server makes a random 16-character one at its first start and saves it there (owner: the speaker's user, mode 600). Short values (under 8 characters) count as not set |
-| `X-Speaker-Token` request header | Must carry the token for: every request that changes something (POST, PUT, DELETE), and everything under `/debug` (even reads) |
 | `SPEAKER_CORS_ORIGIN` (environment of the server) | Empty by default: no other website may talk to the speaker from a browser. For developing the web app on another address, set it to that one origin, e.g. `http://localhost:5000` |
 | `MAX_JSON_BYTES` / `MAX_FORM_BYTES` / `MAX_UPLOAD_BYTES` (`server.py`) | Largest request body accepted: 64 KB, 8 KB (WiFi form) and 30 MB (an uploaded song, which is held in memory). Bigger ones get 413 and are not read |
 
-Open without the token: reads (`/status`, `/health`, `/chips`, `/library`, `/settings/parental`, `/usage/today`, the web app), requests from the speaker itself (the controller and the health monitor call the server on localhost), and, **while the setup hotspot is up**, the routes the WiFi setup uses (`/wifi-setup`, `/wifi-setup/connect`, `/debug/wifi/status`, `/debug/wifi/scan`, `/debug/wifi/connect`, `/debug/wifi/connect-status`).
+There is no password: anyone on the local network may read and change everything, including the Developer Tools (`/debug`). That is what the web app is for.
 
-What it does and does not do: it stops other websites from making a browser on your network change the speaker, and stops casual meddling by other devices. It does not hide anything from someone who can watch the network traffic (plain HTTP), and the open setup hotspot lets anyone near the speaker set its WiFi while it is up (set `AP_PASSWORD` to prevent that).
+What this does not do: it does not hide anything from someone who can watch the network traffic (plain HTTP), and the open setup hotspot lets anyone near the speaker set its WiFi while it is up (set `AP_PASSWORD` to prevent that).
 
 ---
 

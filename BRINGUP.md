@@ -230,7 +230,7 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
   - [ ] a chip you deleted earlier does not come back after `sudo systemctl restart smart_speaker_server`
   - [ ] `ls -ld /home/iot-proj/IOT-project--Smart-Speaker/Main/local_files/recordings` is owned by `iot-proj`, not `root` (the server now hands the folder to the speaker's user)
 
-**Before the checks below, install the app: do 6.1 to 6.4 now** (analyse, deploy the web app, type the token into its Settings; the phone app, 6.8, can wait). The checks use the app to add songs and assign them, and the new speaker only lets an app that has the token change anything: an un-updated app can look but gets "401" on every change. That is the token working, not a fault.
+**Before the checks below, install the app: do 6.1 to 6.3 now** (analyse, deploy the web app, open it; the phone app, 6.8, can wait). The checks use the app to add songs and assign them.
 
 **Part B continued: what you should now see and hear** (tell me pass or fail for each; paste the log lines for any fail with `journalctl -u smart_speaker -n 80`)
 - [ ] **5.11** Lights: with the health monitor running, watch all three lights for 60 seconds. No flicker, no light going dark for a moment. After a Vol+ or Vol- press, the speaker light (Light 3) goes back to its normal colour. (Before: it stayed dark.)
@@ -249,12 +249,11 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
   - [ ] `curl -s -w '\n%{http_code}\n' localhost:8080/health` shows `"ok": true` and `200`. `curl -s localhost:8080/status` shows the same controller information, `storage`, and today's `usage`
   - [ ] with the made-up link from 5.13, `/health` is still `ok` but `warnings` says the last song could not be played, with Mopidy's reason, and `last_play` in the status says `failed`
   - [ ] **Freeze the controller** to prove a stuck one is noticed: `sudo systemctl kill --signal=SIGSTOP smart_speaker`. Within about 25 seconds `curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/health` says `503` and the health light (Light 1) blinks red. Then `sudo systemctl kill --signal=SIGCONT smart_speaker`: within a few seconds it says `200` again and the light is green. (Before, a stuck controller looked fine because systemd only asks whether the process exists.)
-- [x] **5.19** The API token (changes from other devices now need a secret; the speaker itself, and the WiFi setup hotspot, do not):
-  - [ ] after the first start of the new server, `ls -l /home/iot-proj/IOT-project--Smart-Speaker/SECRETS` shows a file owned by `iot-proj` (mode `-rw-------`), and `grep SECURITY /var/log/smart_speaker_server.log | tail -n 3` says a new API token was created. **Never paste the token or the file.** Read the token on the speaker with `grep DEBUG_TOKEN /home/iot-proj/IOT-project--Smart-Speaker/SECRETS` and type it into the app's Settings
-  - [ ] from **this computer** (another device on the network): `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/chips` says `200` (reading is open) and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://rpi2.local:8080/usage/add -d '{"seconds":0}'` says `401` (changing is not)
-  - [ ] `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/debug/system` says `401`, and with the header `-H "X-Speaker-Token: <the token>"` it says `200`
-  - [ ] the controller and the health light still work (they call the server from the speaker itself, which needs no token): tap a chip, press Play, and the health light stays green
-  - [ ] in the app (after the new app is installed, see step 6 below): without the token, changing a chip says the token is missing; with the token typed into Settings, it works
+- [x] **5.19** Changing things from another device (there is no password; anyone on the network may):
+  - [ ] from **this computer** (another device on the network): `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/chips` says `200`, and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://rpi2.local:8080/usage/add -d '{"seconds":0}'` also says `200` (there is no password)
+  - [ ] `curl -s -o /dev/null -w '%{http_code}\n' http://rpi2.local:8080/debug/system` says `200`
+  - [ ] the controller and the health light still work: tap a chip, press Play, and the health light stays green
+  - [ ] in the app (after the new app is installed, see step 6 below): changing a chip name works with nothing to type in first
 - [ ] **5.20** *(skipped by choice, Oct 11: the reader is not unplugged. What this leaves untested on real hardware: the controller starting without a reader, and the reader coming back by itself. Both are covered only by tests with a fake reader.)* The speaker without its NFC reader. Switch the Pi off (`sudo shutdown -h now`), unplug the reader's cable, power it on. The buttons, the lights and the music (started from the app) must all work, and the controller log says the reader was not found and that it will keep trying. Then, **only if you are comfortable plugging it back in with the Pi on**, plug it in again: within about 5 seconds the next tag is read, with no restart. (Otherwise shut down, plug it in and power on: that still proves it comes back.)
 
 **Part C: Phase 3, the database (SQLite)** (do this only after Phase 2 has run well for a while) (the data moves out of the JSON file into a database that a power cut cannot damage; this is a switch you turn on, look at, rehearse turning off, and turn on again)
@@ -305,7 +304,7 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
 
 ---
 
-## Step 6: the app: the token, the status and the fixes (about 45 minutes)
+## Step 6: the app: the status and the fixes (about 45 minutes)
 
 Do this after Phase 2 of step 5 (the code), because the app talks to the new server. (The new app also works against the old server, so a rollback of the Pi's code does not strand it. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).) The app code could not be built on the development computer (Flutter was not run there). I did run Dart's analyzer over `flutter_app/lib` on a scratch copy and it reported **no issues**, which catches mistakes in types and names but is not the same as a build, so 6.1 is still yours to run.
 
@@ -318,11 +317,11 @@ Do this after Phase 2 of step 5 (the code), because the app talks to the new ser
   - [ ] the home screen shows a second card saying what the speaker is doing ("Waiting for a chip", "Ready: <chip>", "Playing", "Paused", "Recording"), the volume and "Played today". Tap a chip on the speaker, press Play: the card follows within about 5 seconds
   - [ ] with the made-up link from 5.13 the card shows an orange "The last song could not be played" with Mopidy's reason; a later good play clears it
   - [ ] stop the controller (`sudo systemctl stop smart_speaker` on the Pi): within about 25 seconds the card says "The speaker is not running". Start it again
-- [ ] **6.4** The token. In the app go to Settings, **Speaker Token**, type the token (read it on the Pi with `grep DEBUG_TOKEN /home/iot-proj/IOT-project--Smart-Speaker/SECRETS`; do not paste it anywhere else), press **Check**: "The speaker accepted the token". With a wrong token it says "did not accept".
-- [ ] **6.5** Without the token (clear the field, Save): changing a chip name or a setting shows "The speaker needs its token for this. Enter it in Settings." and changes nothing. Looking at chips, library and settings still works. Put the token back.
+- [ ] **6.4** Nothing to set up: changing a chip name or a setting works straight away.
+- [ ] **6.5** Looking at chips, library and settings, and changing them, all work from a second phone or computer on the network too, with nothing to enter.
 - [ ] **6.6** Library: upload a song from a file, give it a name. There is **one** new entry, with the name you chose (before, there were two: "[UPLOAD] <file>" and your name).
-- [ ] **6.7** Developer Tools (needs the token): system info and logs show. WiFi, connect to the network the speaker is **already on** (a saved one): it says "Connected to ...", not "Failed" (before, it always said Failed, because the speaker answers "connecting" first). The old "Run Main" action is gone.
-- [ ] **6.8** *Phone only.* **First copy the APK that is on your phone now (or your last build) somewhere safe**, so you can go back. Then build and install the Android app: `cd flutter_app && flutter build apk --release`, then install `build/app/outputs/flutter-apk/app-release.apk`. (The Android build no longer includes Firebase Analytics and Messaging, which nothing in the app used. That could not be built here: if the build fails, tell me what it says. `git revert` of the commit "App: remove the unused Firebase" puts it back.) In Settings, **Test Connection** works with `rpi2.local`. If it fails (Android's name lookup is the known weak spot), open Advanced Settings and type the speaker's address as `http://<its IP>:8080` (the IP is in `/tmp/report.txt` from `pi_report.sh`, or `hostname -I` on the Pi). Then repeat 6.4.
+- [ ] **6.7** Developer Tools: system info and logs show. WiFi, connect to the network the speaker is **already on** (a saved one): it says "Connected to ...", not "Failed" (before, it always said Failed, because the speaker answers "connecting" first). The old "Run Main" action is gone.
+- [ ] **6.8** *Phone only.* **First copy the APK that is on your phone now (or your last build) somewhere safe**, so you can go back. Then build and install the Android app: `cd flutter_app && flutter build apk --release`, then install `build/app/outputs/flutter-apk/app-release.apk`. (The Android build no longer includes Firebase Analytics and Messaging, which nothing in the app used. That could not be built here: if the build fails, tell me what it says. `git revert` of the commit "App: remove the unused Firebase" puts it back.) In Settings, **Test Connection** works with `rpi2.local`. If it fails (Android's name lookup is the known weak spot), open Advanced Settings and type the speaker's address as `http://<its IP>:8080` (the IP is in `/tmp/report.txt` from `pi_report.sh`, or `hostname -I` on the Pi).
 - [ ] **6.9** *Phone only.* The WiFi wizard: start Settings, WiFi Setup, let it join the speaker's setup hotspot, then go **back** before finishing. The phone returns to its normal WiFi and its internet works again (before, the app kept using the hotspot until you restarted it).
 
 ---
@@ -341,7 +340,7 @@ Do this after Phase 2 of step 5 (the code), because the app talks to the new ser
 | 7 whitelist | Allow only tag A, scan tag B | B is blocked |
 | 8 voice | "hi speaker play/pause/stop/clear", a joke command, and a run with no internet | Bounded wait, the device stays responsive |
 | 9 WiFi | [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md) tests 1-5 | All pass (or test 5 is waived and written down) |
-| 10 remote debugging | Logs, restart the controller, i2c, from the app | Works with the token, fails with 401 without it |
+| 10 remote debugging | Logs, restart the controller, i2c, from the app | Works from any device on the network |
 | New | The app shows what's playing, minutes used and whether the last play worked | Matches the speaker |
 | Spotify | Pull the network mid-track and put it back; tap a made-up link; `systemctl restart mopidy` during playback; start playback on a phone using the same account | Error shown within the time limit (not 60 s), plays again once the cause is gone |
 | Backup song | Unplug the WiFi and tap the local-file chip | It plays |

@@ -14,10 +14,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _controller = TextEditingController();
-  final _tokenController = TextEditingController();
-  bool _tokenHidden = true;
-  bool _checkingToken = false;
-  String _tokenResult = '';
   String _testResult = '';
   bool _testing = false;
   bool _showAdvanced = false;
@@ -27,48 +23,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadBaseUrl();
-    _loadToken();
-  }
-
-  Future<void> _loadToken() async {
-    _tokenController.text = await SettingsService.getToken();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _saveToken() async {
-    await SettingsService.setToken(_tokenController.text);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Token saved')),
-      );
-    }
-  }
-
-  /// Saves the token, then asks the speaker whether it accepts it.
-  Future<void> _checkToken() async {
-    setState(() {
-      _checkingToken = true;
-      _tokenResult = '';
-    });
-    try {
-      await SettingsService.setToken(_tokenController.text);
-      final baseUrl = await SettingsService.getBaseUrl();
-      await ApiService(baseUrl).checkToken();
-      if (mounted) setState(() => _tokenResult = 'ok');
-    } catch (e) {
-      final String message;
-      if (e is ApiException && e.isTokenProblem) {
-        message = 'The speaker did not accept this token.';
-      } else if (e is ApiException && e.statusCode == 404) {
-        // /debug/ping does not exist on a speaker with older software (which has no token either)
-        message = 'This speaker\'s software is too old to use a token. Nothing to check.';
-      } else {
-        message = '$e';
-      }
-      if (mounted) setState(() => _tokenResult = 'error:$message');
-    } finally {
-      if (mounted) setState(() => _checkingToken = false);
-    }
   }
 
   Future<void> _loadBaseUrl() async {
@@ -131,7 +85,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    _tokenController.dispose();
     super.dispose();
   }
 
@@ -279,108 +232,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Speaker token: needed for every change made from the app
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.vpn_key, color: theme.colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Speaker Token',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Changing chips, songs and settings needs the speaker\'s token. '
-                    'It is in the file SECRETS on the speaker, as DEBUG_TOKEN. '
-                    'Looking at things does not need it.',
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _tokenController,
-                    obscureText: _tokenHidden,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: InputDecoration(
-                      labelText: 'Token',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.vpn_key),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _tokenHidden ? Icons.visibility : Icons.visibility_off,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _tokenHidden = !_tokenHidden;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _saveToken,
-                          icon: const Icon(Icons.save),
-                          label: const Text('Save'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _checkingToken ? null : _checkToken,
-                          icon: const Icon(Icons.verified_user),
-                          label: Text(_checkingToken ? 'Checking...' : 'Check'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_tokenResult.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(
-                          _tokenResult == 'ok' ? Icons.check_circle : Icons.error,
-                          color: _tokenResult == 'ok' ? Colors.green : Colors.red,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _tokenResult == 'ok'
-                                ? 'The speaker accepted the token.'
-                                : _tokenResult.substring('error:'.length),
-                            style: TextStyle(
-                              color: _tokenResult == 'ok'
-                                  ? Colors.green.shade700
-                                  : Colors.red.shade700,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ],

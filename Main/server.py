@@ -25,10 +25,6 @@ from utils.logger import log, log_success
 from utils.shared_dirs import ensure_shared_dir
 from storage import JsonStore, StorageError, open_store
 from utils.status_file import read_status
-from utils.access import (
-    TOKEN_HEADER, NEVER, UNLESS_SETUP_MODE, protection, is_local_address, token_matches,
-)
-from utils.secrets_file import ensure_token
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT, speaker_home_url,
     render_network_list_html, CAPTIVE_PORTAL_HTML
@@ -728,35 +724,16 @@ def _render_connecting_html(ssid: str) -> str:
 
 
 # =============================================================================
-# WHO MAY CHANGE WHAT (rules in utils/access.py)
+# REQUEST LIMITS AND CROSS-SITE ACCESS
 # =============================================================================
-
-SECRETS_PATH = os.path.join(PROJECT_DIR, 'SECRETS')
-API_TOKEN = None  # set by start_security()
 
 MAX_JSON_BYTES = 64 * 1024            # chips, songs, settings: a few hundred bytes in practice
 MAX_FORM_BYTES = 8 * 1024             # the WiFi setup form
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024   # a song. The whole upload is held in memory (the Pi has ~400 MB free)
 
-_refusal_log = {}  # address -> when it was last logged, so a flood of bad requests cannot flood the log
-
 
 class RequestTooLarge(Exception):
     pass
-
-
-def start_security():
-    """Make sure the API token exists (created and saved in SECRETS on the first run)."""
-    global API_TOKEN
-    token, created, problem = ensure_token(SECRETS_PATH)
-    API_TOKEN = token
-    if problem:
-        log(f"[SECURITY] {problem}. Changes from other devices are refused until it is fixed", 'ERROR')
-    elif created:
-        log("[SECURITY] A new API token was created and saved as DEBUG_TOKEN in the SECRETS file. "
-            "Read it on the speaker and type it into the app's Settings")
-    else:
-        log("[SECURITY] API token loaded from SECRETS")
 
 
 def cors_origin() -> str:
@@ -809,11 +786,9 @@ def build_health():
 
 
 def _guarded(method):
-    """Every request method goes through the token rule and the size limits."""
+    """Every request method goes through the size limits."""
     @functools.wraps(method)
     def wrapper(self):
-        if not self._allowed():
-            return
         try:
             method(self)
         except RequestTooLarge as problem:
@@ -851,7 +826,7 @@ class SpeakerHandler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', origin)
             self.send_header('Vary', 'Origin')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE')
-            self.send_header('Access-Control-Allow-Headers', f'Content-Type, {TOKEN_HEADER}')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
 
     def _send_json(self, response_data, status=200):
         self.send_response(status)
@@ -884,27 +859,6 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             raise ValueError("the body must be a JSON object")
         return body
-
-    def _allowed(self) -> bool:
-        """The token rule (see utils/access.py). Sends the refusal itself when the answer is no."""
-        rule = protection(self.command, self.path)
-        if rule == NEVER:
-            return True
-        if is_local_address(self.client_address[0]):
-            return True  # the controller and the health monitor, on the speaker itself
-        if rule == UNLESS_SETUP_MODE and is_ap_mode():
-            return True  # a phone that has just joined the setup hotspot has no token yet
-        if token_matches(self.headers.get(TOKEN_HEADER), API_TOKEN):
-            return True
-        address = self.client_address[0]
-        now = time.monotonic()
-        if now - _refusal_log.get(address, -60.0) >= 30.0:
-            _refusal_log[address] = now
-            log(f"[SECURITY] Refused {self.command} {urlparse(self.path).path} from {address}: "
-                f"{'wrong' if self.headers.get(TOKEN_HEADER) else 'missing'} token", 'ERROR')
-        self.close_connection = True  # do not wait for a body we will not read
-        self._send_json({"error": f"missing or wrong {TOKEN_HEADER}: enter the speaker's token in the app's Settings"}, 401)
-        return False
 
     def _parse_multipart_file(self, content_type, field_name='file'):
         """Extract a single uploaded file from a multipart/form-data body.
@@ -989,8 +943,6 @@ class SpeakerHandler(BaseHTTPRequestHandler):
         elif self.path == '/usage/today':
             self._send_json(store.daily_usage())
         # Debug endpoints
-        elif path == '/debug/ping':
-            self._send_json({"ok": True})  # only reached with a valid token: the app's "check token" button
         elif path == '/debug/i2c':
             self._send_json(debug_get_i2c_devices())
         elif path == '/debug/system':
@@ -1259,7 +1211,6 @@ def run_server_blocking(port=8080, host='0.0.0.0'):
     is the main process and should run until terminated.
     """
     start_storage()
-    start_security()
     server = ThreadPoolHTTPServer((host, port), SpeakerHandler)
     log_success(f"HTTP Server started on http://{host}:{port}")
     log(f"  - Data: {store.kind} store in {os.path.dirname(DATA_FILE)}")

@@ -98,14 +98,11 @@ class Client:
 
     def __init__(self, base):
         self.base = base
-        self.token = None  # sent as X-Speaker-Token when set
 
-    def raw_call(self, method, path, body=None, raw=None, headers=None, token=True):
+    def raw_call(self, method, path, body=None, raw=None, headers=None):
         """(status, response headers, parsed JSON or None)."""
         data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
         sent = dict(headers or {})
-        if token and self.token:
-            sent.setdefault("X-Speaker-Token", self.token)
         request = urllib.request.Request(self.base + path, data=data, method=method, headers=sent)
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
@@ -119,8 +116,8 @@ class Client:
             parsed = None
         return status, response_headers, parsed
 
-    def call(self, method, path, body=None, raw=None, headers=None, token=True):
-        status, _, parsed = self.raw_call(method, path, body, raw, headers, token)
+    def call(self, method, path, body=None, raw=None, headers=None):
+        status, _, parsed = self.raw_call(method, path, body, raw, headers)
         return status, parsed
 
     def get(self, path, **kw):

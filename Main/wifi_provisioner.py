@@ -103,7 +103,7 @@ class LEDController:
 def portal_is_connecting() -> bool:
     """Is the setup page (in the server, another program) in the middle of joining a network?
 
-    Asked over localhost, which needs no token. If the server does not answer, nobody is using the
+    Asked over localhost. If the server does not answer, nobody is using the
     portal, so the answer is no.
     """
     try:

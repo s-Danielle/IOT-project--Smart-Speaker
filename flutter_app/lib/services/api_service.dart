@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import '../models/status.dart';
 import '../models/chip.dart';
 import '../models/song.dart';
-import 'settings_service.dart';
 
 /// An answer from the speaker that was not a success.
 ///
@@ -15,9 +14,6 @@ class ApiException implements Exception {
 
   ApiException(this.statusCode, this.message);
 
-  /// True when the speaker refused because the token is missing or wrong.
-  bool get isTokenProblem => statusCode == 401;
-
   @override
   String toString() => message;
 }
@@ -27,37 +23,23 @@ class ApiService {
 
   ApiService(this.baseUrl);
 
-  /// The header that carries the speaker's token.
-  static const tokenHeader = 'X-Speaker-Token';
-
   // ===========================================================================
   // THE ONE PLACE THAT TALKS HTTP
-  // Every request goes through these helpers, so the token is added here and
-  // nowhere else.
+  // Every request goes through these helpers.
   // ===========================================================================
 
-  Future<Map<String, String>> _headers({bool json = false}) async {
-    final headers = <String, String>{};
-    if (json) {
-      headers['Content-Type'] = 'application/json';
-    }
-    // Only the speaker's own address gets the token. The setup hotspot
-    // (192.168.4.1) is open to anyone nearby and must never see it.
-    final token = await SettingsService.getToken();
-    if (token.isNotEmpty && baseUrl == await SettingsService.getBaseUrl()) {
-      headers[tokenHeader] = token;
-    }
-    return headers;
+  Map<String, String> _headers({bool json = false}) {
+    return json ? {'Content-Type': 'application/json'} : {};
   }
 
   Future<http.Response> _get(String path) async {
-    return http.get(Uri.parse('$baseUrl$path'), headers: await _headers());
+    return http.get(Uri.parse('$baseUrl$path'), headers: _headers());
   }
 
   Future<http.Response> _post(String path, [Map<String, dynamic>? body]) async {
     return http.post(
       Uri.parse('$baseUrl$path'),
-      headers: await _headers(json: body != null),
+      headers: _headers(json: body != null),
       body: body == null ? null : jsonEncode(body),
     );
   }
@@ -65,23 +47,17 @@ class ApiService {
   Future<http.Response> _put(String path, Map<String, dynamic> body) async {
     return http.put(
       Uri.parse('$baseUrl$path'),
-      headers: await _headers(json: true),
+      headers: _headers(json: true),
       body: jsonEncode(body),
     );
   }
 
   Future<http.Response> _delete(String path) async {
-    return http.delete(Uri.parse('$baseUrl$path'), headers: await _headers());
+    return http.delete(Uri.parse('$baseUrl$path'), headers: _headers());
   }
 
   /// The error to throw for an answer that was not a success.
   ApiException _failure(String what, http.Response response) {
-    if (response.statusCode == 401) {
-      return ApiException(
-        401,
-        'The speaker needs its token for this. Enter it in Settings.',
-      );
-    }
     var detail = '';
     try {
       final body = jsonDecode(response.body);
@@ -241,16 +217,8 @@ class ApiService {
   }
 
   // ===========================================================================
-  // DEBUG / DEVELOPER TOOLS (all need the token)
+  // DEBUG / DEVELOPER TOOLS
   // ===========================================================================
-
-  // GET /debug/ping - does the speaker accept our token?
-  Future<void> checkToken() async {
-    final response = await _get('/debug/ping');
-    if (response.statusCode != 200) {
-      throw _failure('check the token', response);
-    }
-  }
 
   // GET /debug/i2c
   Future<Map<String, dynamic>> getI2cDevices() async {
@@ -309,8 +277,6 @@ class ApiService {
 
   // ===========================================================================
   // WIFI MANAGEMENT
-  // The setup routes (status, scan, connect, connect-status) are open while the
-  // speaker's setup hotspot is up. The rest need the token.
   // ===========================================================================
 
   // GET /debug/wifi/status
