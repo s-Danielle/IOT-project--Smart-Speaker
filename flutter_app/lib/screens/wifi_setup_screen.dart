@@ -48,6 +48,11 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
   Timer? _pollTimer;
   int _timeoutPollCount = 0;
 
+  // ── Awaiting home step ──
+  Timer? _homeTimer;
+  bool _homeChecking = false;
+  String? _homeHint;
+
   // ── Success step ──
   String? _connectedSsid;
 
@@ -66,6 +71,7 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
   void dispose() {
     _joinPollTimer?.cancel();
     _pollTimer?.cancel();
+    _homeTimer?.cancel();
     if (_boundToHotspot) {
       _boundToHotspot = false;
       WifiConnector.releaseWifiBinding();
@@ -327,26 +333,57 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
   // AWAITING HOME — speaker joining home network
   // ════════════════════════════════════════════════════════════
 
-  void _startHomeProbe() {
+  /// Looks for the speaker on the home network, under its name and under the address in use so far.
+  Future<bool> _speakerIsHome() async {
     final homeUrls = [
       'http://rpi2.local:8080',
       if (_wizardBase != _apBase) _wizardBase,
     ];
+    for (final url in homeUrls) {
+      if (await ApiService(url).isReachable(timeoutSeconds: 3)) return true;
+    }
+    return false;
+  }
 
-    Timer.periodic(const Duration(seconds: 3), (t) async {
-      for (final url in homeUrls) {
-        final reachable = await ApiService(url).isReachable(timeoutSeconds: 3);
-        if (!mounted) {
-          t.cancel();
-          return;
-        }
-        if (reachable) {
-          t.cancel();
-          setState(() => _step = _Step.success);
-          return;
-        }
+  void _startHomeProbe() {
+    _homeTimer?.cancel();
+    _homeTimer = Timer.periodic(const Duration(seconds: 3), (t) async {
+      if (_homeChecking) return;
+      final found = await _speakerIsHome();
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      if (found && _step == _Step.awaitingHome) {
+        t.cancel();
+        setState(() => _step = _Step.success);
       }
     });
+  }
+
+  /// The button: "my phone is back on my WiFi, look now" (no waiting for the next automatic look).
+  Future<void> _checkHomeNow() async {
+    setState(() {
+      _homeChecking = true;
+      _homeHint = null;
+    });
+    final found = await _speakerIsHome();
+    if (!mounted) return;
+    if (found) {
+      _homeTimer?.cancel();
+      setState(() {
+        _homeChecking = false;
+        _step = _Step.success;
+      });
+    } else {
+      setState(() {
+        _homeChecking = false;
+        _homeHint = 'The speaker does not answer yet. Check that your phone is on your '
+            'normal WiFi (not "$_apSsid"), wait a few seconds and press the button again. '
+            'If "$_apSsid" shows up in your WiFi list again, the speaker could not join '
+            '"$_connectedSsid" (usually a wrong password): join it again to retry.';
+      });
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -727,13 +764,37 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Once reconnected, this page will detect your speaker automatically.',
+                  'Once reconnected, this page will detect your speaker automatically, '
+                  'or press the button below.',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                 ),
               ],
             ),
           ),
         ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _homeChecking ? null : _checkHomeNow,
+            icon: _homeChecking
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.wifi),
+            label: const Text('My phone is back on WiFi',
+                style: TextStyle(fontSize: 16)),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+        ),
+        if (_homeHint != null) ...[
+          const SizedBox(height: 16),
+          _errorCard(_homeHint!),
+        ],
       ],
     );
   }

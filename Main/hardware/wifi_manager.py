@@ -8,6 +8,7 @@ used by both the main server and the wifi_provisioner service.
 import html
 import os
 import shutil
+import socket
 import subprocess
 import time
 
@@ -19,6 +20,24 @@ from utils.logger import log
 AP_SSID = "SmartSpeaker-Setup"
 AP_IP = "192.168.4.1"
 WEB_PORT = 8080
+
+# The name the speaker uses on a home network when its hostname cannot be read
+FALLBACK_HOSTNAME = "rpi2"
+
+
+def speaker_hostname() -> str:
+    """The speaker's own network name without ".local" (the name its mDNS answers to)."""
+    try:
+        name = socket.gethostname().split('.')[0].strip()
+    except OSError:
+        name = ''
+    return name or FALLBACK_HOSTNAME
+
+
+def speaker_home_url() -> str:
+    """Where the web app lives on a home network: http://<hostname>.local:8080"""
+    return f"http://{speaker_hostname()}.local:{WEB_PORT}"
+
 
 # Repo-root SECRETS file (shell-style KEY="value" lines, see SECRETS.template)
 _SECRETS_PATH = os.path.join(
@@ -115,6 +134,15 @@ class WiFiManager:
         return bool(ssid) and ssid != AP_SSID
     
     @staticmethod
+    def is_online() -> bool:
+        """Joined a real network AND got an address on it.
+
+        Joined but without an address (the router's address service is slow or broken) is as
+        good as no network: nothing can reach the speaker.
+        """
+        return WiFiManager.is_connected() and WiFiManager.get_ip_address() is not None
+
+    @staticmethod
     def get_current_ssid() -> str:
         """Get current connected SSID ('' if there is none)"""
         tool = find_tool('iwgetid')
@@ -169,7 +197,7 @@ class WiFiManager:
         try:
             result = subprocess.run(
                 ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'device', 'show', get_wifi_interface()],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=10
             )
             for line in result.stdout.split('\n'):
                 if 'IP4.ADDRESS' in line:
@@ -340,12 +368,18 @@ class WiFiManager:
         return result.returncode == 0
     
     @staticmethod
-    def stop_ap() -> bool:
-        """Stop AP mode. Returns True on success."""
+    def stop_captive_responder():
+        """Free port 80. Needed in the program that started the responder (the WiFi service):
+        when the server takes the hotspot down, this program is the one still holding the port."""
         try:
             captive_responder.stop()
         except Exception as e:
             log(f"Captive responder failed to stop: {e}", "WARN")
+
+    @staticmethod
+    def stop_ap() -> bool:
+        """Stop AP mode. Returns True on success."""
+        WiFiManager.stop_captive_responder()
         result = subprocess.run(['sudo', 'nmcli', 'connection', 'down', AP_SSID], 
                                check=False, capture_output=True)
         return result.returncode == 0
@@ -475,6 +509,8 @@ CAPTIVE_PORTAL_HTML = '''<!DOCTYPE html>
         .status {{ text-align: center; padding: 20px; }}
         .error {{ color: #ff6b6b; }}
         .success {{ color: #69db7c; }}
+        .small {{ font-size: 13px; opacity: 0.75; }}
+        .note {{ min-height: 1.2em; margin: 12px 0 0; }}
         .back {{ background: transparent; border: 1px solid rgba(255,255,255,0.3); 
                 color: white; margin-top: 10px; }}
     </style>

@@ -1,4 +1,5 @@
-"""WiFi setup: a slow start must not leave the speaker in setup mode for ever.
+"""WiFi setup: a slow start must not leave the speaker in setup mode for ever, and a network that
+goes away (or never comes) must bring the setup hotspot back.
 
 NetworkManager, iwgetid and iw are all replaced by fakes here. Nothing touches the real network.
 """
@@ -10,7 +11,7 @@ import pytest
 import fakes
 import hardware.wifi_manager as wifi_manager
 from hardware.wifi_manager import WiFiManager
-from wifi_provisioner import AP_RETRY_INTERVAL, CONNECT_TIMEOUT, WiFiProvisioner
+from wifi_provisioner import AP_RETRY_INTERVAL, AP_RETRY_WAIT, NO_NETWORK_GRACE, WATCH_INTERVAL, WiFiProvisioner
 
 
 # ---------------------------------------------------------------------------
@@ -42,23 +43,34 @@ class FakeWiFi:
         self.connected = False  # is there a saved network to join?
         self.ap_up = False
         self.clients = False  # is someone connected to the hotspot?
+        self.responder = False  # is the port-80 helper of the hotspot running (in the provisioner's program)?
         self.calls = []
 
     def is_connected(self):
         return self.connected and not self.ap_up
 
+    def is_online(self):
+        return self.is_connected()
+
     def get_current_ssid(self):
+        if self.ap_up:
+            return wifi_manager.AP_SSID
         return "Home" if self.connected else ""
 
     def start_ap(self):
         self.calls.append("start_ap")
         self.ap_up = True
+        self.responder = True
         return True
 
     def stop_ap(self):
         self.calls.append("stop_ap")
         self.ap_up = False
+        self.responder = False
         return True
+
+    def stop_captive_responder(self):
+        self.responder = False
 
     def reconnect(self):
         self.calls.append("reconnect")
@@ -77,7 +89,7 @@ def build(limit=3600, portal_busy=lambda: False):
 def test_a_normal_boot_never_starts_the_hotspot():
     provisioner, wifi, clock, led = build()
     wifi.connected = True
-    provisioner.run()
+    provisioner.boot()
     assert wifi.calls == []
     assert "connected" in led.names()
 
@@ -85,43 +97,43 @@ def test_a_normal_boot_never_starts_the_hotspot():
 def test_wifi_that_arrives_within_the_wait_never_starts_the_hotspot():
     provisioner, wifi, clock, led = build()
     clock.on_tick = lambda t: setattr(wifi, "connected", t >= 10)
-    provisioner.run()
+    provisioner.boot()
     assert wifi.calls == []
 
 
 def test_no_wifi_at_boot_starts_the_hotspot():
-    provisioner, wifi, clock, led = build(limit=CONNECT_TIMEOUT + 20)
+    provisioner, wifi, clock, led = build(limit=NO_NETWORK_GRACE + 20)
     with pytest.raises(TimeoutError):
-        provisioner.run()
+        provisioner.boot()
     assert wifi.calls == ["start_ap"]
     assert "ap_mode" in led.names()
 
 
 def test_the_speaker_gets_out_of_setup_mode_when_the_wifi_comes_back():
-    # Sep 5: the router was not ready within 30 s, the speaker opened its hotspot, and then
+    # Sep 5: the router was not ready in time, the speaker opened its hotspot, and then
     # sat there with no internet until somebody rebooted it.
     provisioner, wifi, clock, led = build()
     clock.on_tick = lambda t: setattr(wifi, "connected", t >= 100)  # the router comes up at 100 s
-    provisioner.run()  # must come back by itself
+    provisioner.boot()  # must come back by itself
     assert wifi.calls == ["start_ap", "stop_ap", "reconnect"]
     assert led.names()[-1] == "connected"
-    assert clock.t < 30 + AP_RETRY_INTERVAL + CONNECT_TIMEOUT + 10
+    assert clock.t < NO_NETWORK_GRACE + AP_RETRY_INTERVAL + AP_RETRY_WAIT + 10
 
 
 def test_if_the_wifi_is_still_down_the_hotspot_comes_back():
-    provisioner, wifi, clock, led = build(limit=30 + 3 * AP_RETRY_INTERVAL)
+    provisioner, wifi, clock, led = build(limit=NO_NETWORK_GRACE + 3 * AP_RETRY_INTERVAL)
     with pytest.raises(TimeoutError):
-        provisioner.run()
+        provisioner.boot()
     assert wifi.calls.count("start_ap") >= 3  # up, down for a retry, up again, ...
     assert wifi.calls.count("stop_ap") >= 2
     assert wifi.ap_up or wifi.calls[-1] in ("stop_ap", "reconnect")  # it is never left dead for long
 
 
 def test_nobody_is_thrown_off_the_hotspot_while_setting_it_up():
-    provisioner, wifi, clock, led = build(limit=30 + 3 * AP_RETRY_INTERVAL)
+    provisioner, wifi, clock, led = build(limit=NO_NETWORK_GRACE + 3 * AP_RETRY_INTERVAL)
     wifi.clients = True
     with pytest.raises(TimeoutError):
-        provisioner.run()
+        provisioner.boot()
     assert wifi.calls == ["start_ap"]  # never stopped
 
 
@@ -134,9 +146,131 @@ def test_setting_up_through_the_portal_still_works():
             wifi.connected = True
 
     clock.on_tick = server_connects
-    provisioner.run()
+    provisioner.boot()
     assert "stop_ap" not in wifi.calls  # the provisioner did not need to do anything
     assert led.names()[-1] == "connected"
+
+
+# ---------------------------------------------------------------------------
+# Once online, the provisioner keeps watching (the router moved, replaced or switched off)
+# ---------------------------------------------------------------------------
+
+
+def offline_between(wifi, start, end):
+    """on_tick for a clock: the network is gone from `start` until `end` (seconds)."""
+    return lambda t: setattr(wifi, "connected", not (start <= t < end))
+
+
+def test_the_provisioner_keeps_running_after_a_normal_boot():
+    provisioner, wifi, clock, led = build(limit=3600)
+    wifi.connected = True
+    with pytest.raises(TimeoutError):  # it never returns by itself: it watches the network
+        provisioner.run()
+    assert wifi.calls == []
+
+
+def test_a_short_break_in_the_network_is_left_to_networkmanager():
+    provisioner, wifi, clock, led = build(limit=600)
+    wifi.connected = True
+    clock.on_tick = offline_between(wifi, 100, 100 + NO_NETWORK_GRACE - 2 * WATCH_INTERVAL)
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert wifi.calls == []
+
+
+def test_no_network_for_a_minute_opens_the_setup_hotspot():
+    provisioner, wifi, clock, led = build(limit=1000)
+    wifi.connected = True
+    opened = []
+    clock.on_tick = lambda t: (setattr(wifi, "connected", t < 200), opened.append(t) if wifi.ap_up and not opened else None)
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert wifi.calls[0] == "start_ap"
+    assert "ap_mode" in led.names()
+    # it waited the whole grace (not less), and did not wait much longer
+    assert 200 + NO_NETWORK_GRACE <= opened[0] <= 200 + NO_NETWORK_GRACE + 2 * WATCH_INTERVAL
+
+
+def test_the_speaker_comes_back_to_the_watch_after_the_user_sets_up_a_new_network():
+    provisioner, wifi, clock, led = build(limit=1500)
+    wifi.connected = True
+    done = {}  # when the user finished setting up
+    starts = []  # when the hotspot came up
+
+    real_start_ap = wifi.start_ap
+
+    def start_ap():
+        starts.append(clock.t)
+        return real_start_ap()
+
+    wifi.start_ap = start_ap
+
+    def tick(t):
+        if "at" not in done:
+            wifi.connected = t < 200  # the router is gone
+            if wifi.ap_up and t >= 400:  # a user joined the hotspot and the portal joined a new network
+                wifi.ap_up = False
+                wifi.connected = True
+                done["at"] = t
+        elif t >= 800:
+            wifi.connected = False  # and later that router goes too
+
+    clock.on_tick = tick
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert [t for t in starts if t < done["at"]]  # the first loss opened the hotspot
+    between = [t for t in starts if done["at"] < t < 800]
+    assert between == []  # online again: the hotspot stayed off
+    assert [t for t in starts if t >= 800 + NO_NETWORK_GRACE]  # the second loss opened it again
+
+
+def test_the_port_80_helper_is_stopped_when_setup_is_done():
+    # The helper that makes phones open the setup page lives in the provisioner's program. The server
+    # takes the hotspot down, so unless the provisioner stops the helper it keeps answering on port 80.
+    provisioner, wifi, clock, led = build(limit=2000)
+    wifi.connected = True
+    seen = {}
+
+    def tick(t):
+        if t >= 200 and "joined" not in seen:
+            wifi.connected = False
+        if wifi.ap_up and t >= 400:
+            wifi.ap_up = False  # the server's doing; wifi.responder stays on, as in real life
+            wifi.connected = True
+            seen["joined"] = t
+        if "joined" in seen and t >= seen["joined"] + 30:
+            seen.setdefault("responder_30s_later", wifi.responder)
+
+    clock.on_tick = tick
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert seen["responder_30s_later"] is False
+
+
+def test_no_network_while_the_setup_page_joins_one_does_not_count():
+    # Somebody changed network through the app: the speaker is offline on purpose for a while.
+    busy = {"now": False}
+    provisioner, wifi, clock, led = build(limit=1000, portal_busy=lambda: busy["now"])
+    wifi.connected = True
+
+    def tick(t):
+        wifi.connected = not (100 <= t < 400)
+        busy["now"] = 100 <= t < 400
+
+    clock.on_tick = tick
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert wifi.calls == []
+
+
+def test_a_hotspot_that_is_already_up_is_not_restarted():
+    # The developer tools can start the hotspot by hand. Starting it again throws its clients off.
+    provisioner, wifi, clock, led = build(limit=1000)
+    wifi.connected = True
+    clock.on_tick = lambda t: setattr(wifi, "ap_up", t >= 100) or setattr(wifi, "clients", True)
+    with pytest.raises(TimeoutError):
+        provisioner.run()
+    assert wifi.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -234,17 +368,18 @@ def test_the_retry_waits_while_the_setup_page_is_joining_a_network():
     # A user submitted the form: the server dropped the hotspot to join their network, so no client is
     # attached any more. The retry timer must not tear the hotspot down or bring it back in that window.
     busy = {"now": True}
-    provisioner, wifi, clock, led = build(limit=AP_RETRY_INTERVAL + 60, portal_busy=lambda: busy["now"])
-    clock.on_tick = lambda t: busy.update(now=t < AP_RETRY_INTERVAL + 40)
+    retry_at = NO_NETWORK_GRACE + AP_RETRY_INTERVAL  # the hotspot starts after the grace, the first retry is due one interval later
+    provisioner, wifi, clock, led = build(limit=retry_at + 30, portal_busy=lambda: busy["now"])
+    clock.on_tick = lambda t: busy.update(now=t < retry_at + 10)
     with pytest.raises(TimeoutError):
-        provisioner.run()
+        provisioner.boot()
     assert wifi.calls == ["start_ap"]  # no stop_ap, no reconnect, no second start_ap while it was busy
 
 
 def test_the_retry_goes_ahead_once_the_setup_page_is_done():
     provisioner, wifi, clock, led = build(portal_busy=lambda: False)
     clock.on_tick = lambda t: setattr(wifi, "connected", t >= 100)
-    provisioner.run()
+    provisioner.boot()
     assert wifi.calls == ["start_ap", "stop_ap", "reconnect"]
 
 
@@ -283,3 +418,44 @@ def test_a_server_that_does_not_answer_means_nobody_is_using_the_portal(monkeypa
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
     assert wifi_provisioner.portal_is_connecting() is False
+
+
+# ---------------------------------------------------------------------------
+# "Online" means an address as well as a network name
+# ---------------------------------------------------------------------------
+
+
+def test_a_network_without_an_address_is_not_online(monkeypatch):
+    monkeypatch.setattr(WiFiManager, "get_current_ssid", staticmethod(lambda: "Home"))
+    monkeypatch.setattr(WiFiManager, "get_ip_address", staticmethod(lambda: None))
+    assert WiFiManager.is_connected() is True
+    assert WiFiManager.is_online() is False
+
+
+def test_a_network_with_an_address_is_online(monkeypatch):
+    monkeypatch.setattr(WiFiManager, "get_current_ssid", staticmethod(lambda: "Home"))
+    monkeypatch.setattr(WiFiManager, "get_ip_address", staticmethod(lambda: "192.168.1.20"))
+    assert WiFiManager.is_online() is True
+
+
+def test_the_setup_hotspot_is_not_online_even_with_its_own_address(monkeypatch):
+    monkeypatch.setattr(WiFiManager, "get_current_ssid", staticmethod(lambda: wifi_manager.AP_SSID))
+    monkeypatch.setattr(WiFiManager, "get_ip_address", staticmethod(lambda: wifi_manager.AP_IP))
+    assert WiFiManager.is_online() is False
+
+
+def test_the_speakers_address_on_a_home_network_follows_its_hostname(monkeypatch):
+    monkeypatch.setattr(wifi_manager.socket, "gethostname", lambda: "kitchen")
+    assert wifi_manager.speaker_home_url() == "http://kitchen.local:8080"
+    monkeypatch.setattr(wifi_manager.socket, "gethostname", lambda: "kitchen.fritz.box")
+    assert wifi_manager.speaker_home_url() == "http://kitchen.local:8080"  # only the first part is the mDNS name
+    monkeypatch.setattr(wifi_manager.socket, "gethostname", lambda: "")
+    assert wifi_manager.speaker_home_url() == "http://rpi2.local:8080"
+
+
+def test_stopping_the_hotspot_also_frees_port_80(monkeypatch):
+    stopped = []
+    monkeypatch.setattr(wifi_manager.captive_responder, "stop", lambda: stopped.append(True))
+    monkeypatch.setattr(wifi_manager.subprocess, "run", lambda cmd, **kw: completed())
+    WiFiManager.stop_ap()
+    assert stopped == [True]

@@ -2,10 +2,11 @@
 """
 WiFi Provisioning Service (NetworkManager-based)
 
-Boot-time state machine (no HTTP server, binds no ports):
-- Waits for NetworkManager to auto-connect on boot
-- If no connection after timeout, starts AP mode (SmartSpeaker-Setup)
-  and monitors until the Pi is connected to a real network
+Runs for as long as the speaker is on (no HTTP server, binds no ports):
+- At boot it waits for NetworkManager to join a saved network
+- Whenever there has been no network for NO_NETWORK_GRACE seconds (at boot, or
+  later because the router went away or the speaker was moved), it starts AP
+  mode (SmartSpeaker-Setup) and waits until the Pi is on a real network again
 - While in AP mode, every AP_RETRY_INTERVAL seconds, if nobody is using the
   hotspot, it takes the hotspot down and tries the saved network again (a
   router that was slow or briefly away must not leave the speaker stuck in
@@ -29,9 +30,11 @@ from hardware.wifi_manager import WiFiManager, AP_SSID, AP_IP, WEB_PORT
 from utils.logger import log
 from config.settings import SERVER_HOST, SERVER_PORT
 
-CONNECT_TIMEOUT = 30  # Seconds to wait for auto-connect
+NO_NETWORK_GRACE = 60  # Seconds without a network (at boot or later) before the setup hotspot starts
+WATCH_INTERVAL = 10  # Seconds between network checks once the speaker is online
 AP_POLL_INTERVAL = 3  # Seconds between connection checks while in AP mode
 AP_RETRY_INTERVAL = 120  # Seconds in AP mode between tries at the saved network
+AP_RETRY_WAIT = 30  # Seconds one such try waits for the network (the hotspot is down meanwhile)
 
 
 def log_wifi(message: str):
@@ -126,24 +129,61 @@ class WiFiProvisioner:
         self._portal_busy = portal_busy if portal_busy is not None else portal_is_connecting
 
     def run(self):
-        """Main provisioning flow - wait for WiFi, fallback to AP mode"""
+        """Boot, then watch the network for as long as the speaker is on."""
+        self.boot()
+        self.watch()
+
+    def boot(self):
+        """Wait for the saved network; if it does not come, set up through the hotspot."""
         log_wifi("Waiting for NetworkManager to connect...")
         self.led.connecting()
 
         # Give NetworkManager time to auto-connect to known networks
-        if self._wait_for_wifi(CONNECT_TIMEOUT, announce=True):
-            return  # Exit - normal operation can proceed
+        if self._wait_for_wifi(NO_NETWORK_GRACE, announce=True):
+            return  # Normal operation can proceed
 
-        # No connection after timeout - start AP mode and wait for the
-        # main server's captive portal to provision credentials
         log_wifi("No connection, starting AP mode...")
-        self._start_ap()
+        self._enter_setup_mode()
+
+    def watch(self):
+        """Online: check every WATCH_INTERVAL seconds. No network for NO_NETWORK_GRACE seconds
+        in a row (a router that was moved, replaced or switched off): go back to setup mode.
+
+        Time without a network that is shorter than the grace is left to NetworkManager, which
+        keeps trying the saved networks by itself. While the setup page is in the middle of
+        joining a network the speaker is offline on purpose, so that does not count.
+        """
+        lost_since = None
+        while True:
+            self._sleep(WATCH_INTERVAL)
+            if self.wifi.is_online() or self._portal_busy():
+                if lost_since is not None:
+                    log_wifi("The network is back")
+                    lost_since = None
+                continue
+            if lost_since is None:
+                lost_since = self._now()
+                log_wifi(f"No network. Setup mode starts in {NO_NETWORK_GRACE}s unless it comes back")
+            elif self._now() - lost_since >= NO_NETWORK_GRACE:
+                log_wifi(f"No network for {NO_NETWORK_GRACE}s, starting AP mode...")
+                self._enter_setup_mode()
+                lost_since = None
+
+    def _enter_setup_mode(self):
+        """Open the hotspot (unless it is already up), wait for the network, close the hotspot's helpers."""
+        if self.wifi.get_current_ssid() == AP_SSID:
+            # Somebody (the developer tools) started it. Restarting it would throw its clients off.
+            self.led.ap_mode()
+        else:
+            self._start_ap()
         self._wait_for_provisioning()
+        # The server took the hotspot down, but the port-80 helper lives in this program
+        self.wifi.stop_captive_responder()
 
     def _wait_for_wifi(self, seconds: int, announce: bool = False) -> bool:
-        """Wait up to `seconds` for a real WiFi connection. True if it came."""
+        """Wait up to `seconds` for a real WiFi connection with an address. True if it came."""
         for i in range(seconds):
-            if self.wifi.is_connected():
+            if self.wifi.is_online():
                 ssid = self.wifi.get_current_ssid()
                 log_wifi(f"Connected to {ssid}")
                 self.led.connected()
@@ -172,8 +212,8 @@ class WiFiProvisioner:
         consecutive = 0
         last_try = self._now()
         while True:
-            # is_connected() is False while the AP profile is the active connection
-            if self.wifi.is_connected():
+            # is_online() is False while the AP profile is the active connection
+            if self.wifi.is_online():
                 consecutive += 1
                 if consecutive >= 2:
                     ssid = self.wifi.get_current_ssid()
@@ -210,7 +250,7 @@ class WiFiProvisioner:
         self.led.connecting()
         self.wifi.stop_ap()
         self.wifi.reconnect()
-        if self._wait_for_wifi(CONNECT_TIMEOUT):
+        if self._wait_for_wifi(AP_RETRY_WAIT):
             return True
         log_wifi("Still no WiFi - bringing the setup hotspot back")
         self._start_ap()

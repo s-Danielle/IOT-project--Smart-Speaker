@@ -62,7 +62,7 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 
 | # | Edge Case | How It's Handled |
 |---|-----------|------------------|
-| 25 | No WiFi at boot (not configured, or the router is slow) | Starts AP mode ("SmartSpeaker-Setup") after 30 seconds. If nobody is connected to the hotspot, it tries the saved network again every 2 minutes |
+| 25 | No WiFi at boot (not configured, or the router is slow) | Starts AP mode ("SmartSpeaker-Setup") after 60 seconds without a network. If nobody is connected to the hotspot, it tries the saved network again every 2 minutes |
 | 26 | Health LED status indication | Shows green (OK), blue blink (no server), red (hardware fail) |
 
 ## Hardware Resilience
@@ -121,6 +121,12 @@ This document outlines edge cases that are handled by the Smart Speaker system, 
 | 69 | `SPEAKER_STORAGE=sqlite` and the database exists but cannot be opened (made by a newer version, disk error) | The server stops with a clear message instead of falling back to a JSON file that may be out of date. Set `SPEAKER_STORAGE=json` to move the data out of SQLite on purpose |
 | 70 | Moving the data out of SQLite: the JSON is written but the database cannot be put aside | The new JSON file is removed again and the speaker carries on with the database, so there is never a second live copy |
 | 71 | The web app is deployed for the first time, or the folder on the Pi is empty | `deploy_web.sh` keeps a previous app only if it has an `index.html`, so the first deploy works and `--undo` can never swap an empty folder in |
+| 72 | The network goes away while the speaker is running (router replaced or off for good, speaker carried elsewhere) | The WiFi service keeps watching (every 10 seconds). After 60 seconds in a row without a network it starts the setup hotspot, the same as at boot. A shorter break is left to the system, which rejoins by itself |
+| 73 | The speaker is joined to a network but has no address on it (the router's address service is slow or broken) | Counts as no network: nothing can reach the speaker. The same 60 seconds apply |
+| 74 | The app or the developer tools make the speaker join another network while it is on a home network | The speaker is offline on purpose for a few seconds, and the WiFi service asks the server (over localhost) and does not count that time |
+| 75 | The setup page: the phone loses the setup network when the speaker leaves it | After three missed answers the page asks the user to bring the phone back to its WiFi and shows a button. The button looks for the speaker first (`/health` at its `.local` name) and only then opens the web app, so a phone that is not back yet is not sent to an error page. It also shows the address to type. If the setup network comes back (wrong password) the page switches to the failure message |
+| 76 | The hotspot was started by hand (developer tools) and the speaker finds no network for a minute | The WiFi service does not start it again (that would throw off whoever is connected); it waits for setup to finish |
+| 77 | The setup is done and the speaker is on the new network | The WiFi service stops the port-80 helper that redirected phones to the setup page, so port 80 on the new network is not hijacked |
 
 ---
 

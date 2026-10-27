@@ -28,7 +28,8 @@ REPO="${REPO:-/home/iot-proj/IOT-project--Smart-Speaker}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE="$HOME/.smart_speaker_updates"
 VENV_PIP="$REPO/venv/bin/pip"
-SERVICES=(smart_speaker_server smart_speaker smart_speaker_health)
+# The WiFi service runs all the time now (it watches the network), so new code needs a restart too
+SERVICES=(smart_speaker_server smart_speaker smart_speaker_health smart_speaker_wifi)
 
 DRY=0
 UNDO=0

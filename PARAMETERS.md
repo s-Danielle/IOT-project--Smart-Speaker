@@ -95,6 +95,17 @@ At start-up the volume is lowered to `VOLUME_DEFAULT` or the parental volume lim
 | `MOPIDY_HOST` | "localhost" | Mopidy server address |
 | `MPD_PORT` | 6600 | MPD protocol port (used by python-mpd2) |
 
+**WiFi setup mode** (constants at the top of `Main/wifi_provisioner.py`; the WiFi service runs all the time and needs a restart after a change):
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `NO_NETWORK_GRACE` | 60 s | How long the speaker may be without a network, at boot or later, before it starts the setup hotspot |
+| `WATCH_INTERVAL` | 10 s | How often it checks the network while online |
+| `AP_RETRY_INTERVAL` | 120 s | While the hotspot is up and nobody is connected to it: how often it tries the saved network again |
+| `AP_RETRY_WAIT` | 30 s | How long one such try waits (the hotspot is down meanwhile) |
+
+"Network" means joined to a WiFi network **and** holding an address on it. Internet access is not required: a router that has lost its internet still lets the app reach the speaker.
+
 ---
 
 ## NFC Settings

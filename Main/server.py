@@ -30,7 +30,7 @@ from utils.access import (
 )
 from utils.secrets_file import ensure_token
 from hardware.wifi_manager import (
-    WiFiManager, AP_SSID, AP_IP, WEB_PORT,
+    WiFiManager, AP_SSID, AP_IP, WEB_PORT, speaker_home_url,
     render_network_list_html, CAPTIVE_PORTAL_HTML
 )
 
@@ -589,89 +589,139 @@ def wifi_ap_mode(enable: bool = True) -> dict:
         return {"error": str(e)}
 
 
+# The script of the "connecting..." page. Plain text with two markers (__SSID__ and __HOME__) that
+# _render_connecting_html fills in, so the braces need no doubling and the file can be checked by node.
+CONNECTING_PAGE_SCRIPT = r"""
+(function() {
+    var ssid = __SSID__;
+    var home = __HOME__;
+    var apName = __AP_NAME__;
+    var box = document.getElementById('connect-status');
+    document.getElementById('connect-ssid').textContent = ssid;
+    var missedPolls = 0;
+    var readyShown = false;   // the "switch your phone back" panel is up
+    var finished = false;     // a failure was shown: stop asking
+
+    function el(tag, text, className) {
+        var e = document.createElement(tag);
+        if (text) e.textContent = text;
+        if (className) e.className = className;
+        return e;
+    }
+
+    function show(title, lines) {
+        box.innerHTML = '';
+        box.appendChild(el('h2', title));
+        lines.forEach(function(t) { box.appendChild(el('p', t)); });
+    }
+
+    function showFailure(error) {
+        finished = true;
+        box.className = 'status error';
+        show('\u274C Failed', [
+            'Could not connect to "' + ssid + '".',
+            error || 'Check the password and try again.'
+        ]);
+        var b = el('button', 'Try Again');
+        b.onclick = function() { location.href = '/wifi-setup'; };
+        box.appendChild(b);
+    }
+
+    // The speaker has left the setup network (or says it joined the new one): the phone is about to
+    // lose this page's server. The user brings the phone back to their own WiFi and presses the button.
+    function showReady(joined) {
+        if (readyShown) return;
+        readyShown = true;
+        box.className = 'status success';
+        show(joined ? '\u2705 Connected!' : '\u2705 Almost done', [
+            'The speaker is joining "' + ssid + '".',
+            'Your phone should go back to your normal WiFi by itself. If it does not, open ' +
+            'the WiFi settings and choose that network.',
+            'When your phone is back on it, press the button.'
+        ]);
+        var open = el('button', 'My phone is back on WiFi \u2013 open the speaker');
+        var note = el('p', '', 'note');
+        open.onclick = function() { openSpeaker(open, note); };
+        box.appendChild(open);
+        box.appendChild(note);
+        box.appendChild(el('p', 'Or type this address into your browser: ' + home, 'small'));
+        box.appendChild(el('p', 'If "' + apName + '" shows up again in your WiFi list, the speaker could ' +
+            'not join "' + ssid + '" (usually a wrong password). Join "' + apName + '" again to retry.', 'small'));
+    }
+
+    // Look for the speaker first, so a phone that is not back yet does not end up on an error page
+    // and lose this one. no-cors: the answer cannot be read, but a reply at all means it is there.
+    function openSpeaker(button, note) {
+        button.disabled = true;
+        note.className = 'note';
+        note.textContent = 'Looking for the speaker\u2026';
+        var stop = ('AbortController' in window) ? new AbortController() : null;
+        var timer = setTimeout(function() { if (stop) stop.abort(); }, 6000);
+        fetch(home + '/health', {mode: 'no-cors', cache: 'no-store', signal: stop ? stop.signal : undefined})
+            .then(function() {
+                clearTimeout(timer);
+                note.textContent = 'Found it. Opening\u2026';
+                location.href = home + '/';
+            })
+            .catch(function() {
+                clearTimeout(timer);
+                button.disabled = false;
+                note.className = 'note error';
+                note.textContent = 'The speaker does not answer yet. Check that your phone is on your ' +
+                    'normal WiFi (not "' + apName + '"), wait a few seconds and press the button again.';
+            });
+    }
+
+    function poll() {
+        if (finished) return;
+        fetch('/debug/wifi/connect-status')
+            .then(function(r) { return r.json(); })
+            .then(function(s) {
+                missedPolls = 0;
+                if (s.state === 'connected') {
+                    showReady(true);
+                } else if (s.state === 'failed') {
+                    showFailure(s.error);
+                    return;
+                }
+                setTimeout(poll, readyShown ? 5000 : 2000);
+            })
+            .catch(function() {
+                // The setup network went away: the speaker is switching networks
+                missedPolls++;
+                if (missedPolls >= 3) showReady(false);
+                setTimeout(poll, readyShown ? 5000 : 2000);
+            });
+    }
+    setTimeout(poll, 2000);
+})();
+"""
+
+
 def _render_connecting_html(ssid: str) -> str:
     """Render the captive-portal "connecting..." page.
-    
-    The page polls GET /debug/wifi/connect-status and updates itself with
-    the outcome. If the speaker switches networks the AP disappears and
-    polling starts failing; after enough failed polls the page assumes
-    success and tells the user how to reach the speaker on their LAN.
+
+    The page polls GET /debug/wifi/connect-status and updates itself with the outcome. When the
+    speaker leaves the setup network the polling starts to fail: after a few misses the page
+    asks the user to bring the phone back to their own WiFi, and offers a button that checks the
+    speaker is reachable there and opens the web app. The page keeps polling, so if the attempt
+    failed and the setup network comes back, it shows the failure instead.
     """
-    # Embed the SSID as a JS string (escape "</" so it can't close the script tag)
-    ssid_js = json.dumps(ssid).replace('</', '<\\/')
+    # Embed the strings as JS strings (escape "</" so they can't close the script tag)
+    def js(value):
+        return json.dumps(value).replace('</', '<\\/')
+
+    script = (CONNECTING_PAGE_SCRIPT
+              .replace('__SSID__', js(ssid))
+              .replace('__HOME__', js(speaker_home_url()))
+              .replace('__AP_NAME__', js(AP_SSID)))
     content = f'''<div class="status" id="connect-status">
-        <h2>⏳ Connecting...</h2>
+        <h2>\u23f3 Connecting...</h2>
         <p>Connecting to <strong id="connect-ssid"></strong>&hellip;</p>
         <p style="opacity:0.7">This can take up to a minute. The setup network
-        may disappear while the speaker switches networks.</p>
+        will disappear while the speaker switches networks.</p>
     </div>
-    <script>
-        (function() {{
-            var ssid = {ssid_js};
-            document.getElementById('connect-ssid').textContent = ssid;
-            var box = document.getElementById('connect-status');
-            var missedPolls = 0;
-            
-            function show(title, lines, extraHtml) {{
-                box.innerHTML = '';
-                var h = document.createElement('h2');
-                h.textContent = title;
-                box.appendChild(h);
-                lines.forEach(function(t) {{
-                    var p = document.createElement('p');
-                    p.textContent = t;
-                    box.appendChild(p);
-                }});
-                if (extraHtml) {{
-                    var d = document.createElement('div');
-                    d.innerHTML = extraHtml;
-                    box.appendChild(d);
-                }}
-            }}
-            
-            function showSuccess() {{
-                box.className = 'status success';
-                show('\\u2705 Connected!', [
-                    'The speaker joined "' + ssid + '".',
-                    'Reconnect this device to your normal WiFi, then reach the ' +
-                    'speaker at http://rpi2.local:{WEB_PORT}'
-                ]);
-            }}
-            
-            function showFailure(error) {{
-                box.className = 'status error';
-                show('\\u274C Failed', [
-                    'Could not connect to "' + ssid + '".',
-                    error || 'Check the password and try again.'
-                ], '<button onclick="location.href=\\'/wifi-setup\\'">Try Again</button>');
-            }}
-            
-            function poll() {{
-                fetch('/debug/wifi/connect-status')
-                    .then(function(r) {{ return r.json(); }})
-                    .then(function(s) {{
-                        missedPolls = 0;
-                        if (s.state === 'connected') {{
-                            showSuccess();
-                        }} else if (s.state === 'failed') {{
-                            showFailure(s.error);
-                        }} else {{
-                            setTimeout(poll, 2000);
-                        }}
-                    }})
-                    .catch(function() {{
-                        // AP likely went down mid-switch; keep trying a while
-                        missedPolls++;
-                        if (missedPolls >= 15) {{
-                            showSuccess();
-                        }} else {{
-                            setTimeout(poll, 2000);
-                        }}
-                    }});
-            }}
-            setTimeout(poll, 2000);
-        }})();
-    </script>'''
+    <script>{script}</script>'''
     return CAPTIVE_PORTAL_HTML.format(
         content=content, connect_action="/wifi-setup/connect"
     )

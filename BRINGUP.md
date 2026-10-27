@@ -218,7 +218,7 @@ Phase 1 comes first on purpose: it is made so that the **old code runs happily w
   ```
   bash /tmp/pi/pi_update.sh --dry-run rc1
   ```
-- [ ] **5.9** Switch the code (it installs the Python packages first, switches, restarts the three services and runs the quick check; the check must end green). Only code changes here, so everything in this phase can be undone by going back to a commit:
+- [ ] **5.9** Switch the code (it installs the Python packages first, switches, restarts the four services (the WiFi service too: it now runs all the time) and runs the quick check; the check must end green). Only code changes here, so everything in this phase can be undone by going back to a commit:
   ```
   bash /tmp/pi/pi_update.sh rc1
   ```
@@ -294,7 +294,8 @@ How it works: the setting `SPEAKER_STORAGE` is `json` (what you have been runnin
 
 **Part D: Phase 4, WiFi setup mode** (do this **last**: SSH stops working while the Pi is in setup mode, and you will need the phone to put it back on the network)
 - [ ] **5.27** Tests 1 and 2 in [TESTING_WIFI_AND_WEB.md](TESTING_WIFI_AND_WEB.md). These were written for the old code, so a pass here is also the first proof that the hotspot is detected correctly.
-- [ ] **5.28** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot.
+- [ ] **5.28** Test 6 in the same file: the router comes back after the speaker (a power cut at home). The Pi must rejoin the home network by itself within about 2 minutes, with nobody touching the hotspot (the hotspot itself now takes a minute to appear).
+- [ ] **5.29** Test 7 in the same file: the network goes away while the speaker is running. A short break changes nothing; a minute without a network brings the setup hotspot; set up another network through the page, including the button at the end ("My phone is back on WiFi – open the speaker"); then lose that network too and the hotspot comes back again.
 
 **Undo, in the order that matters**
 - The data (Phase 3) first, if the Pi has been on SQLite: set `SPEAKER_STORAGE=json` as in 5.25. A code switch does not move data by itself.
