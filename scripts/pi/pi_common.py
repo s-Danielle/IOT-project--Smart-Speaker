@@ -319,13 +319,6 @@ SIGNATURES = [
     },
 ]
 
-# One grep -E pattern for pi_report.sh and quick filtering.
-LOG_FILTER_PATTERN = (
-    r"login5|INVALID_CREDENTIALS|\b401\b|\b403\b|\b429\b|spotifyaudiosrc|xrun|underrun|"
-    r"Traceback|ERROR|CRITICAL"
-)
-
-
 def mask_secrets(text):
     """Hide long token-like strings and values of secret-looking keys."""
     text = re.sub(

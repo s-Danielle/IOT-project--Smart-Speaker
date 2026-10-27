@@ -12,7 +12,7 @@ source of truth for all configuration and chip data.
 import json
 import urllib.request
 import urllib.error
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 from config.settings import SERVER_HOST, SERVER_PORT
 from utils.logger import log_error
@@ -133,34 +133,6 @@ def add_daily_usage(seconds: int) -> bool:
     """
     result = _http_post('/usage/add', {'seconds': seconds})
     return result is not None
-
-
-# =============================================================================
-# Chip Data API
-# =============================================================================
-
-def get_chips() -> List[Dict[str, Any]]:
-    """Fetch all chips from server.
-    
-    Returns:
-        List of chip dicts, or empty list on error
-    """
-    result = _http_get('/chips')
-    return result if result is not None else []
-
-
-# =============================================================================
-# Library API
-# =============================================================================
-
-def get_library() -> List[Dict[str, Any]]:
-    """Fetch library songs from server.
-    
-    Returns:
-        List of song dicts, or empty list on error
-    """
-    result = _http_get('/library')
-    return result if result is not None else []
 
 
 # =============================================================================

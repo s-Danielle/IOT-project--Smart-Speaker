@@ -1,14 +1,11 @@
 """
-Central paths for sound files, recordings, tags.json
+Central paths for sound files and recordings
 """
 
 import os
 
 # Base directory (Main folder)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# Configuration files
-TAGS_JSON = os.path.join(BASE_DIR, "config", "tags.json")
 
 # Assets
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")

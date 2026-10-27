@@ -67,15 +67,6 @@ class VoiceCommand:
     # Supported commands after wake phrase
     COMMANDS = {"play", "pause", "stop", "clear"}
     
-    # Easter egg command identifiers (returned when easter egg detected)
-    EASTER_COMMANDS = {
-        "easter_shut_up",
-        "easter_happy_birthday", 
-        "easter_kill_yourself",
-        "easter_despacito",
-        "easter_grade",
-    }
-    
     def __init__(self, mic_session=None):
         """Initialize voice command processor."""
         self._enabled = PTT_ENABLED
@@ -95,7 +86,7 @@ class VoiceCommand:
         
         log(f"[VOICE] Initialized (wake phrase: '{self._wake_phrase}')")
         if self._easter_config.get('enabled'):
-            log(f"[VOICE] Easter egg commands enabled")
+            log("[VOICE] Easter egg commands enabled")
     
     def start_recording(self) -> bool:
         """
@@ -417,7 +408,7 @@ class VoiceCommand:
                 break
         
         if remainder is None:
-            log(f"[VOICE] No wake phrase found")
+            log("[VOICE] No wake phrase found")
             return None
         
         # Check for each command
@@ -455,35 +446,35 @@ class VoiceCommand:
             # "shut up" - mute volume
             if self._easter_config.get('shut_up', {}).get('enabled'):
                 if variant in ["shut up", "shutup", "be quiet", "mute"]:
-                    log(f"[VOICE] Easter egg detected: shut_up")
+                    log("[VOICE] Easter egg detected: shut_up")
                     return "easter_shut_up"
             
             # "happy birthday" - play birthday song
             if self._easter_config.get('happy_birthday', {}).get('enabled'):
                 if "happy birthday" in variant or "birthday" in variant:
-                    log(f"[VOICE] Easter egg detected: happy_birthday")
+                    log("[VOICE] Easter egg detected: happy_birthday")
                     return "easter_happy_birthday"
             
             # "kill yourself" - reboot
             if self._easter_config.get('kill_yourself', {}).get('enabled'):
                 if "kill yourself" in variant or "reboot" in variant:
-                    log(f"[VOICE] Easter egg detected: kill_yourself")
+                    log("[VOICE] Easter egg detected: kill_yourself")
                     return "easter_kill_yourself"
             
             # "hey alexa play despacito" - play Despacito
             if self._easter_config.get('despacito', {}).get('enabled'):
                 if "alexa" in variant and "despacito" in variant:
-                    log(f"[VOICE] Easter egg detected: despacito")
+                    log("[VOICE] Easter egg detected: despacito")
                     return "easter_despacito"
                 # Also match just "play despacito"
                 if "despacito" in variant:
-                    log(f"[VOICE] Easter egg detected: despacito")
+                    log("[VOICE] Easter egg detected: despacito")
                     return "easter_despacito"
             
             # "what is our grade" - play grade sound
             if self._easter_config.get('grade', {}).get('enabled'):
                 if "grade" in variant or "what is our grade" in variant:
-                    log(f"[VOICE] Easter egg detected: grade")
+                    log("[VOICE] Easter egg detected: grade")
                     return "easter_grade"
         
         return None

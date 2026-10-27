@@ -57,14 +57,6 @@ class Sounds:
         """Play chip loaded beep"""
         self._play_file(paths.SOUND_CHIP_LOADED, "CHIP LOADED")
     
-    def play_play(self):
-        """Play start playback chime"""
-        self._play_file(paths.SOUND_PLAY, "PLAY")
-    
-    def play_pause(self):
-        """Play pause click"""
-        self._play_file(paths.SOUND_PAUSE, "PAUSE")
-    
     def play_stop(self):
         """Play stop tone"""
         self._play_file(paths.SOUND_STOP, "STOP")

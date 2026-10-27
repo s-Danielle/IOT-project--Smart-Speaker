@@ -34,7 +34,6 @@ from pi_common import (  # noqa: E402
     as_user,
     have,
     is_root,
-    mask_secrets,
     now_iso,
     parse_amixer_percent,
     pick_card,

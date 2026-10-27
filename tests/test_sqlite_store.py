@@ -13,7 +13,6 @@ import time
 import pytest
 
 from storage import DEFAULT_STORAGE, JsonStore, SqliteStore, StorageError, convert, open_store
-from storage import sqlite_store
 
 
 class Clock:

@@ -53,12 +53,6 @@ class UIController:
         self._sounds.play_reset()
         self._lights.show_idle()
     
-    def on_record_start(self):
-        """Feedback when recording starts"""
-        log_event("🎙️  RECORDING STARTED")
-        self._sounds.play_record_start()
-        self._lights.show_recording()
-    
     def on_recording(self):
         """Recording is running: the red light only (the countdown already played during the hold)"""
         log_event("🎙️  RECORDING")

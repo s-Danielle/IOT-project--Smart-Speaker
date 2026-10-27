@@ -32,7 +32,6 @@ class NFCScanner:
     def __init__(self):
         """Try once to connect to the NFC reader. Never blocks and never fails if it is missing."""
         self._pn532 = None
-        self._last_uid: Optional[str] = None
         self._attempts = 0
         self._last_attempt = float("-inf")
         self._last_missing_log = float("-inf")

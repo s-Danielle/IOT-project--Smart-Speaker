@@ -122,7 +122,6 @@ def test_a_save_of_many_rows_is_all_or_nothing(kind, tmp_path):
         status = store.open()
         assert status == "ok", f"round {round_number}: the store needed repair after a kill ({status})"
         chips = [c for c in store.chips() if c["uid"].startswith(prefix)]
-        songs = [s for s in store.songs() if s["uri"].startswith("spotify:track:") and s["name"].startswith("c")]
         batches = {}
         for chip in chips:
             batches.setdefault(chip["uid"].split("-")[1], []).append(chip)

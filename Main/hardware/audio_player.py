@@ -180,29 +180,6 @@ class AudioPlayer:
         
         return self._cached_state == "play"
     
-    def get_current_uri(self) -> str:
-        """Get currently loaded URI"""
-        # Try to get URI from MPD current song
-        song = self._execute(self._client.currentsong)
-        if song and "file" in song:
-            return song["file"]
-        # Fall back to cached URI
-        return self._current_uri
-    
-    def refresh_status(self) -> dict:
-        """Force refresh status from Mopidy, bypassing cache.
-        
-        Use this when you need guaranteed fresh data, e.g., after
-        external changes or at application startup.
-        
-        Returns the raw status dict from Mopidy, or None on error.
-        """
-        self._last_status_check = time.monotonic()
-        status = self._execute(self._client.status)
-        if status is not None:
-            self._cached_state = status.get("state", "stop")
-        return status
-    
     def close(self):
         """Clean up audio player resources"""
         self.stop()

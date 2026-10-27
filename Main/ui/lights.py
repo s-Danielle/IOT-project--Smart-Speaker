@@ -39,7 +39,6 @@ class Lights:
         """Initialize lights controller"""
         self._leds = None
         self._enabled = False
-        self._flash_thread = None
         self._base = Colors.OFF  # the solid colour to come back to after a flash
 
         try:

@@ -134,11 +134,6 @@ class ComponentTracker:
         with self._lock:
             return self._status == ComponentStatus.FAILED
     
-    def is_degraded(self) -> bool:
-        """Check if component is degraded or failed"""
-        with self._lock:
-            return self._status in (ComponentStatus.DEGRADED, ComponentStatus.FAILED)
-    
     def log_failure_once(self, message: str):
         """
         Log a failure message only once (until component recovers).
@@ -275,9 +270,3 @@ class HardwareHealthManager:
             tracker.reset()
             return True
         return False
-    
-    def reset_all(self):
-        """Reset all components to healthy state"""
-        with self._components_lock:
-            for tracker in self._components.values():
-                tracker.reset()

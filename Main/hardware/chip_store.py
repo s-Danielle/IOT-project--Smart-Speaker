@@ -140,14 +140,3 @@ class ChipStore:
             log_nfc(f"Found chip: {result['name']} -> {result['uri']}")
         
         return result
-    
-    def reload(self):
-        """Reload is not needed - data is always fetched fresh from server"""
-        # No-op: data is always fetched fresh via HTTP calls
-    
-    def get_all_uids(self) -> list:
-        """Get all known UIDs via HTTP API call"""
-        chips = self._http_get('/chips')
-        if chips is None:
-            return []
-        return [chip.get('uid') for chip in chips if chip.get('uid')]

@@ -7,7 +7,6 @@ data across when the setting has changed since the last start (see convert.py).
 
 import os
 import sqlite3
-import time
 
 from . import convert
 from .json_store import JsonStore

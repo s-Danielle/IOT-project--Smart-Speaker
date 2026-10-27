@@ -13,10 +13,8 @@ import time
 import pytest
 
 import core.controller as controller_module
-import fakes
 from config.settings import MAX_WAIT_FOR_PLAYBACK
 from core.state import State
-from hardware.buttons import ButtonID
 from rig import Rig
 from utils import status_file
 from utils.status_file import STATUS_STALE_AFTER, read_status, write_status

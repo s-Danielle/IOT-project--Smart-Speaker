@@ -95,7 +95,6 @@ class Controller:
         self._play_pause_long_press_triggered = False
         
         # Track NFC chip presence for edge detection
-        self._last_nfc_uid: Optional[str] = None
         self._nfc_chip_present = False
         
         # PTT (Push-to-Talk) voice command support
@@ -561,13 +560,13 @@ class Controller:
             
             # Check blacklist first
             if uid in blacklist:
-                log_event(f"[PARENTAL] Chip blocked - UID in blacklist")
+                log_event("[PARENTAL] Chip blocked - UID in blacklist")
                 return True
             
             # Check whitelist mode
             if whitelist_mode:
                 if uid not in whitelist:
-                    log_event(f"[PARENTAL] Chip blocked - UID not in whitelist")
+                    log_event("[PARENTAL] Chip blocked - UID not in whitelist")
                     return True
             
             return False
@@ -588,16 +587,6 @@ class Controller:
         except Exception as e:
             log_error(f"[PARENTAL] Error getting volume limit: {e}")
             return 100
-    
-    def _enforce_volume_limit(self, volume: int) -> int:
-        """Enforce volume limit from parental controls.
-        Returns the capped volume value.
-        """
-        limit = self._get_volume_limit()
-        if volume > limit:
-            log_event(f"[PARENTAL] Volume capped at {limit}% (limit enforced)")
-            return limit
-        return volume
     
     def _check_and_enforce_volume_limit(self):
         """Check current volume against parental limit and reduce if necessary.
@@ -724,25 +713,20 @@ class Controller:
         # Detect chip arrival/departure (edge detection)
         chip_now_present = (uid is not None)
         chip_just_arrived = chip_now_present and not self._nfc_chip_present
-        chip_just_removed = not chip_now_present and self._nfc_chip_present
         
         self._nfc_chip_present = chip_now_present
         
         # Only process on chip arrival (edge detection)
         if not chip_just_arrived:
-            if chip_just_removed:
-                # Chip removed - reset tracking
-                self._last_nfc_uid = None
             return
-        
+
         # Chip just arrived - process it
         state = self.device_state.state
-        
+
         # RECORDING: Ignore all NFC scans
         if state == State.RECORDING:
-            log_event(f"NFC scan ignored (recording in progress)")
+            log_event("NFC scan ignored (recording in progress)")
             self._ui.on_blocked_action()
-            self._last_nfc_uid = uid  # Track it so we don't process again
             return
         
         # Look up chip data (auto-registers unknown chips)
@@ -752,20 +736,17 @@ class Controller:
             # This shouldn't happen with auto-registration, but handle it
             log_event(f"Failed to look up chip: {uid}")
             self._ui.on_error()
-            self._last_nfc_uid = uid
             return
         
         # Check if same chip is already loaded
         if self.device_state.loaded_chip and self.device_state.loaded_chip.uid == uid:
             log_event("Same chip scanned - no action")
             self._ui.on_same_chip_scanned()
-            self._last_nfc_uid = uid
             return
         
         # Check parental controls - whitelist/blacklist
         if self._check_chip_allowed(uid):
             self._ui.on_blocked_action()
-            self._last_nfc_uid = uid
             return
         
         # Check if chip has a song assigned
@@ -781,17 +762,15 @@ class Controller:
             self.device_state = actions.action_load_chip(
                 self.device_state, chip_data, self._audio, self._ui
             )
-            self._last_nfc_uid = uid
             return
-        
+
         # Different chip or no chip loaded - load the new chip
         # If playing, this stops playback and loads new chip
         self._reset_playback_tracking()  # Reset tracking when loading new chip
         self.device_state = actions.action_load_chip(
             self.device_state, chip_data, self._audio, self._ui
         )
-        self._last_nfc_uid = uid
-    
+
     # =========================================================================
     # BUTTON HANDLING
     # =========================================================================

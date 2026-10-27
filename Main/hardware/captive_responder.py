@@ -91,7 +91,3 @@ def stop() -> None:
     if thread is not None:
         thread.join(timeout=5)
     log("Captive responder stopped")
-
-
-def is_running() -> bool:
-    return _server is not None

@@ -9,7 +9,6 @@ import os
 
 import pytest
 
-from storage import JsonStore
 
 
 # ---------------------------------------------------------------------------

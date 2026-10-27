@@ -146,7 +146,7 @@ Defined in `Main/config/paths.py`:
 
 | Path | Description |
 |------|-------------|
-| `TAGS_JSON` | `Main/config/tags.json` - old NFC chip list. It is imported once, on the very first run, into the data file below |
+| `OLD_TAGS_FILE` | `Main/config/tags.json` - old NFC chip list. It is imported once, on the very first run, into the data file below |
 | `DATA_FILE` | `Main/server_data.json` - chips, songs, parental controls and daily usage, owned by the server (`Main/storage/`). Each save keeps the previous version as `server_data.json.bak`; a damaged file is kept as `server_data.json.corrupt-<time>` (the newest 3) |
 | `server_data.db` | The same data in a SQLite database, when `SPEAKER_STORAGE=sqlite`. Next to it: `-wal` and `-shm` (normal), `server_data.db.bak` (a copy made at start-up and once a day), and `.corrupt-<time>` for a damaged one. See below |
 
