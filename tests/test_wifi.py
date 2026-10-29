@@ -45,6 +45,7 @@ class FakeWiFi:
         self.clients = False  # is someone connected to the hotspot?
         self.responder = False  # is the port-80 helper of the hotspot running (in the provisioner's program)?
         self.calls = []
+        self.music_restarts = []  # what each restart of the music server returned (kept here so build() stays small)
 
     def is_connected(self):
         return self.connected and not self.ap_up
@@ -80,9 +81,15 @@ class FakeWiFi:
         return self.clients
 
 
-def build(limit=3600, portal_busy=lambda: False):
+def build(limit=3600, portal_busy=lambda: False, music_restart_works=True):
     clock, wifi, led = Clock(limit), FakeWiFi(), fakes.CallLog()
-    provisioner = WiFiProvisioner(wifi=wifi, led=led, clock=clock.now, sleep=clock.sleep, portal_busy=portal_busy)
+
+    def restart_music():
+        wifi.music_restarts.append(music_restart_works)
+        return music_restart_works
+
+    provisioner = WiFiProvisioner(wifi=wifi, led=led, clock=clock.now, sleep=clock.sleep,
+                                  portal_busy=portal_busy, restart_music=restart_music)
     return provisioner, wifi, clock, led
 
 
@@ -99,6 +106,41 @@ def test_wifi_that_arrives_within_the_wait_never_starts_the_hotspot():
     clock.on_tick = lambda t: setattr(wifi, "connected", t >= 10)
     provisioner.boot()
     assert wifi.calls == []
+
+
+def test_the_music_server_is_restarted_once_the_speaker_has_a_network():
+    # Mopidy logs in to Spotify only while it starts, and at boot it starts before the network
+    # is there. Without this restart every Spotify song fails until somebody restarts it by hand.
+    provisioner, wifi, clock, led = build()
+    wifi.connected = True
+    provisioner.boot()
+    assert wifi.music_restarts == [True]
+
+
+def test_a_setup_through_the_hotspot_restarts_the_music_server_too():
+    # The worst case: the network arrives minutes after Mopidy started, when somebody has
+    # just typed the password into the setup page.
+    provisioner, wifi, clock, led = build()
+    clock.on_tick = lambda t: setattr(wifi, "connected", t >= 100)
+    provisioner.boot()
+    assert wifi.music_restarts == [True]  # once, at the end of setup mode
+
+
+def test_a_short_break_in_the_network_leaves_the_music_server_alone():
+    # NetworkManager gets a blip back by itself. A restart here would cut off whatever is playing.
+    provisioner, wifi, clock, led = build(limit=NO_NETWORK_GRACE)
+    wifi.connected = True
+    clock.on_tick = lambda t: setattr(wifi, "connected", not (20 <= t < 40))
+    with pytest.raises(TimeoutError):
+        provisioner.watch()
+    assert wifi.music_restarts == []
+
+
+def test_a_music_server_that_will_not_restart_does_not_stop_the_speaker():
+    provisioner, wifi, clock, led = build(music_restart_works=False)
+    wifi.connected = True
+    provisioner.boot()  # says so in the log and goes on
+    assert wifi.music_restarts == [False]
 
 
 def test_no_wifi_at_boot_starts_the_hotspot():

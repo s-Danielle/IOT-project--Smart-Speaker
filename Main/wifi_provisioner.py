@@ -13,12 +13,16 @@ Runs for as long as the speaker is on (no HTTP server, binds no ports):
   setup mode until someone reboots it)
 - Credential intake and AP teardown are handled by the main server's
   captive portal (Main/server.py, /wifi-setup on port 8080)
+- At boot, and at the end of setup mode, it restarts the music server: Mopidy
+  logs in to Spotify only while it starts (see _restart_music_for_new_network).
+  A short break in the network is left alone, so playing music is not cut off
 - LED feedback via Light 1
 
 This service uses the shared WiFiManager from hardware/wifi_manager.py
 """
 import json
 import os
+import subprocess
 import sys
 import time
 import threading
@@ -35,6 +39,7 @@ WATCH_INTERVAL = 10  # Seconds between network checks once the speaker is online
 AP_POLL_INTERVAL = 3  # Seconds between connection checks while in AP mode
 AP_RETRY_INTERVAL = 120  # Seconds in AP mode between tries at the saved network
 AP_RETRY_WAIT = 30  # Seconds one such try waits for the network (the hotspot is down meanwhile)
+MUSIC_SERVICE = "mopidy"  # The music server, restarted whenever the speaker reaches a network
 
 
 def log_wifi(message: str):
@@ -100,6 +105,23 @@ class LEDController:
         time.sleep(0.1)
 
 
+def restart_music_service() -> bool:
+    """Restart the music server. True if systemd says it worked."""
+    try:
+        done = subprocess.run(
+            ["sudo", "systemctl", "restart", MUSIC_SERVICE],
+            capture_output=True, text=True, timeout=90
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log_wifi(f"Could not restart {MUSIC_SERVICE}: {exc}")
+        return False
+    if done.returncode != 0:
+        log_wifi(f"Could not restart {MUSIC_SERVICE}: "
+                 f"{done.stderr.strip() or f'it exited {done.returncode}'}")
+        return False
+    return True
+
+
 def portal_is_connecting() -> bool:
     """Is the setup page (in the server, another program) in the middle of joining a network?
 
@@ -117,16 +139,18 @@ def portal_is_connecting() -> bool:
 class WiFiProvisioner:
     """Main WiFi provisioning orchestrator.
 
-    `wifi`, `led`, `clock` and `sleep` can be replaced (the tests do), so the
-    flow can be run without NetworkManager and without waiting.
+    `wifi`, `led`, `clock`, `sleep` and `restart_music` can be replaced (the tests do), so
+    the flow can be run without NetworkManager, without systemd and without waiting.
     """
 
-    def __init__(self, wifi=WiFiManager, led=None, clock=time.monotonic, sleep=time.sleep, portal_busy=None):
+    def __init__(self, wifi=WiFiManager, led=None, clock=time.monotonic, sleep=time.sleep,
+                 portal_busy=None, restart_music=None):
         self.wifi = wifi
         self.led = led if led is not None else LEDController()
         self._now = clock
         self._sleep = sleep
         self._portal_busy = portal_busy if portal_busy is not None else portal_is_connecting
+        self._restart_music = restart_music if restart_music is not None else restart_music_service
 
     def run(self):
         """Boot, then watch the network for as long as the speaker is on."""
@@ -140,6 +164,7 @@ class WiFiProvisioner:
 
         # Give NetworkManager time to auto-connect to known networks
         if self._wait_for_wifi(NO_NETWORK_GRACE, announce=True):
+            self._restart_music_for_new_network("The speaker is on a network")
             return  # Normal operation can proceed
 
         log_wifi("No connection, starting AP mode...")
@@ -179,6 +204,23 @@ class WiFiProvisioner:
         self._wait_for_provisioning()
         # The server took the hotspot down, but the port-80 helper lives in this program
         self.wifi.stop_captive_responder()
+        self._restart_music_for_new_network("The speaker is on a network again")
+
+    def _restart_music_for_new_network(self, what_happened: str):
+        """The speaker has just reached a network: start the music server over.
+
+        Mopidy logs in to Spotify once, while it starts. At boot it is started before the
+        speaker has a network, and minutes before it when the network is set up through the
+        hotspot: that login fails, Mopidy never tries again, and every Spotify song after it
+        fails with "{add} directory or file not found" until somebody restarts it by hand
+        (seen on Sep 5 2026, and again on Oct 29 2026 right after a setup through the hotspot).
+
+        This runs at the two moments the speaker reaches a network, both of which are moments
+        when it is not playing: at boot, and at the end of setup mode.
+        """
+        log_wifi(f"{what_happened}: restarting {MUSIC_SERVICE} so it can log in to Spotify")
+        if self._restart_music():
+            log_wifi(f"{MUSIC_SERVICE} was restarted")
 
     def _wait_for_wifi(self, seconds: int, announce: bool = False) -> bool:
         """Wait up to `seconds` for a real WiFi connection with an address. True if it came."""
