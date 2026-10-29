@@ -513,6 +513,12 @@ CAPTIVE_PORTAL_HTML = '''<!DOCTYPE html>
         .note {{ min-height: 1.2em; margin: 12px 0 0; }}
         .back {{ background: transparent; border: 1px solid rgba(255,255,255,0.3); 
                 color: white; margin-top: 10px; }}
+        .address {{ background: rgba(255,255,255,0.1); border-radius: 16px; padding: 20px;
+                   margin-top: 16px; text-align: center; }}
+        .address .url {{ display: block; margin: 10px 0; font-size: 18px;
+                        font-family: ui-monospace, Menlo, monospace; word-break: break-all;
+                        user-select: all; -webkit-user-select: all; }}
+        .address button {{ background: rgba(255,255,255,0.15); font-size: 16px; padding: 12px; }}
     </style>
 </head>
 <body>
@@ -531,8 +537,51 @@ CAPTIVE_PORTAL_HTML = '''<!DOCTYPE html>
                 <button class="back" onclick="showNetworks()">← Back</button>
             </div>
         </div>
+        <div class="address">
+            <strong>Copy this address now</strong>
+            <span class="url" id="home-url">{home_url}</span>
+            <button type="button" id="copy-url">Copy address</button>
+            <p class="note" id="copy-note"></p>
+            <p class="small">This setup page closes by itself when the setup network ends. That is
+            where the speaker lives once it is on your WiFi: paste it into your browser when your
+            phone is back on your own network.</p>
+        </div>
     </div>
     <script>
+        function copyHomeUrl() {{
+            var text = document.getElementById('home-url').textContent;
+            var note = document.getElementById('copy-note');
+            // This page is served over plain http, where navigator.clipboard is usually missing,
+            // so the old execCommand way is the one that works here. Selecting the address by
+            // hand is the last resort, and the text is selectable for exactly that.
+            var copied = false;
+            try {{
+                var box = document.createElement('textarea');
+                box.value = text;
+                box.setAttribute('readonly', '');
+                box.style.position = 'fixed';
+                box.style.opacity = '0';
+                document.body.appendChild(box);
+                box.select();
+                box.setSelectionRange(0, text.length);
+                copied = document.execCommand('copy');
+                document.body.removeChild(box);
+            }} catch (e) {{
+                copied = false;
+            }}
+            if (!copied && navigator.clipboard) {{
+                navigator.clipboard.writeText(text).then(function() {{
+                    note.textContent = 'Copied.';
+                }}, function() {{
+                    note.textContent = 'Could not copy it. Press and hold the address instead.';
+                }});
+                return;
+            }}
+            note.textContent = copied ? 'Copied.'
+                : 'Could not copy it. Press and hold the address instead.';
+        }}
+        document.getElementById('copy-url').addEventListener('click', copyHomeUrl);
+
         function selectNetwork(ssid, isOpen) {{
             document.getElementById('networks').classList.add('hidden');
             document.getElementById('password-form').classList.remove('hidden');
@@ -564,6 +613,21 @@ def _is_open_network(network: dict) -> bool:
     return security in ('', '--', 'Open')
 
 
+def render_portal_page(content: str, connect_action: str = "/connect",
+                       home_url: str | None = None) -> str:
+    """Put page content into the setup-portal template.
+
+    home_url is the address the speaker answers on once it is on the home network. Every setup
+    page shows it, because the phone's "sign in to network" window closes by itself the moment
+    the hotspot ends: whoever holds the phone needs that address before then, not after.
+    """
+    return CAPTIVE_PORTAL_HTML.format(
+        content=content,
+        connect_action=connect_action,
+        home_url=html.escape(home_url or speaker_home_url(), quote=True),
+    )
+
+
 def render_network_list_html(networks: list[dict], connect_action: str = "/connect") -> str:
     """Render the network list HTML content.
     
@@ -585,4 +649,4 @@ def render_network_list_html(networks: list[dict], connect_action: str = "/conne
     if not networks:
         content += '<p>No networks found. <a href="/" style="color:white">Refresh</a></p>'
     
-    return CAPTIVE_PORTAL_HTML.format(content=content, connect_action=connect_action)
+    return render_portal_page(content, connect_action)

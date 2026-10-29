@@ -121,6 +121,16 @@ def test_the_page_has_no_leftover_markers(server_module):
     assert "__SSID__" not in html and "__HOME__" not in html and "__AP_NAME__" not in html
 
 
+def test_the_page_offers_the_address_to_copy_before_the_setup_network_ends(server_module, monkeypatch):
+    # The phone's setup window closes by itself when the hotspot goes, so the address has to be on
+    # the page while it is still open, not only on the screen that would have come after.
+    monkeypatch.setattr(server_module, "speaker_home_url", lambda: "http://kitchen.local:8080")
+    html = server_module._render_connecting_html("Home")
+    assert 'id="home-url">http://kitchen.local:8080<' in html
+    assert 'id="copy-url"' in html
+    assert "execCommand('copy')" in html  # the way that works on a page served over plain http
+
+
 # --- the script, run for real ------------------------------------------------------------------
 
 

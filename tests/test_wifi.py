@@ -453,6 +453,19 @@ def test_the_speakers_address_on_a_home_network_follows_its_hostname(monkeypatch
     assert wifi_manager.speaker_home_url() == "http://rpi2.local:8080"
 
 
+def test_the_network_list_page_shows_the_address_to_copy(monkeypatch):
+    monkeypatch.setattr(wifi_manager.socket, "gethostname", lambda: "kitchen")
+    page = wifi_manager.render_network_list_html([{"ssid": "Home", "signal": 80, "security": "WPA2"}])
+    assert 'id="home-url">http://kitchen.local:8080<' in page
+    assert "{home_url}" not in page and "{content}" not in page  # nothing left unfilled
+
+
+def test_a_hostname_cannot_break_out_of_the_address_on_the_page(monkeypatch):
+    monkeypatch.setattr(wifi_manager.socket, "gethostname", lambda: 'a"><script>alert(1)</script>')
+    page = wifi_manager.render_network_list_html([])
+    assert "<script>alert(1)" not in page
+
+
 def test_stopping_the_hotspot_also_frees_port_80(monkeypatch):
     stopped = []
     monkeypatch.setattr(wifi_manager.captive_responder, "stop", lambda: stopped.append(True))

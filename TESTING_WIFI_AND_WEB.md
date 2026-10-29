@@ -34,20 +34,22 @@ URL: `http://192.168.4.1:8080/wifi-setup`. Connect attempts are async — poll
 
 ## 1. Fresh-boot provisioning (happy path)
 
-Setup: remove all saved WiFi profiles on the Pi
-(`sudo nmcli connection delete <name>` for each WiFi profile), then reboot.
+Setup: remove all saved WiFi profiles on the Pi and reboot, with
+`bash /tmp/pi/wifi_forget.sh --reboot` (`--list` first to see what is saved,
+`--undo` afterwards to put them back).
 
 - [ ] Within about 1.5 minutes of boot (the speaker waits one minute for a network first), `SmartSpeaker-Setup` appears in the phone's WiFi list
 - [ ] Light 1: yellow pulsing during the wait, then blue pulsing once the AP is up
 - [ ] Join `SmartSpeaker-Setup` from the phone
 - [ ] Captive-portal popup ("Sign in to network") opens automatically and shows the setup page with a network list
 - [ ] If no popup: browsing to any http:// site redirects to the portal; `http://192.168.4.1:8080/wifi-setup` works directly
+- [ ] Every setup page shows the speaker's address (`http://rpi2.local:8080`) with a "Copy address" button, below the network list. Copy it **before** submitting: phones close the setup window by themselves when the hotspot ends
 - [ ] Pick the home network, enter the password, submit
 - [ ] Portal shows a "connecting…" progress page that updates on its own
 - [ ] The setup network disappears from the phone, and within a few seconds the page says to bring the phone back to its normal WiFi. The page shows a button "My phone is back on WiFi – open the speaker" and the speaker's address
 - [ ] Press the button **before** the phone is back on the home WiFi: the page stays, and says the speaker does not answer yet
 - [ ] Bring the phone back to the home WiFi (most phones do it by themselves) and press the button: the web app opens
-- [ ] If the phone's "sign in to network" window closed by itself when the setup network went away, open `http://rpi2.local:8080` in the browser: the same result
+- [ ] If the phone's "sign in to network" window closed by itself when the setup network went away (most phones do), paste the copied address into a normal browser: the same result
 - [ ] Light 1 turns green solid
 - [ ] From a device on the LAN: `http://rpi2.local:8080` loads the web app and `/health` returns OK
 - [ ] **No reboot happened** at any point (check `uptime`)

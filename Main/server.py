@@ -27,7 +27,7 @@ from storage import JsonStore, StorageError, open_store
 from utils.status_file import read_status
 from hardware.wifi_manager import (
     WiFiManager, AP_SSID, AP_IP, WEB_PORT, speaker_home_url,
-    render_network_list_html, CAPTIVE_PORTAL_HTML
+    render_network_list_html, render_portal_page
 )
 
 
@@ -718,8 +718,8 @@ def _render_connecting_html(ssid: str) -> str:
         will disappear while the speaker switches networks.</p>
     </div>
     <script>{script}</script>'''
-    return CAPTIVE_PORTAL_HTML.format(
-        content=content, connect_action="/wifi-setup/connect"
+    return render_portal_page(
+        content, connect_action="/wifi-setup/connect", home_url=speaker_home_url()
     )
 
 

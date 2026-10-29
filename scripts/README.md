@@ -22,6 +22,7 @@ Every file here lands flat in `/tmp/pi` after `push_to_pi.sh`, and the scripts f
 | `pi_install_audio.sh` | Shared sound card, and the Mopidy settings (`--mopidy-conf`). |
 | `pi_update.sh` | Switches the code to a branch or tag, restarts, runs the quick check. |
 | `pi_backup.sh` | Backs up the data and the system files the scripts change, and restores them. |
+| `wifi_forget.sh` | Forgets the saved WiFi networks, to test the WiFi setup from the start. |
 
 **Look and check** (read only, except where noted)
 
